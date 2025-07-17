@@ -96,7 +96,7 @@ public:
 		float alphaCutOff;
 		bool doubleSided = false;
 		VkDescriptorSet descriptorSet;
-		VkPipeline pipeline;
+		VkPipeline traditionalPipeline;
 	};
 
 	// Contains the texture for a single glTF image

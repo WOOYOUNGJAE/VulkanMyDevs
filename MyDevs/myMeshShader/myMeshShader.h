@@ -96,7 +96,8 @@ public:
 		float alphaCutOff;
 		bool doubleSided = false;
 		VkDescriptorSet descriptorSet;
-		VkPipeline pipeline;
+		VkPipeline traditionalPipeline;
+		VkPipeline meshShaderPipeline;
 	};
 
 	// Contains the texture for a single glTF image
@@ -127,14 +128,15 @@ public:
 	void loadTextures(tinygltf::Model& input);
 	void loadMaterials(tinygltf::Model& input);
 	void loadNode(const tinygltf::Node& inputNode, const tinygltf::Model& input, VulkanglTFScene::Node* parent, std::vector<uint32_t>& indexBuffer, std::vector<VulkanglTFScene::Vertex>& vertexBuffer);
-	void drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VulkanglTFScene::Node* node);
-	void draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout);
+	void drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VulkanglTFScene::Node* node, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT = nullptr);
+	void draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT = nullptr);
 };
 
-class VulkanExample : public VulkanExampleBase
+class MyMeshShader : public VulkanExampleBase
 {
 public:
-	VulkanglTFScene glTFScene;
+	VulkanglTFScene glTFScene; // materials contain pipeline
+	VkPipeline globalPipeline;
 
 	struct ShaderData {
 		vks::Buffer buffer;
@@ -154,8 +156,12 @@ public:
 		VkDescriptorSetLayout textures{ VK_NULL_HANDLE };
 	} descriptorSetLayouts;
 
-	VulkanExample();
-	~VulkanExample();
+	// Extensions
+	PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT{ VK_NULL_HANDLE };
+	VkPhysicalDeviceMeshShaderFeaturesEXT enabledMeshShaderFeatures{ };
+
+	MyMeshShader();
+	~MyMeshShader();
 	virtual void getEnabledFeatures();
 	void buildCommandBuffers();
 	void loadglTFFile(std::string filename);

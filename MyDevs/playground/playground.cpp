@@ -35,7 +35,7 @@ VulkanglTFScene::~VulkanglTFScene()
 		vkFreeMemory(vulkanDevice->logicalDevice, image.texture.deviceMemory, nullptr);
 	}
 	for (Material material : materials) {
-		vkDestroyPipeline(vulkanDevice->logicalDevice, material.pipeline, nullptr);
+		vkDestroyPipeline(vulkanDevice->logicalDevice, material.traditionalPipeline, nullptr);
 	}
 }
 
@@ -256,7 +256,7 @@ void VulkanglTFScene::drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout p
 			if (primitive.indexCount > 0) {
 				VulkanglTFScene::Material& material = materials[primitive.materialIndex];
 				// POI: Bind the pipeline for the node's material
-				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.pipeline);
+				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.traditionalPipeline);
 				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &material.descriptorSet, 0, nullptr);
 				vkCmdDrawIndexed(commandBuffer, primitive.indexCount, 1, primitive.firstIndex, 0, 0);
 			}
@@ -597,7 +597,7 @@ void VulkanExample::preparePipelines()
 		// For double sided materials, culling will be disabled
 		rasterizationStateCI.cullMode = material.doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
 
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &material.pipeline));
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &material.traditionalPipeline));
 	}
 }
 

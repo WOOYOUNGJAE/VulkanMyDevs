@@ -14,9 +14,8 @@
 
 #include "myMeshShader.h"
 
-/*
-	Vulkan glTF scene class
-*/
+// global
+bool g_useMeshShader = true;
 	
 VulkanglTFScene::~VulkanglTFScene()
 {
@@ -35,7 +34,7 @@ VulkanglTFScene::~VulkanglTFScene()
 		vkFreeMemory(vulkanDevice->logicalDevice, image.texture.deviceMemory, nullptr);
 	}
 	for (Material material : materials) {
-		vkDestroyPipeline(vulkanDevice->logicalDevice, material.pipeline, nullptr);
+		vkDestroyPipeline(vulkanDevice->logicalDevice, material.traditionalPipeline, nullptr);
 	}
 }
 
@@ -236,7 +235,7 @@ VkDescriptorImageInfo VulkanglTFScene::getTextureDescriptor(const size_t index)
 */
 
 // Draw a single node including child nodes (if present)
-void VulkanglTFScene::drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VulkanglTFScene::Node* node)
+void VulkanglTFScene::drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VulkanglTFScene::Node* node, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT)
 {
 	if (!node->visible) {
 		return;
@@ -251,14 +250,21 @@ void VulkanglTFScene::drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout p
 			currentParent = currentParent->parent;
 		}
 		// Pass the final matrix to the vertex shader using push constants
-		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &nodeMatrix);
+		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, 0, sizeof(glm::mat4), &nodeMatrix);
 		for (VulkanglTFScene::Primitive& primitive : node->mesh.primitives) {
 			if (primitive.indexCount > 0) {
 				VulkanglTFScene::Material& material = materials[primitive.materialIndex];
-				// POI: Bind the pipeline for the node's material
-				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.pipeline);
 				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &material.descriptorSet, 0, nullptr);
-				vkCmdDrawIndexed(commandBuffer, primitive.indexCount, 1, primitive.firstIndex, 0, 0);
+				if (g_useMeshShader)
+				{
+					vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.meshShaderPipeline);
+					vkCmdDrawMeshTasksEXT(commandBuffer, 1, 1, 1);
+				}
+				else // traditional pipeline
+				{
+					vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.traditionalPipeline);
+					vkCmdDrawIndexed(commandBuffer, primitive.indexCount, 1, primitive.firstIndex, 0, 0);
+				}
 			}
 		}
 	}
@@ -268,7 +274,7 @@ void VulkanglTFScene::drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout p
 }
 
 // Draw the glTF scene starting at the top-level-nodes
-void VulkanglTFScene::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout)
+void VulkanglTFScene::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT)
 {
 	// All vertices and indices are stored in single buffers, so we only need to bind once
 	VkDeviceSize offsets[1] = { 0 };
@@ -276,7 +282,7 @@ void VulkanglTFScene::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipel
 	vkCmdBindIndexBuffer(commandBuffer, indices.buffer, 0, VK_INDEX_TYPE_UINT32);
 	// Render all nodes at top-level
 	for (auto& node : nodes) {
-		drawNode(commandBuffer, pipelineLayout, node);
+		drawNode(commandBuffer, pipelineLayout, node, vkCmdDrawMeshTasksEXT);
 	}
 }
 
@@ -284,8 +290,27 @@ void VulkanglTFScene::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipel
 	Vulkan Example class
 */
 
-VulkanExample::VulkanExample() : VulkanExampleBase()
+MyMeshShader::MyMeshShader() : VulkanExampleBase()
 {
+	apiVersion = VK_API_VERSION_1_4;
+
+	// Extensions required by mesh shading
+	enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+
+	// Required by VK_KHR_spirv_1_4
+	enabledDeviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
+
+	// We need to enable the mesh and task shader feature using a new struct introduced with the extension
+	enabledMeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+	enabledMeshShaderFeatures.meshShader = VK_TRUE;
+	enabledMeshShaderFeatures.taskShader = VK_TRUE;
+
+	deviceCreatepNextChain = &enabledMeshShaderFeatures;
+
 	title = "glTF scene rendering";
 	camera.type = Camera::CameraType::firstperson;
 	camera.flipY = true;
@@ -294,7 +319,7 @@ VulkanExample::VulkanExample() : VulkanExampleBase()
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 256.0f);
 }
 
-VulkanExample::~VulkanExample()
+MyMeshShader::~MyMeshShader()
 {
 	if (device) {
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -304,12 +329,12 @@ VulkanExample::~VulkanExample()
 	}
 }
 
-void VulkanExample::getEnabledFeatures()
+void MyMeshShader::getEnabledFeatures()
 {
 	enabledFeatures.samplerAnisotropy = deviceFeatures.samplerAnisotropy;
 }
 
-void VulkanExample::buildCommandBuffers()
+void MyMeshShader::buildCommandBuffers()
 {
 	VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
 
@@ -341,7 +366,7 @@ void VulkanExample::buildCommandBuffers()
 		vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
 		// POI: Draw the glTF scene
-		glTFScene.draw(drawCmdBuffers[i], pipelineLayout);
+		glTFScene.draw(drawCmdBuffers[i], pipelineLayout, vkCmdDrawMeshTasksEXT);
 
 		drawUI(drawCmdBuffers[i]);
 		vkCmdEndRenderPass(drawCmdBuffers[i]);
@@ -349,7 +374,7 @@ void VulkanExample::buildCommandBuffers()
 	}
 }
 
-void VulkanExample::loadglTFFile(std::string filename)
+void MyMeshShader::loadglTFFile(std::string filename)
 {
 	tinygltf::Model glTFInput;
 	tinygltf::TinyGLTF gltfContext;
@@ -462,12 +487,13 @@ void VulkanExample::loadglTFFile(std::string filename)
 	vkFreeMemory(device, indexStaging.memory, nullptr);
 }
 
-void VulkanExample::loadAssets()
+void MyMeshShader::loadAssets()
 {
 	loadglTFFile(getAssetPath() + "models/sponza/sponza.gltf");
+	//loadglTFFile(getAssetPath() + "models/armor/armor.gltf");
 }
 
-void VulkanExample::setupDescriptors()
+void MyMeshShader::setupDescriptors()
 {
 	/*
 		This sample uses separate descriptor sets (and layouts) for the matrices and materials (textures)
@@ -486,7 +512,7 @@ void VulkanExample::setupDescriptors()
 
 	// Descriptor set layout for passing matrices
 	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
-		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0)
+		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, 0)
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings.data(), static_cast<uint32_t>(setLayoutBindings.size()));
 
@@ -523,15 +549,15 @@ void VulkanExample::setupDescriptors()
 	}
 }
 
-void VulkanExample::preparePipelines()
+void MyMeshShader::preparePipelines()
 {
 	// Layout
 	// Pipeline layout uses both descriptor sets (set 0 = matrices, set 1 = material)
 	std::array<VkDescriptorSetLayout, 2> setLayouts = { descriptorSetLayouts.matrices, descriptorSetLayouts.textures };
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
 	// We will use push constants to push the local matrices of a primitive to the vertex shader
-	VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), 0);
-	// Push constant ranges are part of the pipeline layout
+	VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, sizeof(glm::mat4), 0);
+	// Push constant ranges are part of the traditionalPipeline layout
 	pipelineLayoutCI.pushConstantRangeCount = 1;
 	pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
 	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
@@ -546,7 +572,8 @@ void VulkanExample::preparePipelines()
 	VkPipelineMultisampleStateCreateInfo multisampleStateCI = vks::initializers::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
 	const std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 	VkPipelineDynamicStateCreateInfo dynamicStateCI = vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables.data(), static_cast<uint32_t>(dynamicStateEnables.size()), 0);
-	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+	std::array<VkPipelineShaderStageCreateInfo, 2> traditionalShaderStages;
+	std::array<VkPipelineShaderStageCreateInfo, 3> meshShaderStages;
 
 	const std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
 		vks::initializers::vertexInputBindingDescription(0, sizeof(VulkanglTFScene::Vertex), VK_VERTEX_INPUT_RATE_VERTEX),
@@ -561,22 +588,29 @@ void VulkanExample::preparePipelines()
 	VkPipelineVertexInputStateCreateInfo vertexInputStateCI = vks::initializers::pipelineVertexInputStateCreateInfo(vertexInputBindings, vertexInputAttributes);
 
 	VkGraphicsPipelineCreateInfo pipelineCI = vks::initializers::pipelineCreateInfo(pipelineLayout, renderPass, 0);
-	pipelineCI.pVertexInputState = &vertexInputStateCI;
-	pipelineCI.pInputAssemblyState = &inputAssemblyStateCI;
 	pipelineCI.pRasterizationState = &rasterizationStateCI;
 	pipelineCI.pColorBlendState = &colorBlendStateCI;
 	pipelineCI.pMultisampleState = &multisampleStateCI;
 	pipelineCI.pViewportState = &viewportStateCI;
 	pipelineCI.pDepthStencilState = &depthStencilStateCI;
 	pipelineCI.pDynamicState = &dynamicStateCI;
-	pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
-	pipelineCI.pStages = shaderStages.data();
 
-	shaderStages[0] = loadShader(getShadersPath() + "myMeshShader/scene.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	shaderStages[1] = loadShader(getShadersPath() + "myMeshShader/scene.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	traditionalShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/scene.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	traditionalShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/scene.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	// POI: Instead if using a few fixed pipelines, we create one pipeline for each material using the properties of that material
+	meshShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/meshshader.task.spv", VK_SHADER_STAGE_TASK_BIT_EXT);
+	meshShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
+	meshShaderStages[2] = loadShader(getShadersPath() + "myMeshShader/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+
+	// POI: Instead if using a few fixed pipelines, we create one traditionalPipeline for each material using the properties of that material
 	for (auto &material : glTFScene.materials) {
+
+		// traditional pipeline
+		pipelineCI.pVertexInputState = &vertexInputStateCI;
+		pipelineCI.pInputAssemblyState = &inputAssemblyStateCI;
+		pipelineCI.stageCount = static_cast<uint32_t>(traditionalShaderStages.size());
+		pipelineCI.pStages = traditionalShaderStages.data();
+
 
 		struct MaterialSpecializationData {
 			VkBool32 alphaMask;
@@ -592,22 +626,28 @@ void VulkanExample::preparePipelines()
 			vks::initializers::specializationMapEntry(1, offsetof(MaterialSpecializationData, alphaMaskCutoff), sizeof(MaterialSpecializationData::alphaMaskCutoff)),
 		};
 		VkSpecializationInfo specializationInfo = vks::initializers::specializationInfo(specializationMapEntries, sizeof(materialSpecializationData), &materialSpecializationData);
-		shaderStages[1].pSpecializationInfo = &specializationInfo;
+		traditionalShaderStages[1].pSpecializationInfo = &specializationInfo;
 
 		// For double sided materials, culling will be disabled
 		rasterizationStateCI.cullMode = material.doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &material.traditionalPipeline));
 
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &material.pipeline));
+		// mesh shader pipeline
+		pipelineCI.pVertexInputState = nullptr;
+		pipelineCI.pInputAssemblyState = nullptr;
+		pipelineCI.stageCount = static_cast<uint32_t>(meshShaderStages.size());
+		pipelineCI.pStages = meshShaderStages.data();
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &material.meshShaderPipeline));
 	}
 }
 
-void VulkanExample::prepareUniformBuffers()
+void MyMeshShader::prepareUniformBuffers()
 {
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &shaderData.buffer, sizeof(shaderData.values)));
 	VK_CHECK_RESULT(shaderData.buffer.map());
 }
 
-void VulkanExample::updateUniformBuffers()
+void MyMeshShader::updateUniformBuffers()
 {
 	shaderData.values.projection = camera.matrices.perspective;
 	shaderData.values.view = camera.matrices.view;
@@ -615,9 +655,15 @@ void VulkanExample::updateUniformBuffers()
 	memcpy(shaderData.buffer.mapped, &shaderData.values, sizeof(shaderData.values));
 }
 
-void VulkanExample::prepare()
+void MyMeshShader::prepare()
 {
 	VulkanExampleBase::prepare();
+	vkCmdDrawMeshTasksEXT = reinterpret_cast<PFN_vkCmdDrawMeshTasksEXT>(vkGetDeviceProcAddr(device, "vkCmdDrawMeshTasksEXT"));
+#if _DEBUG // compile shaders
+	std::string batchPath = getShadersPath() + "myMeshShader/ShaderCompile.bat";
+	system(batchPath.c_str());
+	std::cout << "\t...current project's shaders compile completed.\n";
+#endif
 	loadAssets();
 	prepareUniformBuffers();
 	setupDescriptors();
@@ -626,14 +672,26 @@ void VulkanExample::prepare()
 	prepared = true;
 }
 
-void VulkanExample::render()
+void MyMeshShader::render()
 {
 	updateUniformBuffers();
 	renderFrame();
 }
 
-void VulkanExample::OnUpdateUIOverlay(vks::UIOverlay* overlay)
+void MyMeshShader::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 {
+	if (overlay->header("Visibility"))
+	{
+		if (overlay->checkBox("Use Mesh Shader", &g_useMeshShader))
+		{
+			
+		}
+		if (overlay->button("Wire")) {
+			
+			std::for_each(glTFScene.nodes.begin(), glTFScene.nodes.end(), [](VulkanglTFScene::Node* node) { node->visible = true; });
+			buildCommandBuffers();
+		}
+	}
 	if (overlay->header("Visibility")) {
 
 		if (overlay->button("All")) {
@@ -660,4 +718,24 @@ void VulkanExample::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 	}
 }
 
-VULKAN_EXAMPLE_MAIN()
+//VULKAN_EXAMPLE_MAIN()
+MyMeshShader* myMeshShader;														
+LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	if (myMeshShader != NULL)
+	{
+		myMeshShader->handleMessages(hWnd, uMsg, wParam, lParam);
+	}
+	return (DefWindowProc(hWnd, uMsg, wParam, lParam));
+}
+int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, _In_ LPSTR, _In_ int)
+{
+	for (int32_t i = 0; i < __argc; i++) { MyMeshShader::args.push_back(__argv[i]); };
+	myMeshShader = new MyMeshShader();
+	myMeshShader->initVulkan();
+	myMeshShader->setupWindow(hInstance, WndProc);
+	myMeshShader->prepare();
+	myMeshShader->renderLoop();
+	delete(myMeshShader);
+	return 0;
+}

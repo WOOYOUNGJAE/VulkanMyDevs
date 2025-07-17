@@ -233,6 +233,15 @@ void VulkanExampleBase::prepare()
 	setupRenderPass();
 	createPipelineCache();
 	setupFrameBuffer();
+
+#if _DEBUG
+	// compile shaders
+	std::string batchPath = getShadersPath() + "base/ShaderCompile.bat";
+	system(batchPath.c_str());
+	std::cout << "\t...base project shaders compile completed.\n";
+#endif
+
+
 	settings.overlay = settings.overlay && (!benchmark.active);
 	if (settings.overlay) {
 		ui.device = vulkanDevice;
