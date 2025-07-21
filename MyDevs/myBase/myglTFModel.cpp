@@ -3,6 +3,7 @@
 VkMemoryPropertyFlags myglTF::Model::memoryPropertyFlags = 0;
 uint32_t myglTF::Model::descriptorBindingFlags = myglTF::DescriptorBindingFlags::ImageBaseColor | myglTF::DescriptorBindingFlags::ImageNormalMap;
 
+#include "meshoptimizer.h"
 
 myglTF::Model::~Model()
 {
@@ -10,6 +11,12 @@ myglTF::Model::~Model()
 	vkFreeMemory(device->logicalDevice, vertices.memory, nullptr);
 	vkDestroyBuffer(device->logicalDevice, indices.buffer, nullptr);
 	vkFreeMemory(device->logicalDevice, indices.memory, nullptr);
+	vkDestroyBuffer(device->logicalDevice, meshletVertices.buffer, nullptr);
+	vkFreeMemory(device->logicalDevice, meshletVertices.memory, nullptr);
+	vkDestroyBuffer(device->logicalDevice, meshletIndices.buffer, nullptr);
+	vkFreeMemory(device->logicalDevice, meshletIndices.memory, nullptr);
+	vkDestroyBuffer(device->logicalDevice, meshlets.buffer, nullptr);
+	vkFreeMemory(device->logicalDevice, meshlets.memory, nullptr);
 	for (auto& texture : textures) {
 		texture.destroy();
 	}
@@ -26,6 +33,10 @@ myglTF::Model::~Model()
 	if (descriptorSetLayoutImage != VK_NULL_HANDLE) {
 		vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutImage, nullptr);
 		descriptorSetLayoutImage = VK_NULL_HANDLE;
+	}
+	if (descriptorSetLayoutMeshShader != VK_NULL_HANDLE) {
+		vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutMeshShader, nullptr);
+		descriptorSetLayoutMeshShader = VK_NULL_HANDLE;
 	}
 	vkDestroyDescriptorPool(device->logicalDevice, descriptorPool, nullptr);
 	emptyTexture.destroy();
@@ -182,8 +193,8 @@ void myglTF::Model::loadNode(myglTF::Node* parent, const tinygltf::Node& node, u
 					vert->tangent = bufferTangents ? glm::vec4(glm::make_vec4(&bufferTangents[v * 4])) : glm::vec4(0.0f);
 					if (hasSkin)
 					{
-						dynamic_cast<VertexSkinning*>(vert)->joint0 = glm::vec4(glm::make_vec4(&bufferJoints[v * 4]));
-						dynamic_cast<VertexSkinning*>(vert)->weight0 = glm::vec4(glm::make_vec4(&bufferWeights[v * 4]));
+						static_cast<VertexSkinning*>(vert)->joint0 = glm::vec4(glm::make_vec4(&bufferJoints[v * 4]));
+						static_cast<VertexSkinning*>(vert)->weight0 = glm::vec4(glm::make_vec4(&bufferWeights[v * 4]));
 					}
 					vertices.push_back(vert);
 				}
@@ -484,10 +495,8 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	tinygltf::asset_manager = androidApp->activity->assetManager;
 #endif
 	bool fileLoaded = gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, filename);
-
-	std::vector<uint32_t> indexBuffer;
-	std::vector<VertexType*> tempVertices;
-
+	std::vector<VertexType*> tempVerticesCPU; 
+	std::vector<uint32_t> tempIndicesCPU;
 	bool isSkinningModel = gltfModel.skins.size() > 0;
 	uint32_t vertexSize = isSkinningModel ? sizeof(VertexSkinning) : sizeof(VertexSimple);
 	if (fileLoaded) {
@@ -498,7 +507,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 		const tinygltf::Scene& scene = gltfModel.scenes[gltfModel.defaultScene > -1 ? gltfModel.defaultScene : 0];
 		for (size_t i = 0; i < scene.nodes.size(); i++) {
 			const tinygltf::Node node = gltfModel.nodes[scene.nodes[i]];
-			loadNode(nullptr, node, scene.nodes[i], gltfModel, indexBuffer, tempVertices, scale);
+			loadNode(nullptr, node, scene.nodes[i], gltfModel, tempIndicesCPU, tempVerticesCPU, scale);
 		}
 		if (gltfModel.animations.size() > 0) {
 			loadAnimations(gltfModel);
@@ -531,7 +540,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 				const glm::mat4 localMatrix = node->getMatrix();
 				for (Primitive* primitive : node->mesh->primitives) {
 					for (uint32_t i = 0; i < primitive->vertexCount; i++) {
-						VertexType* vertex = tempVertices[primitive->firstVertex + i];
+						VertexType* vertex = tempVerticesCPU[primitive->firstVertex + i];
 						// Pre-transform vertex positions by node-hierarchy
 						if (preTransform) {
 							vertex->pos = glm::vec3(localMatrix * glm::vec4(vertex->pos, 1.0f));
@@ -559,27 +568,32 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 		}
 	}
 	// A vector used to store vertex data in byte form, becuase of two different type vertex(VertexSimple/VertexSkinning)
-	std::vector<byte> vertexBufferByte(vertexSize * tempVertices.size());
+	std::vector<byte> vertexBufferByte(vertexSize * tempVerticesCPU.size());
 	uint64_t byteOffset = 0;
-	for (VertexType*& vertex : tempVertices)
+	for (VertexType*& vertex : tempVerticesCPU)
 	{
 		memcpy(&vertexBufferByte[byteOffset], vertex, vertexSize);
 		byteOffset += vertexSize;
 	}
 
-	size_t vertexBufferSize = tempVertices.size() * vertexSize;
-	size_t indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
-	indices.count = static_cast<uint32_t>(indexBuffer.size());
-	vertices.count = static_cast<uint32_t>(tempVertices.size());
+	size_t vertexBufferSize = tempVerticesCPU.size() * vertexSize;
+	size_t indexBufferSize = tempIndicesCPU.size() * sizeof(uint32_t);
+	indices.count = static_cast<uint32_t>(tempIndicesCPU.size());
+	vertices.count = static_cast<uint32_t>(tempVerticesCPU.size());
 
 	assert((vertexBufferSize > 0) && (indexBufferSize > 0));
 
 	struct StagingBuffer {
 		VkBuffer buffer;
 		VkDeviceMemory memory;
-	} vertexStaging{}, indexStaging{};
+	} vertexStaging{}, indexStaging{}, meshletVertexStaging{}, meshletIndexStaging{}, meshletStaging{};
 
 	// Create staging buffers
+	uint32_t additionalBufferUsageFlag = 0x00000000; // uint32 becuase VkBufferUsageFlagBits does not have 0
+	if (fileLoadingFlags & FileLoadingFlags::PrepareMeshShaderPipeline)
+	{
+		additionalBufferUsageFlag |= (uint32_t)VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	}
 	// Vertex data
 	VK_CHECK_RESULT(device->createBuffer(
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -595,12 +609,12 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 		indexBufferSize,
 		&indexStaging.buffer,
 		&indexStaging.memory,
-		indexBuffer.data()));
+		tempIndicesCPU.data()));
 
 	// Create device local buffers
 	// Vertex buffer
 	VK_CHECK_RESULT(device->createBuffer(
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | memoryPropertyFlags,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | memoryPropertyFlags | (VkBufferUsageFlagBits)additionalBufferUsageFlag,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		vertexBufferSize,
 		&vertices.buffer,
@@ -625,12 +639,113 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	vkCmdCopyBuffer(copyCmd, indexStaging.buffer, indices.buffer, 1, &copyRegion);
 
 	device->flushCommandBuffer(copyCmd, transferQueue, true);
-
 	vkDestroyBuffer(device->logicalDevice, vertexStaging.buffer, nullptr);
 	vkFreeMemory(device->logicalDevice, vertexStaging.memory, nullptr);
 	vkDestroyBuffer(device->logicalDevice, indexStaging.buffer, nullptr);
 	vkFreeMemory(device->logicalDevice, indexStaging.memory, nullptr);
 
+	// Prepare Meshlets
+	if (fileLoadingFlags & FileLoadingFlags::PrepareMeshShaderPipeline)
+	{
+		meshopt_Meshlet* tempAllocatedMeshlets = nullptr;
+		uint32_t numMeshlets = 0;
+		std::vector<uint32_t> tempMeshletVertices; // Meshlet::vertex == Index from OriginalVertexBuffer
+		std::vector<uint32_t> tempMeshletPackedTriangles; // single uint32 contains 3 indices(triangle)
+		generateMeshlets(tempVerticesCPU, tempIndicesCPU, tempMeshletVertices, tempMeshletPackedTriangles, &tempAllocatedMeshlets, numMeshlets);
+
+
+
+		size_t meshletVertexBufferSize = tempMeshletVertices.size() * sizeof(uint32_t);
+		size_t meshletIndexBufferSize = tempMeshletPackedTriangles.size() * sizeof(uint32_t);
+		size_t meshletBufferSize = numMeshlets * sizeof(meshopt_Meshlet);
+
+		// Create staging buffers
+		// Staging Buffer - Meshlet Vertex
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			meshletVertexBufferSize,
+			&meshletVertexStaging.buffer,
+			&meshletVertexStaging.memory,
+			tempMeshletVertices.data()));
+
+		// Staging Buffer - Meshlet Index
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			meshletIndexBufferSize,
+			&meshletIndexStaging.buffer,
+			&meshletIndexStaging.memory,
+			tempMeshletPackedTriangles.data()));
+
+		// Staging Buffer - Meshlet
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			meshletBufferSize,
+			&meshletStaging.buffer,
+			&meshletStaging.memory,
+			tempAllocatedMeshlets));
+
+		// Create device local buffers
+		// Meshlet Vertex buffer
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | memoryPropertyFlags,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			meshletVertexBufferSize,
+			&meshletVertices.buffer,
+			&meshletVertices.memory));
+		// Meshlet Index buffer
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | memoryPropertyFlags,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			meshletIndexBufferSize,
+			&meshletIndices.buffer,
+			&meshletIndices.memory));
+		// Meshlet buffer
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | memoryPropertyFlags,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			meshletBufferSize,
+			&meshlets.buffer,
+			&meshlets.memory));
+
+		// Copy from staging buffers
+		VkCommandBuffer copyCmd = device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+		VkBufferCopy copyRegion = {};
+
+		// copy meshlet vertices
+		copyRegion.size = meshletVertexBufferSize;
+		vkCmdCopyBuffer(copyCmd, meshletVertexStaging.buffer, meshletVertices.buffer, 1, &copyRegion);
+
+		// copy meshlet indices
+		copyRegion.size = meshletIndexBufferSize;
+		vkCmdCopyBuffer(copyCmd, meshletIndexStaging.buffer, meshletIndices.buffer, 1, &copyRegion);
+
+		// copy meshlets
+		copyRegion.size = meshletBufferSize;
+		vkCmdCopyBuffer(copyCmd, meshletStaging.buffer, meshlets.buffer, 1, &copyRegion);
+
+
+		delete[] tempAllocatedMeshlets; tempAllocatedMeshlets = nullptr;
+		device->flushCommandBuffer(copyCmd, transferQueue, true);
+
+
+		// Create Descriptor
+		vertexBufferDescriptor = { vertices.buffer, 0, vertexBufferSize };
+		meshletsDescriptor = { meshlets.buffer, 0, meshletBufferSize };
+		meshletVerticesDescriptor = { meshletVertices.buffer, 0, meshletVertexBufferSize };
+		meshletIndicesDescriptor = { meshletIndices.buffer, 0, meshletIndexBufferSize };
+
+
+		vkDestroyBuffer(device->logicalDevice, meshletVertexStaging.buffer, nullptr);
+		vkFreeMemory(device->logicalDevice, meshletVertexStaging.memory, nullptr);
+		vkDestroyBuffer(device->logicalDevice, meshletIndexStaging.buffer, nullptr);
+		vkFreeMemory(device->logicalDevice, meshletIndexStaging.memory, nullptr);
+		vkDestroyBuffer(device->logicalDevice, meshletStaging.buffer, nullptr);
+		vkFreeMemory(device->logicalDevice, meshletStaging.memory, nullptr);
+	}
 	getSceneDimensions();
 
 	// Setup descriptors
@@ -657,11 +772,19 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 			poolSizes.push_back({ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageCount });
 		}
 	}
+	if (fileLoadingFlags & FileLoadingFlags::PrepareMeshShaderPipeline)
+	{
+		poolSizes.push_back({ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }); // vertex buffer
+		poolSizes.push_back({ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }); // meshlet buffer
+		poolSizes.push_back({ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }); // meshlet vertex buffer
+		poolSizes.push_back({ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }); // meshlet index buffer
+	}
+
 	VkDescriptorPoolCreateInfo descriptorPoolCI{};
 	descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	descriptorPoolCI.pPoolSizes = poolSizes.data();
-	descriptorPoolCI.maxSets = uboCount + imageCount;
+	descriptorPoolCI.maxSets = uboCount + imageCount * 2 + 4;
 	VK_CHECK_RESULT(vkCreateDescriptorPool(device->logicalDevice, &descriptorPoolCI, nullptr, &descriptorPool));
 
 	// Descriptors for per-node uniform buffers
@@ -682,6 +805,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 			prepareNodeDescriptor(node, descriptorSetLayoutUbo);
 		}
 	}
+
 
 	// Descriptors for per-material images
 	{
@@ -707,12 +831,47 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 		}
 	}
 
+	// Descriptors for mesh shader pipeline
+	if (fileLoadingFlags & FileLoadingFlags::PrepareMeshShaderPipeline && descriptorSetLayoutMeshShader == VK_NULL_HANDLE)
+	{
+		std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings{};
+		// 0: vertxBuffer 1: meshlet buffer, 2: meshlet vertex buffer, 3: meshlet index buffer
+		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_TASK_BIT_EXT /*| VK_SHADER_STAGE_MESH_BIT_EXT*/, static_cast<uint32_t>(setLayoutBindings.size())));
+		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_TASK_BIT_EXT /*| VK_SHADER_STAGE_MESH_BIT_EXT*/, static_cast<uint32_t>(setLayoutBindings.size())));
+		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_TASK_BIT_EXT /*| VK_SHADER_STAGE_MESH_BIT_EXT*/, static_cast<uint32_t>(setLayoutBindings.size())));
+		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_TASK_BIT_EXT /*| VK_SHADER_STAGE_MESH_BIT_EXT*/, static_cast<uint32_t>(setLayoutBindings.size())));
+
+		VkDescriptorSetLayoutCreateInfo descriptorLayoutCI{};
+		descriptorLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		descriptorLayoutCI.bindingCount = static_cast<uint32_t>(setLayoutBindings.size());
+		descriptorLayoutCI.pBindings = setLayoutBindings.data();
+		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayoutCI, nullptr, &descriptorSetLayoutMeshShader));
+
+		// Allocate & Write DescriptorSets
+		VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
+		descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		descriptorSetAllocInfo.descriptorPool = descriptorPool;
+		descriptorSetAllocInfo.pSetLayouts = &descriptorSetLayoutMeshShader;
+		descriptorSetAllocInfo.descriptorSetCount = 1;
+
+		VK_CHECK_RESULT(vkAllocateDescriptorSets(device->logicalDevice, &descriptorSetAllocInfo, &meshShaderDescriptorSet));
+
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets;
+		// 0: vertxBuffer 1: meshlet buffer, 2: meshlet vertex buffer, 3: meshlet index buffer
+		writeDescriptorSets.push_back(vks::initializers::writeDescriptorSet(meshShaderDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,static_cast<uint32_t>(writeDescriptorSets.size()), &vertexBufferDescriptor));
+		writeDescriptorSets.push_back(vks::initializers::writeDescriptorSet(meshShaderDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,static_cast<uint32_t>(writeDescriptorSets.size()), &meshletsDescriptor));
+		writeDescriptorSets.push_back(vks::initializers::writeDescriptorSet(meshShaderDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, static_cast<uint32_t>(writeDescriptorSets.size()), &meshletVerticesDescriptor));
+		writeDescriptorSets.push_back(vks::initializers::writeDescriptorSet(meshShaderDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, static_cast<uint32_t>(writeDescriptorSets.size()), &meshletIndicesDescriptor));
+
+		vkUpdateDescriptorSets(device->logicalDevice, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+	}
+
 	// release
-	for (auto& vertex : tempVertices)
+	for (auto& vertex : tempVerticesCPU)
 	{
 		delete vertex; vertex = nullptr;
 	}
-	tempVertices.clear();
+
 }
 
 void myglTF::Model::bindBuffers(VkCommandBuffer commandBuffer)
@@ -766,13 +925,22 @@ void myglTF::Model::drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t
 void myglTF::Model::draw(VkCommandBuffer commandBuffer, uint32_t renderFlags, VkPipelineLayout pipelineLayout,
 	uint32_t bindImageSet, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT)
 {
-	if (!buffersBound) {
-		const VkDeviceSize offsets[1] = { 0 };
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertices.buffer, offsets);
-		vkCmdBindIndexBuffer(commandBuffer, indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+	if (vkCmdDrawMeshTasksEXT) // mesh shader
+	{
+		/*vkCmdBindPipeline()*/
 	}
-	for (auto& node : nodes) {
-		drawNode(node, commandBuffer, renderFlags, pipelineLayout, bindImageSet, vkCmdDrawMeshTasksEXT);
+	else // traditional pipeline
+	{
+		if (!buffersBound) {
+			{
+				const VkDeviceSize offsets[1] = { 0 };
+				vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertices.buffer, offsets);
+				vkCmdBindIndexBuffer(commandBuffer, indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+			}
+		}
+		for (auto& node : nodes) {
+			drawNode(node, commandBuffer, renderFlags, pipelineLayout, bindImageSet, vkCmdDrawMeshTasksEXT);
+		}
 	}
 }
 
@@ -1296,8 +1464,16 @@ void myglTF::Texture::fromglTfImage(tinygltf::Image& gltfimage, std::string path
 	descriptor.imageLayout = imageLayout;
 }
 
+myglTF::Material::~Material()
+{
+	if (traditionalPipeline)
+		vkDestroyPipeline(device->logicalDevice, traditionalPipeline, nullptr);
+	if (meshShaderPipeline)
+		vkDestroyPipeline(device->logicalDevice, meshShaderPipeline, nullptr);
+}
+
 void myglTF::Material::createDescriptorSet(VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout,
-	uint32_t descriptorBindingFlags)
+                                           uint32_t descriptorBindingFlags)
 {
 	VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
 	descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1530,4 +1706,96 @@ void myglTF::Model::createEmptyTexture(VkQueue transferQueue)
 	emptyTexture.descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	emptyTexture.descriptor.imageView = emptyTexture.view;
 	emptyTexture.descriptor.sampler = emptyTexture.sampler;
+}
+
+
+void myglTF::Model::generateMeshlets(const std::vector<VertexType*>& originalVertices, const std::vector<uint32_t>& originalIndices, std::vector<uint32_t>&
+                                     outMeshletVertices, std::vector<uint32_t>& outMeshletPackedTriangles, meshopt_Meshlet** outMeshlets, uint32_t&
+                                     outNumMeshlets)
+{
+	// Strongly influenced by https://github.com/chaoticbob/GraphicsExperiments/tree/main/projects/geometry/111_mesh_shader_meshlets_vulkan
+
+	std::vector<glm::vec3> vertexPositions;
+	std::vector<meshopt_Meshlet> meshlets;
+	std::vector<uint8_t> meshletTriangles; // meshletTriangle means 3 indices for meshletVertex
+
+	if (originalVertices.empty() || originalIndices.empty())
+	{
+		vks::tools::exitFatal("Geometry Infos in CPU are empty", -1);
+		return;
+	}
+
+	// Fill meshletVertices, meshletTriangles
+	{
+		// Fill vertexPositions vector
+		for (const auto& vertex : originalVertices)
+		{
+			vertexPositions.emplace_back(vertex->pos);
+		}
+
+		size_t numVertices = originalVertices.size();
+		size_t numIdices = originalIndices.size();
+
+		const size_t kMaxVertices = 64; // max num of vertices MeshShader Output
+		const size_t kMaxTriangles = 124; // max num of triangles MeshShader Output
+		const float  kConeWeight = 0.0f;
+
+		const size_t maxMeshlets = meshopt_buildMeshletsBound(numIdices, kMaxVertices, kMaxTriangles);
+
+		meshlets.resize(maxMeshlets);
+		outMeshletVertices.resize(maxMeshlets * kMaxVertices);
+		meshletTriangles.resize(maxMeshlets * kMaxTriangles * 3);
+
+		size_t meshletCount = meshopt_buildMeshlets(
+			meshlets.data(),
+			outMeshletVertices.data(),
+			meshletTriangles.data(),
+			reinterpret_cast<const uint32_t*>(originalIndices.data()), // Original Indices
+			numIdices,
+			reinterpret_cast<const float*>(vertexPositions.data()), // Position of vertex - Optimizer Only needs position info
+			numVertices,
+			sizeof(glm::vec3),
+			kMaxVertices,
+			kMaxTriangles,
+			kConeWeight);
+
+		const meshopt_Meshlet& lastMeshlet = meshlets[meshletCount - 1];
+		outMeshletVertices.resize(lastMeshlet.vertex_offset + lastMeshlet.vertex_count);
+		// make meshlet indices(triangles) aligned to 4 bytes
+		meshletTriangles.resize(lastMeshlet.triangle_offset + ((lastMeshlet.triangle_count * 3 + 3) & ~3));
+		meshlets.resize(meshletCount);
+
+		vertexPositions.clear();
+	}
+
+	// generate packed triangle
+	for (auto& m : meshlets)
+	{
+		// Save triangle offset for current meshlet
+		uint32_t triangleOffset = static_cast<uint32_t>(outMeshletPackedTriangles.size());
+
+		// Repack to uint32_t
+		for (uint32_t i = 0; i < m.triangle_count; ++i)
+		{
+			uint32_t i0 = 3 * i + 0 + m.triangle_offset;
+			uint32_t i1 = 3 * i + 1 + m.triangle_offset;
+			uint32_t i2 = 3 * i + 2 + m.triangle_offset;
+
+			uint8_t  vIdx0 = meshletTriangles[i0];
+			uint8_t  vIdx1 = meshletTriangles[i1];
+			uint8_t  vIdx2 = meshletTriangles[i2];
+			uint32_t packed = ((static_cast<uint32_t>(vIdx0) & 0xFF) << 0) |
+				((static_cast<uint32_t>(vIdx1) & 0xFF) << 8) |
+				((static_cast<uint32_t>(vIdx2) & 0xFF) << 16);
+			outMeshletPackedTriangles.push_back(packed);
+		}
+
+		// Update triangle offset for current meshlet
+		m.triangle_offset = triangleOffset;
+	}
+
+	// move meshlets to outParam
+	outNumMeshlets = meshlets.size();
+	*outMeshlets = new meshopt_Meshlet[meshlets.size()]; // released after buffer created
+	std::move(meshlets.begin(), meshlets.end(), *outMeshlets);
 }

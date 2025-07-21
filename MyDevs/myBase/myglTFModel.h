@@ -43,6 +43,7 @@
 #include <android/asset_manager.h>
 #endif
 
+struct meshopt_Meshlet;
 namespace myglTF
 {
 	inline bool loadImageDataFunc(tinygltf::Image* image, const int imageIndex, std::string* error, std::string* warning, int req_width, int req_height, const unsigned char* bytes, int size, void* userData)
@@ -115,12 +116,13 @@ namespace myglTF
 		myglTF::Texture* specularGlossinessTexture;
 		myglTF::Texture* diffuseTexture;
 
-		VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-		VkDescriptorSet meshShaderDescriptorSet;
-		VkPipeline traditionalPipeline;
-		VkPipeline meshShaderPipeline;
+		VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
+		VkDescriptorSet meshShaderDescriptorSet{ VK_NULL_HANDLE };
+		VkPipeline traditionalPipeline{ VK_NULL_HANDLE };
+		VkPipeline meshShaderPipeline{ VK_NULL_HANDLE };
 
 		Material(vks::VulkanDevice* device) : device(device) {};
+		~Material();
 		void createDescriptorSet(VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout, uint32_t descriptorBindingFlags);
 	};
 
@@ -242,17 +244,16 @@ namespace myglTF
 
 	typedef struct VERTEX_TYPE
 	{
-		virtual ~VERTEX_TYPE() = default;
-		glm::vec3 pos;
-		glm::vec3 normal;
-		glm::vec2 uv;
-		glm::vec4 color;
-		glm::vec4 tangent;
+		alignas(16)glm::vec3 pos;
+		alignas(16)glm::vec3 normal;
+		alignas(16)glm::vec2 uv;
+		alignas(16)glm::vec4 color;
+		alignas(16)glm::vec4 tangent;
 	}VertexType, VertexSimple;
 	struct VertexSkinning : public VertexType
 	{
-		glm::vec4 joint0;
-		glm::vec4 weight0;
+		alignas(16)glm::vec4 joint0;
+		alignas(16)glm::vec4 weight0;
 	};
 
 	enum FileLoadingFlags {
@@ -260,7 +261,9 @@ namespace myglTF
 		PreTransformVertices = 0x00000001,
 		PreMultiplyVertexColors = 0x00000002,
 		FlipY = 0x00000004,
-		DontLoadImages = 0x00000008
+		DontLoadImages = 0x00000008,
+		PrepareTraditionalPipeline = 0x000000010,
+		PrepareMeshShaderPipeline = 0x000000020,
 	};
 
 	// descriptorset bind num into pipeline
@@ -278,26 +281,43 @@ namespace myglTF
 	public:
 		VkDescriptorSetLayout descriptorSetLayoutImage {VK_NULL_HANDLE};
 		VkDescriptorSetLayout descriptorSetLayoutUbo{ VK_NULL_HANDLE };
+		VkDescriptorSetLayout descriptorSetLayoutMeshShader{ VK_NULL_HANDLE };
 		static VkMemoryPropertyFlags memoryPropertyFlags;
 		static uint32_t descriptorBindingFlags;
 	private:
 		myglTF::Texture* getTexture(uint32_t index);
 		myglTF::Texture emptyTexture;
 		void createEmptyTexture(VkQueue transferQueue);
+		/**
+		 * @param outMeshletVertices: Meshlet::vertex == Index from OriginalVertexBuffer
+		 * @param outMeshletPackedTriangles: single uint32 contains 3 indices(triangle)
+		 * @param pOutMeshlets
+		 * @param outNumMeshlets
+		 */
+		void generateMeshlets(const std::vector<VertexType*>& originalVertices, const std::vector<uint32_t>& originalIndices, std::vector<uint32_t>&
+		                      outMeshletVertices, std::vector<uint32_t>& outMeshletPackedTriangles, meshopt_Meshlet** pOutMeshlets, uint32_t&
+		                      outNumMeshlets);
 	public:
 		vks::VulkanDevice* device;
 		VkDescriptorPool descriptorPool;
-
-		struct Vertices {
+		typedef struct PRIMITIVE_TAG
+		{
 			int count;
 			VkBuffer buffer;
 			VkDeviceMemory memory;
-		} vertices;
-		struct Indices {
-			int count;
-			VkBuffer buffer;
-			VkDeviceMemory memory;
-		} indices;
+		}Vertices, Indices, MeshletVertices, MeshletIndices, Meshlets;
+		Vertices vertices;
+		Indices indices;
+#pragma region MeshShader
+		Meshlets meshlets;
+		MeshletVertices meshletVertices;
+		MeshletIndices meshletIndices;
+		VkDescriptorBufferInfo vertexBufferDescriptor; // for Original vertex, used only for mesh shader
+		VkDescriptorBufferInfo meshletsDescriptor;
+		VkDescriptorBufferInfo meshletVerticesDescriptor;
+		VkDescriptorBufferInfo meshletIndicesDescriptor;
+		VkDescriptorSet meshShaderDescriptorSet{ VK_NULL_HANDLE };
+#pragma endregion MeshShader
 
 		std::vector<Node*> nodes;
 		std::vector<Node*> linearNodes;

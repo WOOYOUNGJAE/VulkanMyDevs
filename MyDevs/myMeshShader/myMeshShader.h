@@ -42,7 +42,8 @@ public:
 		} values;
 	} shaderData;
 
-	VkPipelineLayout pipelineLayout{ VK_NULL_HANDLE };
+	VkPipelineLayout traditionalPipelineLayout{ VK_NULL_HANDLE };
+	VkPipelineLayout meshShaderPipelineLayout{ VK_NULL_HANDLE };
 	VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
 
 	struct DescriptorSetLayouts {
@@ -58,8 +59,8 @@ public:
 	~MyMeshShader();
 	virtual void getEnabledFeatures();
 	void buildCommandBuffers();
-	void loadglTFFile(std::string filename);
 	void loadAssets();
+	void makeMeshlets();
 	void setupDescriptors();
 	void preparePipelines();
 	void prepareUniformBuffers();

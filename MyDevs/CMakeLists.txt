@@ -18,6 +18,7 @@ function(buildMyBase)
     add_library(myBase STATIC ${MYBASE_SOURCES} ${MYBASE_HEADERS})
 
     target_link_libraries(myBase PUBLIC base)
+    target_link_libraries(myBase PUBLIC meshoptimizer)
 
     target_include_directories(myBase PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/myBase")
     set_target_properties(myBase PROPERTIES FOLDER "myDevs")
@@ -68,7 +69,6 @@ function(buildExample EXAMPLE_NAME)
         add_executable(${EXAMPLE_NAME} ${MAIN_CPP} ${SOURCE} ${MAIN_HEADER} ${SHADERS_GLSL} ${SHADERS_HLSL} ${SHADERS_SLANG} ${README_FILES})
         target_link_libraries(${EXAMPLE_NAME} myBase )
     endif(WIN32)
-    target_link_libraries(${EXAMPLE_NAME} meshoptimizer)
 
     file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
     set_target_properties(${EXAMPLE_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)

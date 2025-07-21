@@ -14,6 +14,8 @@
 
 #include "myMeshShader.h"
 
+#include "meshoptimizer.h"
+
 // global
 bool g_useMeshShader = false;
 
@@ -54,7 +56,8 @@ MyMeshShader::MyMeshShader() : VulkanExampleBase()
 MyMeshShader::~MyMeshShader()
 {
 	if (device) {
-		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+		vkDestroyPipelineLayout(device, traditionalPipelineLayout, nullptr);
+		vkDestroyPipelineLayout(device, meshShaderPipelineLayout, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.scene, nullptr);
 		//vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.textures, nullptr);
 		shaderData.buffer.destroy();
@@ -94,12 +97,15 @@ void MyMeshShader::buildCommandBuffers()
 		vkCmdBeginRenderPass(drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdSetViewport(drawCmdBuffers[i], 0, 1, &viewport);
 		vkCmdSetScissor(drawCmdBuffers[i], 0, 1, &scissor);
+
+		VkPipelineLayout curPipelineLayout = g_useMeshShader ? meshShaderPipelineLayout : traditionalPipelineLayout;
+		PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTask = g_useMeshShader ? vkCmdDrawMeshTasksEXT : nullptr;
+
 		// Bind sceneUBO descriptor to set 0
-		vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, curPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
 		// POI: Draw the glTF scene
-		PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTask = g_useMeshShader ? vkCmdDrawMeshTasksEXT : nullptr;
-		model.draw(drawCmdBuffers[i], myglTF::RenderFlags::BindImages, pipelineLayout, 2, cmdDrawMeshTask);
+		model.draw(drawCmdBuffers[i], myglTF::RenderFlags::BindImages, curPipelineLayout, 2, cmdDrawMeshTask);
 
 		drawUI(drawCmdBuffers[i]);
 		vkCmdEndRenderPass(drawCmdBuffers[i]);
@@ -110,7 +116,7 @@ void MyMeshShader::buildCommandBuffers()
 
 void MyMeshShader::loadAssets()
 {
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue);
+	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, myglTF::FileLoadingFlags::PrepareTraditionalPipeline | myglTF::FileLoadingFlags::PrepareMeshShaderPipeline);
 }
 
 void MyMeshShader::setupDescriptors()
@@ -153,14 +159,19 @@ void MyMeshShader::preparePipelines()
 {
 	// Layout
 	// Pipeline layout uses both descriptor sets (set 0 = matrices, set 1 = material)
-	std::array<VkDescriptorSetLayout, 3> setLayouts = { descriptorSetLayouts.scene, model.descriptorSetLayoutUbo, model.descriptorSetLayoutImage };
+	std::vector<VkDescriptorSetLayout> setLayouts = { descriptorSetLayouts.scene, model.descriptorSetLayoutUbo, model.descriptorSetLayoutImage };
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(setLayouts.data(), (setLayouts.size()));
+	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &traditionalPipelineLayout));
+
+	setLayouts.push_back(model.descriptorSetLayoutMeshShader);
+	pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(setLayouts.data(), (setLayouts.size()));
+	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &meshShaderPipelineLayout));
+
 	//// We will use push constants to push the local matrices of a primitive to the vertex shader
 	//VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, sizeof(glm::mat4), 0);
 	//// Push constant ranges are part of the traditionalPipeline layout
 	//pipelineLayoutCI.pushConstantRangeCount = 1;
 	//pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
 
 	// Pipelines
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
@@ -187,7 +198,7 @@ void MyMeshShader::preparePipelines()
 	};
 	VkPipelineVertexInputStateCreateInfo vertexInputStateCI = vks::initializers::pipelineVertexInputStateCreateInfo(vertexInputBindings, vertexInputAttributes);
 
-	VkGraphicsPipelineCreateInfo pipelineCI = vks::initializers::pipelineCreateInfo(pipelineLayout, renderPass, 0);
+	VkGraphicsPipelineCreateInfo pipelineCI = vks::initializers::pipelineCreateInfo(traditionalPipelineLayout, renderPass, 0);
 	pipelineCI.pRasterizationState = &rasterizationStateCI;
 	pipelineCI.pColorBlendState = &colorBlendStateCI;
 	pipelineCI.pMultisampleState = &multisampleStateCI;
@@ -195,8 +206,8 @@ void MyMeshShader::preparePipelines()
 	pipelineCI.pDepthStencilState = &depthStencilStateCI;
 	pipelineCI.pDynamicState = &dynamicStateCI;
 
-	traditionalShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/scene.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	traditionalShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/scene.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	traditionalShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/sceneBind.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	traditionalShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/sceneBind.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	meshShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/meshshader.task.spv", VK_SHADER_STAGE_TASK_BIT_EXT);
 	meshShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
@@ -206,6 +217,7 @@ void MyMeshShader::preparePipelines()
 	for (auto &material : model.materials) {
 
 		// traditional pipeline
+		pipelineCI.layout = traditionalPipelineLayout;
 		pipelineCI.pVertexInputState = &vertexInputStateCI;
 		pipelineCI.pInputAssemblyState = &inputAssemblyStateCI;
 		pipelineCI.stageCount = static_cast<uint32_t>(traditionalShaderStages.size());
@@ -233,6 +245,7 @@ void MyMeshShader::preparePipelines()
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &material.traditionalPipeline));
 
 		// mesh shader pipeline
+		pipelineCI.layout = meshShaderPipelineLayout;
 		pipelineCI.pVertexInputState = nullptr;
 		pipelineCI.pInputAssemblyState = nullptr;
 		pipelineCI.stageCount = static_cast<uint32_t>(meshShaderStages.size());
@@ -298,6 +311,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 }
 int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, _In_ LPSTR, _In_ int)
 {
+#ifdef _DEBUG
+	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
 	for (int32_t i = 0; i < __argc; i++) { MyMeshShader::args.push_back(__argv[i]); };
 	myMeshShader = new MyMeshShader();
 	myMeshShader->initVulkan();
