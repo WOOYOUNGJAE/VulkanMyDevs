@@ -1,7 +1,7 @@
 #version 450
 
-layout (set = 1, binding = 0) uniform sampler2D samplerColorMap;
-layout (set = 1, binding = 1) uniform sampler2D samplerNormalMap;
+layout (set = 2, binding = 0) uniform sampler2D samplerColorMap;
+layout (set = 2, binding = 1) uniform sampler2D samplerNormalMap;
 
 layout (location = 0) in vec3 inNormal;
 layout (location = 1) in vec3 inColor;

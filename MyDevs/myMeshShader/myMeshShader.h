@@ -10,7 +10,7 @@
 * and adds data structures, functions and shaders required to render a more complex scene using Crytek's Sponza model.
 *
 * This sample comes with a tutorial, see the README.md in this folder
-*/
+*//*
 
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
@@ -20,10 +20,10 @@
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 #define TINYGLTF_ANDROID_LOAD_FROM_ASSETS
 #endif
-#include "tiny_gltf.h"
+#include "tiny_gltf.h"*/
 
 #include "vulkanexamplebase.h"
-
+#include "myglTFModel.h"
 
  // Contains everything required to render a basic glTF scene in Vulkan
  // This class is heavily simplified (compared to glTF's feature set) but retains the basic glTF structure
@@ -136,6 +136,7 @@ class MyMeshShader : public VulkanExampleBase
 {
 public:
 	VulkanglTFScene glTFScene; // materials contain pipeline
+	myglTF::Model model;
 	VkPipeline globalPipeline;
 
 	struct ShaderData {
@@ -152,8 +153,8 @@ public:
 	VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
 
 	struct DescriptorSetLayouts {
-		VkDescriptorSetLayout matrices{ VK_NULL_HANDLE };
-		VkDescriptorSetLayout textures{ VK_NULL_HANDLE };
+		VkDescriptorSetLayout scene{ VK_NULL_HANDLE };
+		//VkDescriptorSetLayout textures{ VK_NULL_HANDLE };
 	} descriptorSetLayouts;
 
 	// Extensions

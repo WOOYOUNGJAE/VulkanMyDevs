@@ -18,7 +18,7 @@
 	Vulkan glTF scene class
 */
 
-VulkanglTFScene::~VulkanglTFScene()
+glTFModel::~glTFModel()
 {
 	for (auto node : nodes) {
 		delete node;
@@ -45,7 +45,7 @@ VulkanglTFScene::~VulkanglTFScene()
 	The following functions take a glTF input model loaded via tinyglTF and convert all required data into our own structure
 */
 
-void VulkanglTFScene::loadImages(tinygltf::Model& input)
+void glTFModel::loadImages(tinygltf::Model& input)
 {
 	// POI: The textures for the glTF file used in this sample are stored as external ktx files, so we can directly load them from disk without the need for conversion
 	images.resize(input.images.size());
@@ -55,7 +55,7 @@ void VulkanglTFScene::loadImages(tinygltf::Model& input)
 	}
 }
 
-void VulkanglTFScene::loadTextures(tinygltf::Model& input)
+void glTFModel::loadTextures(tinygltf::Model& input)
 {
 	textures.resize(input.textures.size());
 	for (size_t i = 0; i < input.textures.size(); i++) {
@@ -63,7 +63,7 @@ void VulkanglTFScene::loadTextures(tinygltf::Model& input)
 	}
 }
 
-void VulkanglTFScene::loadMaterials(tinygltf::Model& input)
+void glTFModel::loadMaterials(tinygltf::Model& input)
 {
 	materials.resize(input.materials.size());
 	for (size_t i = 0; i < input.materials.size(); i++) {
@@ -88,9 +88,9 @@ void VulkanglTFScene::loadMaterials(tinygltf::Model& input)
 	}
 }
 
-void VulkanglTFScene::loadNode(const tinygltf::Node& inputNode, const tinygltf::Model& input, VulkanglTFScene::Node* parent, std::vector<uint32_t>& indexBuffer, std::vector<VulkanglTFScene::Vertex>& vertexBuffer)
+void glTFModel::loadNode(const tinygltf::Node& inputNode, const tinygltf::Model& input, glTFModel::Node* parent, std::vector<uint32_t>& indexBuffer, std::vector<glTFModel::Vertex>& vertexBuffer)
 {
-	VulkanglTFScene::Node* node = new VulkanglTFScene::Node{};
+	glTFModel::Node* node = new glTFModel::Node{};
 	node->name = inputNode.name;
 	node->parent = parent;
 	
@@ -226,7 +226,7 @@ void VulkanglTFScene::loadNode(const tinygltf::Node& inputNode, const tinygltf::
 	}
 }
 
-VkDescriptorImageInfo VulkanglTFScene::getTextureDescriptor(const size_t index)
+VkDescriptorImageInfo glTFModel::getTextureDescriptor(const size_t index)
 {
 	return images[index].texture.descriptor;
 }
@@ -236,7 +236,7 @@ VkDescriptorImageInfo VulkanglTFScene::getTextureDescriptor(const size_t index)
 */
 
 // Draw a single node including child nodes (if present)
-void VulkanglTFScene::drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VulkanglTFScene::Node* node)
+void glTFModel::drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glTFModel::Node* node)
 {
 	if (!node->visible) {
 		return;
@@ -245,16 +245,16 @@ void VulkanglTFScene::drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout p
 		// Pass the node's matrix via push constants
 		// Traverse the node hierarchy to the top-most parent to get the final matrix of the current node
 		glm::mat4 nodeMatrix = node->matrix;
-		VulkanglTFScene::Node* currentParent = node->parent;
+		glTFModel::Node* currentParent = node->parent;
 		while (currentParent) {
 			nodeMatrix = currentParent->matrix * nodeMatrix;
 			currentParent = currentParent->parent;
 		}
 		// Pass the final matrix to the vertex shader using push constants
 		vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &nodeMatrix);
-		for (VulkanglTFScene::Primitive& primitive : node->mesh.primitives) {
+		for (glTFModel::Primitive& primitive : node->mesh.primitives) {
 			if (primitive.indexCount > 0) {
-				VulkanglTFScene::Material& material = materials[primitive.materialIndex];
+				glTFModel::Material& material = materials[primitive.materialIndex];
 				// POI: Bind the pipeline for the node's material
 				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.traditionalPipeline);
 				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &material.descriptorSet, 0, nullptr);
@@ -268,7 +268,7 @@ void VulkanglTFScene::drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout p
 }
 
 // Draw the glTF scene starting at the top-level-nodes
-void VulkanglTFScene::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout)
+void glTFModel::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout)
 {
 	// All vertices and indices are stored in single buffers, so we only need to bind once
 	VkDeviceSize offsets[1] = { 0 };
@@ -372,7 +372,7 @@ void VulkanExample::loadglTFFile(std::string filename)
 	glTFScene.path = filename.substr(0, pos);
 
 	std::vector<uint32_t> indexBuffer;
-	std::vector<VulkanglTFScene::Vertex> vertexBuffer;
+	std::vector<glTFModel::Vertex> vertexBuffer;
 
 	if (fileLoaded) {
 		glTFScene.loadImages(glTFInput);
@@ -393,7 +393,7 @@ void VulkanExample::loadglTFFile(std::string filename)
 	// We will be using one single vertex buffer and one single index buffer for the whole glTF scene
 	// Primitives (of the glTF model) will then index into these using index offsets
 
-	size_t vertexBufferSize = vertexBuffer.size() * sizeof(VulkanglTFScene::Vertex);
+	size_t vertexBufferSize = vertexBuffer.size() * sizeof(glTFModel::Vertex);
 	size_t indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
 	glTFScene.indices.count = static_cast<uint32_t>(indexBuffer.size());
 
@@ -549,14 +549,14 @@ void VulkanExample::preparePipelines()
 	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
 
 	const std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
-		vks::initializers::vertexInputBindingDescription(0, sizeof(VulkanglTFScene::Vertex), VK_VERTEX_INPUT_RATE_VERTEX),
+		vks::initializers::vertexInputBindingDescription(0, sizeof(glTFModel::Vertex), VK_VERTEX_INPUT_RATE_VERTEX),
 	};
 	const std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
-		vks::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VulkanglTFScene::Vertex, pos)),
-		vks::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VulkanglTFScene::Vertex, normal)),
-		vks::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VulkanglTFScene::Vertex, uv)),
-		vks::initializers::vertexInputAttributeDescription(0, 3, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VulkanglTFScene::Vertex, color)),
-		vks::initializers::vertexInputAttributeDescription(0, 4, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VulkanglTFScene::Vertex, tangent)),
+		vks::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(glTFModel::Vertex, pos)),
+		vks::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(glTFModel::Vertex, normal)),
+		vks::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32B32_SFLOAT, offsetof(glTFModel::Vertex, uv)),
+		vks::initializers::vertexInputAttributeDescription(0, 3, VK_FORMAT_R32G32B32_SFLOAT, offsetof(glTFModel::Vertex, color)),
+		vks::initializers::vertexInputAttributeDescription(0, 4, VK_FORMAT_R32G32B32_SFLOAT, offsetof(glTFModel::Vertex, tangent)),
 	};
 	VkPipelineVertexInputStateCreateInfo vertexInputStateCI = vks::initializers::pipelineVertexInputStateCreateInfo(vertexInputBindings, vertexInputAttributes);
 
@@ -637,12 +637,12 @@ void VulkanExample::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 	if (overlay->header("Visibility")) {
 
 		if (overlay->button("All")) {
-			std::for_each(glTFScene.nodes.begin(), glTFScene.nodes.end(), [](VulkanglTFScene::Node* node) { node->visible = true; });
+			std::for_each(glTFScene.nodes.begin(), glTFScene.nodes.end(), [](glTFModel::Node* node) { node->visible = true; });
 			buildCommandBuffers();
 		}
 		ImGui::SameLine();
 		if (overlay->button("None")) {
-			std::for_each(glTFScene.nodes.begin(), glTFScene.nodes.end(), [](VulkanglTFScene::Node* node) { node->visible = false; });
+			std::for_each(glTFScene.nodes.begin(), glTFScene.nodes.end(), [](glTFModel::Node* node) { node->visible = false; });
 			buildCommandBuffers();
 		}
 		ImGui::NewLine();

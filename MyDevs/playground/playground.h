@@ -27,7 +27,7 @@
 
  // Contains everything required to render a basic glTF scene in Vulkan
  // This class is heavily simplified (compared to glTF's feature set) but retains the basic glTF structure
-class VulkanglTFScene
+class glTFModel
 {
 public:
 	// The class requires some Vulkan objects so it can create it's own resources
@@ -121,20 +121,20 @@ public:
 
 	std::string path;
 
-	~VulkanglTFScene();
+	~glTFModel();
 	VkDescriptorImageInfo getTextureDescriptor(const size_t index);
 	void loadImages(tinygltf::Model& input);
 	void loadTextures(tinygltf::Model& input);
 	void loadMaterials(tinygltf::Model& input);
-	void loadNode(const tinygltf::Node& inputNode, const tinygltf::Model& input, VulkanglTFScene::Node* parent, std::vector<uint32_t>& indexBuffer, std::vector<VulkanglTFScene::Vertex>& vertexBuffer);
-	void drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VulkanglTFScene::Node* node);
+	void loadNode(const tinygltf::Node& inputNode, const tinygltf::Model& input, glTFModel::Node* parent, std::vector<uint32_t>& indexBuffer, std::vector<glTFModel::Vertex>& vertexBuffer);
+	void drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glTFModel::Node* node);
 	void draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout);
 };
 
 class VulkanExample : public VulkanExampleBase
 {
 public:
-	VulkanglTFScene glTFScene;
+	glTFModel glTFScene;
 
 	struct ShaderData {
 		vks::Buffer buffer;

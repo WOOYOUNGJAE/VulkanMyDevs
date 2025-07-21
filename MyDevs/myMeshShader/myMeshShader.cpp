@@ -15,7 +15,7 @@
 #include "myMeshShader.h"
 
 // global
-bool g_useMeshShader = true;
+bool g_useMeshShader = false;
 	
 VulkanglTFScene::~VulkanglTFScene()
 {
@@ -323,8 +323,8 @@ MyMeshShader::~MyMeshShader()
 {
 	if (device) {
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.matrices, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.textures, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.scene, nullptr);
+		//vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.textures, nullptr);
 		shaderData.buffer.destroy();
 	}
 }
@@ -366,7 +366,8 @@ void MyMeshShader::buildCommandBuffers()
 		vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
 		// POI: Draw the glTF scene
-		glTFScene.draw(drawCmdBuffers[i], pipelineLayout, vkCmdDrawMeshTasksEXT);
+		//glTFScene.draw(drawCmdBuffers[i], pipelineLayout, vkCmdDrawMeshTasksEXT);
+		model.draw(drawCmdBuffers[i], myglTF::RenderFlags::BindImages, pipelineLayout, 2);
 
 		drawUI(drawCmdBuffers[i]);
 		vkCmdEndRenderPass(drawCmdBuffers[i]);
@@ -489,7 +490,8 @@ void MyMeshShader::loadglTFFile(std::string filename)
 
 void MyMeshShader::loadAssets()
 {
-	loadglTFFile(getAssetPath() + "models/sponza/sponza.gltf");
+	//loadglTFFile(getAssetPath() + "models/sponza/sponza.gltf");
+	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue);
 	//loadglTFFile(getAssetPath() + "models/armor/armor.gltf");
 }
 
@@ -500,66 +502,64 @@ void MyMeshShader::setupDescriptors()
 	*/
 
 	// One ubo to pass dynamic data to the shader
-	// Two combined image samplers per material as each material uses color and normal maps
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1),
-		vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(glTFScene.materials.size()) * 2),
+		vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1), // scene Info(light, viewproj,,)
 	};
 	// One set for matrices and one per model image/texture
-	const uint32_t maxSetCount = static_cast<uint32_t>(glTFScene.images.size()) + 1;
+	const uint32_t maxSetCount = static_cast<uint32_t>(model.textures.size()) + 1;
 	VkDescriptorPoolCreateInfo descriptorPoolInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, maxSetCount);
 	VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolInfo, nullptr, &descriptorPool));
+	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings;
+	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI;
+	// DescriptorSet Layout for passing matrices
+	// descriptorSet for Scene Global info
+	{
+		setLayoutBindings = {
+			// Binding 0 : scene Info(light, viewproj,,)
+			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, 0),
+		};
+		descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings.data(), static_cast<uint32_t>(setLayoutBindings.size()));
 
-	// Descriptor set layout for passing matrices
-	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
-		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, 0)
-	};
-	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings.data(), static_cast<uint32_t>(setLayoutBindings.size()));
+		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.scene));
+	}
 
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.matrices));
-
-	// Descriptor set layout for passing material textures
-	setLayoutBindings = {
-		// Color map
-		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
-		// Normal map
-		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
-	};
-	descriptorSetLayoutCI.pBindings = setLayoutBindings.data();
-	descriptorSetLayoutCI.bindingCount = 2;
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.textures));
+	//// Descriptor set layout for passing material textures
+	//// layout is already created while loading gltf
+	//{
+	//}
 
 	// Descriptor set for scene matrices
-	VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.matrices, 1);
+	VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.scene, 1);
 	VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet));
 	VkWriteDescriptorSet writeDescriptorSet = vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &shaderData.buffer.descriptor);
 	vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 
-	// Descriptor sets for materials
-	for (auto& material : glTFScene.materials) {
-		const VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.textures, 1);
-		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &material.descriptorSet));
-		VkDescriptorImageInfo colorMap = glTFScene.getTextureDescriptor(material.baseColorTextureIndex);
-		VkDescriptorImageInfo normalMap = glTFScene.getTextureDescriptor(material.normalTextureIndex);
-		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
-			vks::initializers::writeDescriptorSet(material.descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &colorMap),
-			vks::initializers::writeDescriptorSet(material.descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &normalMap),
-		};
-		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-	}
+	//// Descriptor sets for materials
+	//for (auto& material : model.materials) {
+	//	const VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.textures, 1);
+	//	VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &material.descriptorSet));
+	//	VkDescriptorImageInfo colorMap = model.;
+	//	VkDescriptorImageInfo colorMap = glTFScene.getTextureDescriptor(material.baseColorTextureIndex);
+	//	VkDescriptorImageInfo normalMap = glTFScene.getTextureDescriptor(material.normalTextureIndex);
+	//	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+	//		vks::initializers::writeDescriptorSet(material.descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &colorMap),
+	//		vks::initializers::writeDescriptorSet(material.descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &normalMap),
+	//	};
+	//	vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+	//}
 }
 
 void MyMeshShader::preparePipelines()
 {
 	// Layout
 	// Pipeline layout uses both descriptor sets (set 0 = matrices, set 1 = material)
-	std::array<VkDescriptorSetLayout, 2> setLayouts = { descriptorSetLayouts.matrices, descriptorSetLayouts.textures };
-	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
-	// We will use push constants to push the local matrices of a primitive to the vertex shader
-	VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, sizeof(glm::mat4), 0);
-	// Push constant ranges are part of the traditionalPipeline layout
-	pipelineLayoutCI.pushConstantRangeCount = 1;
-	pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
+	std::array<VkDescriptorSetLayout, 3> setLayouts = { descriptorSetLayouts.scene, model.descriptorSetLayoutUbo, model.descriptorSetLayoutImage };
+	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(setLayouts.data(), (setLayouts.size()));
+	//// We will use push constants to push the local matrices of a primitive to the vertex shader
+	//VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, sizeof(glm::mat4), 0);
+	//// Push constant ranges are part of the traditionalPipeline layout
+	//pipelineLayoutCI.pushConstantRangeCount = 1;
+	//pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
 	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
 
 	// Pipelines
@@ -603,7 +603,7 @@ void MyMeshShader::preparePipelines()
 	meshShaderStages[2] = loadShader(getShadersPath() + "myMeshShader/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// POI: Instead if using a few fixed pipelines, we create one traditionalPipeline for each material using the properties of that material
-	for (auto &material : glTFScene.materials) {
+	for (auto &material : model.materials) {
 
 		// traditional pipeline
 		pipelineCI.pVertexInputState = &vertexInputStateCI;
@@ -617,8 +617,8 @@ void MyMeshShader::preparePipelines()
 			float alphaMaskCutoff;
 		} materialSpecializationData;
 
-		materialSpecializationData.alphaMask = material.alphaMode == "MASK";
-		materialSpecializationData.alphaMaskCutoff = material.alphaCutOff;
+		materialSpecializationData.alphaMask = (material.alphaMode == myglTF::Material::ALPHAMODE_MASK);
+		materialSpecializationData.alphaMaskCutoff = material.alphaCutoff;
 
 		// POI: Constant fragment shader material parameters will be set using specialization constants
 		std::vector<VkSpecializationMapEntry> specializationMapEntries = {
@@ -629,7 +629,7 @@ void MyMeshShader::preparePipelines()
 		traditionalShaderStages[1].pSpecializationInfo = &specializationInfo;
 
 		// For double sided materials, culling will be disabled
-		rasterizationStateCI.cullMode = material.doubleSided ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+		rasterizationStateCI.cullMode = VK_CULL_MODE_BACK_BIT;
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &material.traditionalPipeline));
 
 		// mesh shader pipeline
@@ -682,39 +682,7 @@ void MyMeshShader::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 {
 	if (overlay->header("Visibility"))
 	{
-		if (overlay->checkBox("Use Mesh Shader", &g_useMeshShader))
-		{
-			
-		}
-		if (overlay->button("Wire")) {
-			
-			std::for_each(glTFScene.nodes.begin(), glTFScene.nodes.end(), [](VulkanglTFScene::Node* node) { node->visible = true; });
-			buildCommandBuffers();
-		}
-	}
-	if (overlay->header("Visibility")) {
-
-		if (overlay->button("All")) {
-			std::for_each(glTFScene.nodes.begin(), glTFScene.nodes.end(), [](VulkanglTFScene::Node* node) { node->visible = true; });
-			buildCommandBuffers();
-		}
-		ImGui::SameLine();
-		if (overlay->button("None")) {
-			std::for_each(glTFScene.nodes.begin(), glTFScene.nodes.end(), [](VulkanglTFScene::Node* node) { node->visible = false; });
-			buildCommandBuffers();
-		}
-		ImGui::NewLine();
-
-		// POI: Create a list of glTF nodes for visibility toggle
-		ImGui::BeginChild("#nodelist", ImVec2(200.0f * overlay->scale, 340.0f * overlay->scale), false);
-		for (auto& node : glTFScene.nodes)
-		{		
-			if (overlay->checkBox(node->name.c_str(), &node->visible))
-			{
-				buildCommandBuffers();
-			}
-		}
-		ImGui::EndChild();
+		(overlay->checkBox("Use Mesh Shader", &g_useMeshShader));
 	}
 }
 
