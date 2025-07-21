@@ -747,7 +747,8 @@ void myglTF::Model::drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t
 
 				if (vkCmdDrawMeshTasksEXT) // mesh shader pipeline
 				{
-
+					vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.meshShaderPipeline);
+					vkCmdDrawMeshTasksEXT(commandBuffer, 1, 1, 1);
 				}
 				else // traditional pipeilne, using vertex shader
 				{

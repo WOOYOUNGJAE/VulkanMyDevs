@@ -4,12 +4,10 @@ layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec3 inNormal;
 layout (location = 2) in vec2 inUV;
 layout (location = 3) in vec3 inColor;
-#ifdef USE_SKINNING
-layout (location = 4) in vec4 inJoint;
-layout (location = 5) in vec4 inWeight;
-layout (location = 6) in vec4 inTangent;
-#else // USE_SKINNING
 layout (location = 4) in vec4 inTangent;
+#ifdef USE_SKINNING
+layout (location = 5) in vec4 inJoint;
+layout (location = 6) in vec4 inWeight;
 #endif
 
 layout (set = 0, binding = 0) uniform UBOScene 
