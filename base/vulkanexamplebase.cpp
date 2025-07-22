@@ -236,9 +236,9 @@ void VulkanExampleBase::prepare()
 
 #if _DEBUG
 	// compile shaders
-	std::string batchPath = getShadersPath() + "base/ShaderCompile.bat";
-	system(batchPath.c_str());
-	std::cout << "\t...base project shaders compile completed.\n";
+	//std::string batchPath = getShadersPath() + "base/ShaderCompile.bat";
+	//system(batchPath.c_str());
+	//std::cout << "\t...base project shaders compile completed.\n";
 #endif
 
 

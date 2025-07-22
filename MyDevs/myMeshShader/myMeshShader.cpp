@@ -17,7 +17,7 @@
 #include "meshoptimizer.h"
 
 // global
-bool g_useMeshShader = false;
+bool g_useMeshShader = 1;
 
 
 /*
@@ -45,7 +45,7 @@ MyMeshShader::MyMeshShader() : VulkanExampleBase()
 
 	deviceCreatepNextChain = &enabledMeshShaderFeatures;
 
-	title = "glTF scene rendering";
+	title = "My MeshShader";
 	camera.type = Camera::CameraType::firstperson;
 	camera.flipY = true;
 	camera.setPosition(glm::vec3(0.0f, 1.0f, 0.0f));
@@ -107,7 +107,7 @@ void MyMeshShader::buildCommandBuffers()
 		// POI: Draw the glTF scene
 		model.draw(drawCmdBuffers[i], myglTF::RenderFlags::BindImages, curPipelineLayout, 2, cmdDrawMeshTask);
 
-		drawUI(drawCmdBuffers[i]);
+		//drawUI(drawCmdBuffers[i]); // TODO TEMP
 		vkCmdEndRenderPass(drawCmdBuffers[i]);
 		VK_CHECK_RESULT(vkEndCommandBuffer(drawCmdBuffers[i]));
 	}
@@ -116,7 +116,10 @@ void MyMeshShader::buildCommandBuffers()
 
 void MyMeshShader::loadAssets()
 {
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, myglTF::FileLoadingFlags::PrepareTraditionalPipeline | myglTF::FileLoadingFlags::PrepareMeshShaderPipeline);
+	myglTF::FileLoadingFlags loadingFlag = (myglTF::FileLoadingFlags)(
+		myglTF::FileLoadingFlags::UseRootTransformOnly | myglTF::FileLoadingFlags::PrepareTraditionalPipeline | myglTF::FileLoadingFlags::PrepareMeshShaderPipeline);
+	//model.loadFromFile(getAssetPath() + "models/sponza_multi_blas_transparent/sponza.gltf", vulkanDevice, queue, loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, loadingFlag);
 }
 
 void MyMeshShader::setupDescriptors()
@@ -184,7 +187,8 @@ void MyMeshShader::preparePipelines()
 	const std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 	VkPipelineDynamicStateCreateInfo dynamicStateCI = vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables.data(), static_cast<uint32_t>(dynamicStateEnables.size()), 0);
 	std::array<VkPipelineShaderStageCreateInfo, 2> traditionalShaderStages;
-	std::array<VkPipelineShaderStageCreateInfo, 3> meshShaderStages;
+	std::array<VkPipelineShaderStageCreateInfo, 2> meshShaderStages; // TODO no task shader yet
+	//std::array<VkPipelineShaderStageCreateInfo, 3> meshShaderStages;
 
 	const std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
 		vks::initializers::vertexInputBindingDescription(0, sizeof(myglTF::VertexSimple), VK_VERTEX_INPUT_RATE_VERTEX),
@@ -209,9 +213,13 @@ void MyMeshShader::preparePipelines()
 	traditionalShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/sceneBind.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	traditionalShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/sceneBind.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	meshShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/meshshader.task.spv", VK_SHADER_STAGE_TASK_BIT_EXT);
+	/*meshShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/meshshader.task.spv", VK_SHADER_STAGE_TASK_BIT_EXT);
 	meshShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
-	meshShaderStages[2] = loadShader(getShadersPath() + "myMeshShader/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	meshShaderStages[2] = loadShader(getShadersPath() + "myMeshShader/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);*/
+
+	/*TODO no task shader yet*/
+	meshShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
+	meshShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// POI: Instead if using a few fixed pipelines, we create one traditionalPipeline for each material using the properties of that material
 	for (auto &material : model.materials) {
@@ -244,14 +252,16 @@ void MyMeshShader::preparePipelines()
 		rasterizationStateCI.cullMode = VK_CULL_MODE_BACK_BIT;
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &material.traditionalPipeline));
 
-		// mesh shader pipeline
-		pipelineCI.layout = meshShaderPipelineLayout;
-		pipelineCI.pVertexInputState = nullptr;
-		pipelineCI.pInputAssemblyState = nullptr;
-		pipelineCI.stageCount = static_cast<uint32_t>(meshShaderStages.size());
-		pipelineCI.pStages = meshShaderStages.data();
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &material.meshShaderPipeline));
 	}
+
+	// mesh shader pipeline
+	pipelineCI.layout = meshShaderPipelineLayout;
+	pipelineCI.pVertexInputState = nullptr;
+	pipelineCI.pInputAssemblyState = nullptr;
+	pipelineCI.stageCount = static_cast<uint32_t>(meshShaderStages.size());
+	pipelineCI.pStages = meshShaderStages.data();
+	VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &model.meshShaderPipeline));
+
 }
 
 void MyMeshShader::prepareUniformBuffers()
@@ -272,11 +282,14 @@ void MyMeshShader::prepare()
 {
 	VulkanExampleBase::prepare();
 	vkCmdDrawMeshTasksEXT = reinterpret_cast<PFN_vkCmdDrawMeshTasksEXT>(vkGetDeviceProcAddr(device, "vkCmdDrawMeshTasksEXT"));
-#if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
+
+
+
+//#if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
 	std::string batchPath = getShadersPath() + "myMeshShader/ShaderCompile.bat";
 	system(batchPath.c_str());
 	std::cout << "\t...current project's shaders compile completed.\n";
-#endif
+//#endif
 	loadAssets();
 	prepareUniformBuffers();
 	setupDescriptors();

@@ -76,6 +76,16 @@ namespace myglTF
 
 	struct Node;
 
+
+	typedef struct UniformBufferSet
+	{
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceMemory memory = VK_NULL_HANDLE;
+		VkDescriptorBufferInfo descriptor;
+		VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+		void* mapped;
+	}MeshUniformBuffer, RootNodeUniformBuffer;
+
 	/*
 		glTF texture loading class
 	*/
@@ -119,7 +129,6 @@ namespace myglTF
 		VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
 		VkDescriptorSet meshShaderDescriptorSet{ VK_NULL_HANDLE };
 		VkPipeline traditionalPipeline{ VK_NULL_HANDLE };
-		VkPipeline meshShaderPipeline{ VK_NULL_HANDLE };
 
 		Material(vks::VulkanDevice* device) : device(device) {};
 		~Material();
@@ -157,13 +166,7 @@ namespace myglTF
 		std::vector<Primitive*> primitives;
 		std::string name;
 
-		struct UniformBuffer {
-			VkBuffer buffer;
-			VkDeviceMemory memory;
-			VkDescriptorBufferInfo descriptor;
-			VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-			void* mapped;
-		} uniformBuffer;
+		MeshUniformBuffer uniformBuffer;
 
 		struct UniformBlock {
 			glm::mat4 matrix;
@@ -171,7 +174,7 @@ namespace myglTF
 			float jointcount{ 0 };
 		} uniformBlock;
 
-		Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool hasSkin = false);
+		Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool createUniformBuffer = true, bool hasSkin = false);
 		~Mesh();
 	};
 
@@ -262,8 +265,9 @@ namespace myglTF
 		PreMultiplyVertexColors = 0x00000002,
 		FlipY = 0x00000004,
 		DontLoadImages = 0x00000008,
-		PrepareTraditionalPipeline = 0x000000010,
-		PrepareMeshShaderPipeline = 0x000000020,
+		UseRootTransformOnly = 0x000000010,
+		PrepareTraditionalPipeline = 0x000000020,
+		PrepareMeshShaderPipeline = 0x000000040,
 	};
 
 	// descriptorset bind num into pipeline
@@ -317,13 +321,20 @@ namespace myglTF
 		VkDescriptorBufferInfo meshletVerticesDescriptor;
 		VkDescriptorBufferInfo meshletIndicesDescriptor;
 		VkDescriptorSet meshShaderDescriptorSet{ VK_NULL_HANDLE };
+		VkPipeline meshShaderPipeline{ VK_NULL_HANDLE };
 #pragma endregion MeshShader
+
+		// Used only if model needs only single representing uniform data
+		RootNodeUniformBuffer rootUniformBuffer{};
+		struct UniformData
+		{
+			glm::mat4 matrix; // root model matrix
+		}uniformBlock{};
+		bool useRootTransformOnly = false;
 
 		std::vector<Node*> nodes;
 		std::vector<Node*> linearNodes;
-
 		std::vector<Skin*> skins;
-
 		std::vector<Texture> textures;
 		std::vector<Material> materials;
 		std::vector<Animation> animations;

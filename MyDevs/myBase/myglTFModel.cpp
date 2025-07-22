@@ -7,6 +7,9 @@ uint32_t myglTF::Model::descriptorBindingFlags = myglTF::DescriptorBindingFlags:
 
 myglTF::Model::~Model()
 {
+	vkDestroyBuffer(device->logicalDevice, rootUniformBuffer.buffer, nullptr);
+	vkFreeMemory(device->logicalDevice, rootUniformBuffer.memory, nullptr);
+
 	vkDestroyBuffer(device->logicalDevice, vertices.buffer, nullptr);
 	vkFreeMemory(device->logicalDevice, vertices.memory, nullptr);
 	vkDestroyBuffer(device->logicalDevice, indices.buffer, nullptr);
@@ -40,6 +43,10 @@ myglTF::Model::~Model()
 	}
 	vkDestroyDescriptorPool(device->logicalDevice, descriptorPool, nullptr);
 	emptyTexture.destroy();
+
+
+	if (meshShaderPipeline)
+		vkDestroyPipeline(device->logicalDevice, meshShaderPipeline, nullptr);
 }
 
 void myglTF::Model::loadNode(myglTF::Node* parent, const tinygltf::Node& node, uint32_t nodeIndex,
@@ -86,7 +93,7 @@ void myglTF::Model::loadNode(myglTF::Node* parent, const tinygltf::Node& node, u
 	// Node contains mesh data
 	if (node.mesh > -1) {
 		const tinygltf::Mesh mesh = model.meshes[node.mesh];
-		Mesh* newMesh = new Mesh(device, newNode->matrix, newNode->skin);
+		Mesh* newMesh = new Mesh(device, newNode->matrix, !useRootTransformOnly , newNode->skin);
 		newMesh->name = mesh.name;
 		for (size_t j = 0; j < mesh.primitives.size(); j++) {
 			const tinygltf::Primitive& primitive = mesh.primitives[j];
@@ -497,6 +504,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	bool fileLoaded = gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, filename);
 	std::vector<VertexType*> tempVerticesCPU; 
 	std::vector<uint32_t> tempIndicesCPU;
+	useRootTransformOnly = fileLoadingFlags & myglTF::FileLoadingFlags::UseRootTransformOnly;
 	bool isSkinningModel = gltfModel.skins.size() > 0;
 	uint32_t vertexSize = isSkinningModel ? sizeof(VertexSkinning) : sizeof(VertexSimple);
 	if (fileLoaded) {
@@ -520,7 +528,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 				node->skin = skins[node->skinIndex];
 			}
 			// Initial pose
-			if (node->mesh) {
+			if (useRootTransformOnly == false && node->mesh) {
 				node->update();
 			}
 		}
@@ -638,7 +646,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	copyRegion.size = indexBufferSize;
 	vkCmdCopyBuffer(copyCmd, indexStaging.buffer, indices.buffer, 1, &copyRegion);
 
-	device->flushCommandBuffer(copyCmd, transferQueue, true);
+	device->flushCommandBuffer(copyCmd, transferQueue, false);
 	vkDestroyBuffer(device->logicalDevice, vertexStaging.buffer, nullptr);
 	vkFreeMemory(device->logicalDevice, vertexStaging.memory, nullptr);
 	vkDestroyBuffer(device->logicalDevice, indexStaging.buffer, nullptr);
@@ -710,10 +718,15 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 			&meshlets.buffer,
 			&meshlets.memory));
 
-		// Copy from staging buffers
-		VkCommandBuffer copyCmd = device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		// Fill Meshlet buffers count data
+		meshlets.count = numMeshlets;
+		meshletVertices.count = tempMeshletVertices.size();
+		meshletIndices.count = tempMeshletPackedTriangles.size();
 
-		VkBufferCopy copyRegion = {};
+		// Copy from staging buffers
+		//VkCommandBuffer copyCmd = device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
+		VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
 
 		// copy meshlet vertices
 		copyRegion.size = meshletVertexBufferSize;
@@ -728,8 +741,8 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 		vkCmdCopyBuffer(copyCmd, meshletStaging.buffer, meshlets.buffer, 1, &copyRegion);
 
 
-		delete[] tempAllocatedMeshlets; tempAllocatedMeshlets = nullptr;
 		device->flushCommandBuffer(copyCmd, transferQueue, true);
+		delete[] tempAllocatedMeshlets; tempAllocatedMeshlets = nullptr;
 
 
 		// Create Descriptor
@@ -751,11 +764,16 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	// Setup descriptors
 	uint32_t uboCount{ 0 };
 	uint32_t imageCount{ 0 };
-	for (auto& node : linearNodes) {
-		if (node->mesh) {
-			uboCount++;
+	if (useRootTransformOnly == false)
+	{
+		for (auto& node : linearNodes) {
+			if (node->mesh) {
+				uboCount++;
+			}
 		}
 	}
+	else uboCount = 1;
+	
 	for (auto& material : materials) {
 		if (material.baseColorTexture != nullptr) {
 			imageCount++;
@@ -772,7 +790,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 			poolSizes.push_back({ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageCount });
 		}
 	}
-	if (fileLoadingFlags & FileLoadingFlags::PrepareMeshShaderPipeline)
+	if (fileLoadingFlags & FileLoadingFlags::PrepareMeshShaderPipeline) // for Mesh Shader
 	{
 		poolSizes.push_back({ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }); // vertex buffer
 		poolSizes.push_back({ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }); // meshlet buffer
@@ -792,7 +810,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 		// Layout is global, so only create if it hasn't already been created before
 		if (descriptorSetLayoutUbo == VK_NULL_HANDLE) {
 			std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
-				// model matrix or modelMat + Skinning info
+				// [model matrix] or [modelMat + Skinning info]
 				vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, 0),
 			};
 			VkDescriptorSetLayoutCreateInfo descriptorLayoutCI{};
@@ -801,8 +819,43 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 			descriptorLayoutCI.pBindings = setLayoutBindings.data();
 			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayoutCI, nullptr, &descriptorSetLayoutUbo));
 		}
-		for (auto node : nodes) {
-			prepareNodeDescriptor(node, descriptorSetLayoutUbo);
+		if (useRootTransformOnly)
+		{
+			// Create bufffer
+			VK_CHECK_RESULT(device->createBuffer(
+				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+				sizeof(UniformData),
+				&rootUniformBuffer.buffer,
+				&rootUniformBuffer.memory,
+				&uniformBlock));
+			VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, rootUniformBuffer.memory, 0, sizeof(UniformData), 0, &rootUniformBuffer.mapped));
+			rootUniformBuffer.descriptor = { rootUniformBuffer.buffer, 0, sizeof(UniformData) };
+
+			// allocate descriptor
+			VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
+			descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+			descriptorSetAllocInfo.descriptorPool = descriptorPool;
+			descriptorSetAllocInfo.pSetLayouts = &descriptorSetLayoutUbo;
+			descriptorSetAllocInfo.descriptorSetCount = 1;
+			VK_CHECK_RESULT(vkAllocateDescriptorSets(device->logicalDevice, &descriptorSetAllocInfo, &rootUniformBuffer.descriptorSet));
+
+			// update
+			VkWriteDescriptorSet writeDescriptorSet{};
+			writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			writeDescriptorSet.descriptorCount = 1;
+			writeDescriptorSet.dstSet = rootUniformBuffer.descriptorSet;
+			writeDescriptorSet.dstBinding = 0;
+			writeDescriptorSet.pBufferInfo = &rootUniformBuffer.descriptor;
+
+			vkUpdateDescriptorSets(device->logicalDevice, 1, &writeDescriptorSet, 0, nullptr);
+		}
+		else // prepare all meshes' ubo
+		{
+			for (auto node : nodes) {
+				prepareNodeDescriptor(node, descriptorSetLayoutUbo);
+			}			
 		}
 	}
 
@@ -836,10 +889,10 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	{
 		std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings{};
 		// 0: vertxBuffer 1: meshlet buffer, 2: meshlet vertex buffer, 3: meshlet index buffer
-		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_TASK_BIT_EXT /*| VK_SHADER_STAGE_MESH_BIT_EXT*/, static_cast<uint32_t>(setLayoutBindings.size())));
-		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_TASK_BIT_EXT /*| VK_SHADER_STAGE_MESH_BIT_EXT*/, static_cast<uint32_t>(setLayoutBindings.size())));
-		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_TASK_BIT_EXT /*| VK_SHADER_STAGE_MESH_BIT_EXT*/, static_cast<uint32_t>(setLayoutBindings.size())));
-		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_TASK_BIT_EXT /*| VK_SHADER_STAGE_MESH_BIT_EXT*/, static_cast<uint32_t>(setLayoutBindings.size())));
+		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, /*VK_SHADER_STAGE_TASK_BIT_EXT |*/ VK_SHADER_STAGE_MESH_BIT_EXT, static_cast<uint32_t>(setLayoutBindings.size())));
+		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, /*VK_SHADER_STAGE_TASK_BIT_EXT |*/ VK_SHADER_STAGE_MESH_BIT_EXT, static_cast<uint32_t>(setLayoutBindings.size())));
+		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, /*VK_SHADER_STAGE_TASK_BIT_EXT |*/ VK_SHADER_STAGE_MESH_BIT_EXT, static_cast<uint32_t>(setLayoutBindings.size())));
+		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, /*VK_SHADER_STAGE_TASK_BIT_EXT |*/ VK_SHADER_STAGE_MESH_BIT_EXT, static_cast<uint32_t>(setLayoutBindings.size())));
 
 		VkDescriptorSetLayoutCreateInfo descriptorLayoutCI{};
 		descriptorLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -904,16 +957,9 @@ void myglTF::Model::drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t
 					vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, bindImageSet, 1, &material.descriptorSet, 0, nullptr);
 				}
 
-				if (vkCmdDrawMeshTasksEXT) // mesh shader pipeline
-				{
-					vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.meshShaderPipeline);
-					vkCmdDrawMeshTasksEXT(commandBuffer, 1, 1, 1);
-				}
-				else // traditional pipeilne, using vertex shader
-				{
-					vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.traditionalPipeline);
-					vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
-				}
+				// traditional pipeilne, using vertex shader
+				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.traditionalPipeline);
+				vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
 			}
 		}
 	}
@@ -927,7 +973,10 @@ void myglTF::Model::draw(VkCommandBuffer commandBuffer, uint32_t renderFlags, Vk
 {
 	if (vkCmdDrawMeshTasksEXT) // mesh shader
 	{
-		/*vkCmdBindPipeline()*/
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &rootUniformBuffer.descriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 3, 1, &meshShaderDescriptorSet, 0, nullptr);
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshShaderPipeline);
+		vkCmdDrawMeshTasksEXT(commandBuffer, meshlets.count, 1, 1);
 	}
 	else // traditional pipeline
 	{
@@ -1468,8 +1517,6 @@ myglTF::Material::~Material()
 {
 	if (traditionalPipeline)
 		vkDestroyPipeline(device->logicalDevice, traditionalPipeline, nullptr);
-	if (meshShaderPipeline)
-		vkDestroyPipeline(device->logicalDevice, meshShaderPipeline, nullptr);
 }
 
 void myglTF::Material::createDescriptorSet(VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout,
@@ -1517,10 +1564,14 @@ void myglTF::Primitive::setDimensions(glm::vec3 min, glm::vec3 max)
 	dimensions.radius = glm::distance(min, max) / 2.0f;
 }
 
-myglTF::Mesh::Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool hasSkin)
+myglTF::Mesh::Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool createUniformBuffer, bool hasSkin)
 {
 	this->device = device;
 	this->uniformBlock.matrix = matrix;
+
+	if (createUniformBuffer == false)
+		return;
+
 	VkDeviceSize blockSize = hasSkin ? sizeof(UniformBlock) : sizeof(glm::mat4);
 	VK_CHECK_RESULT(device->createBuffer(
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -1536,8 +1587,11 @@ myglTF::Mesh::Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool hasSkin)
 
 myglTF::Mesh::~Mesh()
 {
-	vkDestroyBuffer(device->logicalDevice, uniformBuffer.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, uniformBuffer.memory, nullptr);
+	if (uniformBuffer.buffer)
+	{
+		vkDestroyBuffer(device->logicalDevice, uniformBuffer.buffer, nullptr);
+		vkFreeMemory(device->logicalDevice, uniformBuffer.memory, nullptr);		
+	}
 	for (auto primitive : primitives)
 	{
 		delete primitive;
