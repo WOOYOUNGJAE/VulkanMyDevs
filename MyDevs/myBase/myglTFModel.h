@@ -330,7 +330,6 @@ namespace myglTF
 		{
 			glm::mat4 matrix; // root model matrix
 		}uniformBlock{};
-		bool forceNodesTransformIdentity = false;
 
 		std::vector<Node*> nodes;
 		std::vector<Node*> linearNodes;
@@ -349,6 +348,7 @@ namespace myglTF
 
 		bool metallicRoughnessWorkflow = true;
 		bool buffersBound = false;
+		bool preTransform = false;
 		std::string path;
 
 		Model() {};

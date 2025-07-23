@@ -59,7 +59,7 @@ public:
 	glm::vec4 viewPos = glm::vec4();
 
 	float rotationSpeed = 1.0f;
-	float movementSpeed = 1.0f;
+	float movementSpeed = 1.0f * 3.f;
 
 	bool updated = true;
 	bool flipY = false;

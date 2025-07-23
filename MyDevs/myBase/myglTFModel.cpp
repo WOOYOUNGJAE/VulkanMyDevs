@@ -93,7 +93,7 @@ void myglTF::Model::loadNode(myglTF::Node* parent, const tinygltf::Node& node, u
 	// Node contains mesh data
 	if (node.mesh > -1) {
 		const tinygltf::Mesh mesh = model.meshes[node.mesh];
-		Mesh* newMesh = new Mesh(device, newNode->matrix, !forceNodesTransformIdentity , newNode->skin);
+		Mesh* newMesh = new Mesh(device, newNode->matrix, !preTransform, newNode->skin);
 		newMesh->name = mesh.name;
 		for (size_t j = 0; j < mesh.primitives.size(); j++) {
 			const tinygltf::Primitive& primitive = mesh.primitives[j];
@@ -182,10 +182,10 @@ void myglTF::Model::loadNode(myglTF::Node* parent, const tinygltf::Node& node, u
 					VertexType* vert = hasSkin ? new VertexSkinning{} : new VertexSimple{};
 
 					vert->pos = glm::vec4(glm::make_vec3(&bufferPos[v * 3]), 1.0f);
-					if (forceNodesTransformIdentity) // apply node's transform to vertices while loading
-					{
-						vert->pos = newNode->getMatrix() * glm::vec4(vert->pos, 1.f);
-					}
+					//if (bool preTransform) // apply node's transform to vertices while loading
+					//{
+					//	vert->pos = newNode->getMatrix() * glm::vec4(vert->pos, 1.f);
+					//}
 
 					vert->normal = glm::normalize(glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * 3]) : glm::vec3(0.0f)));
 					vert->uv = bufferTexCoords ? glm::make_vec2(&bufferTexCoords[v * 2]) : glm::vec3(0.0f);
@@ -509,8 +509,8 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	bool fileLoaded = gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, filename);
 	std::vector<VertexType*> tempVerticesCPU; 
 	std::vector<uint32_t> tempIndicesCPU;
-	forceNodesTransformIdentity = fileLoadingFlags & myglTF::FileLoadingFlags::ForceNodesTransformIdentity;
 	bool isSkinningModel = gltfModel.skins.size() > 0;
+	preTransform = fileLoadingFlags & FileLoadingFlags::PreTransformVertices;
 	uint32_t vertexSize = isSkinningModel ? sizeof(VertexSkinning) : sizeof(VertexSimple);
 	if (fileLoaded) {
 		if (!(fileLoadingFlags & FileLoadingFlags::DontLoadImages)) {
@@ -533,7 +533,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 				node->skin = skins[node->skinIndex];
 			}
 			// Initial pose
-			if (forceNodesTransformIdentity == false && node->mesh) {
+			if (preTransform == false && node->mesh) {
 				node->update();
 			}
 		}
@@ -545,7 +545,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 
 	// Pre-Calculations for requested features
 	if ((fileLoadingFlags & FileLoadingFlags::PreTransformVertices) || (fileLoadingFlags & FileLoadingFlags::PreMultiplyVertexColors) || (fileLoadingFlags & FileLoadingFlags::FlipY)) {
-		const bool preTransform = fileLoadingFlags & FileLoadingFlags::PreTransformVertices;
+		
 		const bool preMultiplyColor = fileLoadingFlags & FileLoadingFlags::PreMultiplyVertexColors;
 		const bool flipY = fileLoadingFlags & FileLoadingFlags::FlipY;
 		for (Node* node : linearNodes) {
@@ -769,7 +769,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	// Setup descriptors
 	uint32_t uboCount{ 0 };
 	uint32_t imageCount{ 0 };
-	if (forceNodesTransformIdentity == false)
+	if (preTransform == false)
 	{
 		for (auto& node : linearNodes) {
 			if (node->mesh) {
@@ -824,7 +824,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 			descriptorLayoutCI.pBindings = setLayoutBindings.data();
 			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayoutCI, nullptr, &descriptorSetLayoutUbo));
 		}
-		if (forceNodesTransformIdentity)
+		if (preTransform)
 		{
 			// Create bufffer
 			VK_CHECK_RESULT(device->createBuffer(
@@ -957,8 +957,9 @@ void myglTF::Model::drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t
 				skip = (material.alphaMode != Material::ALPHAMODE_BLEND);
 			}
 			if (!skip) {
-				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &node->mesh->uniformBuffer.descriptorSet, 0, nullptr);
-				if (renderFlags & RenderFlags::BindImages) {
+				VkDescriptorSet* pDescriptorSet = preTransform ? &rootUniformBuffer.descriptorSet : &node->mesh->uniformBuffer.descriptorSet;
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, pDescriptorSet, 0, nullptr);
+				if (material.baseColorTexture) {
 					vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, bindImageSet, 1, &material.descriptorSet, 0, nullptr);
 				}
 
@@ -1772,7 +1773,7 @@ void myglTF::Model::generateMeshlets(const std::vector<VertexType*>& originalVer
                                      outMeshletVertices, std::vector<uint32_t>& outMeshletPackedTriangles, meshopt_Meshlet** outMeshlets, uint32_t&
                                      outNumMeshlets)
 {
-	// Strongly influenced by https://github.com/chaoticbob/GraphicsExperiments/tree/main/projects/geometry/111_mesh_shader_meshlets_vulkan
+	// Strongly influenced by DirectX-Graphics-Samples https://github.com/microsoft/directx-graphics-samples/tree/master/Samples/Desktop/D3D12MeshShaders
 
 	std::vector<glm::vec3> vertexPositions;
 	std::vector<meshopt_Meshlet> meshlets;

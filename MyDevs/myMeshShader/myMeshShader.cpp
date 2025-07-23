@@ -15,7 +15,7 @@
 #include "myMeshShader.h"
 
 // global
-bool g_useMeshShader = 1;
+bool g_useMeshShader = 0;
 
 
 /*
@@ -105,7 +105,7 @@ void MyMeshShader::buildCommandBuffers()
 		// POI: Draw the glTF scene
 		model.draw(drawCmdBuffers[i], myglTF::RenderFlags::BindImages, curPipelineLayout, 2, cmdDrawMeshTask);
 
-		//drawUI(drawCmdBuffers[i]); // TODO TEMP
+		drawUI(drawCmdBuffers[i]);
 		vkCmdEndRenderPass(drawCmdBuffers[i]);
 		VK_CHECK_RESULT(vkEndCommandBuffer(drawCmdBuffers[i]));
 	}
@@ -115,9 +115,9 @@ void MyMeshShader::buildCommandBuffers()
 void MyMeshShader::loadAssets()
 {
 	myglTF::FileLoadingFlags loadingFlag = (myglTF::FileLoadingFlags)(
-		myglTF::FileLoadingFlags::ForceNodesTransformIdentity | myglTF::FileLoadingFlags::PrepareTraditionalPipeline | myglTF::FileLoadingFlags::PrepareMeshShaderPipeline);
-	//model.loadFromFile(getAssetPath() + "models/sponza_multi_blas_transparent/sponza.gltf", vulkanDevice, queue, loadingFlag);
+		myglTF::FileLoadingFlags::PreTransformVertices | myglTF::FileLoadingFlags::PrepareTraditionalPipeline | myglTF::FileLoadingFlags::PrepareMeshShaderPipeline);
 	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, loadingFlag);
+	//model.loadFromFile("D:\\MyHome\\Assets\\San_Miguel\\gltf\\San_Miguel.gltf", vulkanDevice, queue, loadingFlag);
 }
 
 void MyMeshShader::setupDescriptors()
@@ -283,11 +283,11 @@ void MyMeshShader::prepare()
 
 
 
-//#if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
+#if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
 	std::string batchPath = getShadersPath() + "myMeshShader/ShaderCompile.bat";
 	system(batchPath.c_str());
 	std::cout << "\t...current project's shaders compile completed.\n";
-//#endif
+#endif
 	loadAssets();
 	prepareUniformBuffers();
 	setupDescriptors();
