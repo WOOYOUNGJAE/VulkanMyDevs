@@ -93,7 +93,7 @@ void myglTF::Model::loadNode(myglTF::Node* parent, const tinygltf::Node& node, u
 	// Node contains mesh data
 	if (node.mesh > -1) {
 		const tinygltf::Mesh mesh = model.meshes[node.mesh];
-		Mesh* newMesh = new Mesh(device, newNode->matrix, !useRootTransformOnly , newNode->skin);
+		Mesh* newMesh = new Mesh(device, newNode->matrix, !forceNodesTransformIdentity , newNode->skin);
 		newMesh->name = mesh.name;
 		for (size_t j = 0; j < mesh.primitives.size(); j++) {
 			const tinygltf::Primitive& primitive = mesh.primitives[j];
@@ -182,6 +182,11 @@ void myglTF::Model::loadNode(myglTF::Node* parent, const tinygltf::Node& node, u
 					VertexType* vert = hasSkin ? new VertexSkinning{} : new VertexSimple{};
 
 					vert->pos = glm::vec4(glm::make_vec3(&bufferPos[v * 3]), 1.0f);
+					if (forceNodesTransformIdentity) // apply node's transform to vertices while loading
+					{
+						vert->pos = newNode->getMatrix() * glm::vec4(vert->pos, 1.f);
+					}
+
 					vert->normal = glm::normalize(glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * 3]) : glm::vec3(0.0f)));
 					vert->uv = bufferTexCoords ? glm::make_vec2(&bufferTexCoords[v * 2]) : glm::vec3(0.0f);
 					if (bufferColors) {
@@ -504,7 +509,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	bool fileLoaded = gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, filename);
 	std::vector<VertexType*> tempVerticesCPU; 
 	std::vector<uint32_t> tempIndicesCPU;
-	useRootTransformOnly = fileLoadingFlags & myglTF::FileLoadingFlags::UseRootTransformOnly;
+	forceNodesTransformIdentity = fileLoadingFlags & myglTF::FileLoadingFlags::ForceNodesTransformIdentity;
 	bool isSkinningModel = gltfModel.skins.size() > 0;
 	uint32_t vertexSize = isSkinningModel ? sizeof(VertexSkinning) : sizeof(VertexSimple);
 	if (fileLoaded) {
@@ -528,7 +533,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 				node->skin = skins[node->skinIndex];
 			}
 			// Initial pose
-			if (useRootTransformOnly == false && node->mesh) {
+			if (forceNodesTransformIdentity == false && node->mesh) {
 				node->update();
 			}
 		}
@@ -764,7 +769,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 	// Setup descriptors
 	uint32_t uboCount{ 0 };
 	uint32_t imageCount{ 0 };
-	if (useRootTransformOnly == false)
+	if (forceNodesTransformIdentity == false)
 	{
 		for (auto& node : linearNodes) {
 			if (node->mesh) {
@@ -819,7 +824,7 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 			descriptorLayoutCI.pBindings = setLayoutBindings.data();
 			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayoutCI, nullptr, &descriptorSetLayoutUbo));
 		}
-		if (useRootTransformOnly)
+		if (forceNodesTransformIdentity)
 		{
 			// Create bufffer
 			VK_CHECK_RESULT(device->createBuffer(

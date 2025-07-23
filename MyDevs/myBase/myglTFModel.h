@@ -265,7 +265,7 @@ namespace myglTF
 		PreMultiplyVertexColors = 0x00000002,
 		FlipY = 0x00000004,
 		DontLoadImages = 0x00000008,
-		UseRootTransformOnly = 0x000000010,
+		ForceNodesTransformIdentity = 0x000000010, // apply node's transform to vertices while loading
 		PrepareTraditionalPipeline = 0x000000020,
 		PrepareMeshShaderPipeline = 0x000000040,
 	};
@@ -330,7 +330,7 @@ namespace myglTF
 		{
 			glm::mat4 matrix; // root model matrix
 		}uniformBlock{};
-		bool useRootTransformOnly = false;
+		bool forceNodesTransformIdentity = false;
 
 		std::vector<Node*> nodes;
 		std::vector<Node*> linearNodes;

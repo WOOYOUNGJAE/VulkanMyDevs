@@ -14,8 +14,6 @@
 
 #include "myMeshShader.h"
 
-#include "meshoptimizer.h"
-
 // global
 bool g_useMeshShader = 1;
 
@@ -117,7 +115,7 @@ void MyMeshShader::buildCommandBuffers()
 void MyMeshShader::loadAssets()
 {
 	myglTF::FileLoadingFlags loadingFlag = (myglTF::FileLoadingFlags)(
-		myglTF::FileLoadingFlags::UseRootTransformOnly | myglTF::FileLoadingFlags::PrepareTraditionalPipeline | myglTF::FileLoadingFlags::PrepareMeshShaderPipeline);
+		myglTF::FileLoadingFlags::ForceNodesTransformIdentity | myglTF::FileLoadingFlags::PrepareTraditionalPipeline | myglTF::FileLoadingFlags::PrepareMeshShaderPipeline);
 	//model.loadFromFile(getAssetPath() + "models/sponza_multi_blas_transparent/sponza.gltf", vulkanDevice, queue, loadingFlag);
 	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, loadingFlag);
 }

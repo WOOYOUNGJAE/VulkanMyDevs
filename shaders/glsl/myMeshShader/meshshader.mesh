@@ -102,7 +102,7 @@ void main()
 		uint vertexIndex = m.vertexOffset + liID;        
         vertexIndex = ssboMeshletsVertices.vertices[vertexIndex];
 
-		mat4 mvp = uboScene.projection * uboScene.view;// * uboModel.matrix;
+		mat4 mvp = uboScene.projection * uboScene.view * uboModel.matrix;
 		gl_MeshVerticesEXT[liID].gl_Position = mvp * vec4(ssboVertices.vertices[vertexIndex].pos, 1);
 
         vec3 color = vec3(
