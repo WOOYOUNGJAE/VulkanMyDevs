@@ -107,7 +107,7 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 	std::vector<VkAccelerationStructureGeometryKHR> geometries{};
 	std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
 	std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
-	std::vector<GeometryNode> geometryNodes{};
+	std::vector<GeometryNodeRT> geometryNodes{};
 	for (auto node : model.linearNodes) {
 		if (node->mesh) {
 			for (auto primitive : node->mesh->primitives) {
@@ -142,7 +142,7 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 					buildRangeInfo.transformOffset = 0;
 					buildRangeInfos.push_back(buildRangeInfo);
 
-					GeometryNode geometryNode{};
+					GeometryNodeRT geometryNode{};
 					geometryNode.vertexBufferDeviceAddress = vertexBufferDeviceAddress.deviceAddress;
 					geometryNode.indexBufferDeviceAddress = indexBufferDeviceAddress.deviceAddress;
 					geometryNode.textureIndexBaseColor = primitive->material.baseColorTexture->index;
@@ -162,14 +162,14 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&stagingBuffer,
-		static_cast<uint32_t>(geometryNodes.size()) * sizeof(GeometryNode),
+		static_cast<uint32_t>(geometryNodes.size()) * sizeof(GeometryNodeRT),
 		geometryNodes.data()));
 
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		&geometryNodesBuffer,
-		static_cast<uint32_t>(geometryNodes.size()) * sizeof(GeometryNode)));
+		static_cast<uint32_t>(geometryNodes.size()) * sizeof(GeometryNodeRT)));
 
 	vulkanDevice->copyBuffer(&stagingBuffer, &geometryNodesBuffer, queue);
 

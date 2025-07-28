@@ -13,7 +13,7 @@
  * If you are looking for a complete glTF implementation, check out https://github.com/SaschaWillems/Vulkan-glTF-PBR/
  */
 #pragma once
-#include "myIncludes.h"
+#include "myVulkan.h"
 //#include "VulkanglTFModel.h"
 
 #include <stdlib.h>
@@ -37,6 +37,7 @@
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 #define TINYGLTF_ANDROID_LOAD_FROM_ASSETS
 #endif
+#include "myStructsRT.h"
 #include "tiny_gltf.h"
 
 #if defined(__ANDROID__)
@@ -69,10 +70,10 @@ namespace myglTF
 		ImageNormalMap = 0x00000002
 	};
 
-	extern VkDescriptorSetLayout descriptorSetLayoutImage;
-	extern VkDescriptorSetLayout descriptorSetLayoutUbo;
-	extern VkMemoryPropertyFlags memoryPropertyFlags;
-	extern uint32_t descriptorBindingFlags;
+	//extern VkDescriptorSetLayout descriptorSetLayoutImage;
+	//extern VkDescriptorSetLayout descriptorSetLayoutUbo;
+	//extern VkMemoryPropertyFlags memoryPropertyFlags;
+	//extern uint32_t descriptorBindingFlags;
 
 	struct Node;
 
@@ -362,6 +363,82 @@ namespace myglTF
 		void bindBuffers(VkCommandBuffer commandBuffer);
 		void drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t renderFlags = 0, VkPipelineLayout pipelineLayout = VK_NULL_HANDLE, uint32_t bindImageSet = 1);
 		void draw(VkCommandBuffer commandBuffer, uint32_t renderFlags = 0, VkPipelineLayout pipelineLayout = VK_NULL_HANDLE, uint32_t bindImageSet = 1, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT = nullptr);
+		void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
+		void getSceneDimensions();
+		void updateAnimation(uint32_t index, float time);
+		Node* findNode(Node* parent, uint32_t index);
+		Node* nodeFromIndex(uint32_t index);
+		void prepareNodeDescriptor(myglTF::Node* node, VkDescriptorSetLayout descriptorSetLayout);
+	};
+
+	/**
+	 * Model Class for Ray tracing
+	 */
+	class ModelRT
+	{
+	public:
+		VkDescriptorSetLayout descriptorSetLayoutImage{ VK_NULL_HANDLE };
+		VkDescriptorSetLayout descriptorSetLayoutUbo{ VK_NULL_HANDLE };
+		static VkMemoryPropertyFlags memoryPropertyFlags;
+		static uint32_t descriptorBindingFlags;
+	private:
+		myglTF::Texture* getTexture(uint32_t index);
+		myglTF::Texture emptyTexture;
+		void createEmptyTexture(VkQueue transferQueue);
+	public:
+		vks::VulkanDevice* device;
+		VkDescriptorPool descriptorPool;
+		typedef struct PRIMITIVE_TAG
+		{
+			uint32_t count = 0;
+			VkBuffer buffer = VK_NULL_HANDLE;
+			VkDeviceMemory memory = VK_NULL_HANDLE;
+		}Vertices, Indices;
+		Vertices vertices{};
+		Indices indices{};
+
+		// Used only if model needs only single representing uniform data
+		RootNodeUniformBuffer rootUniformBuffer{};
+		struct UniformData
+		{
+			glm::mat4 matrix; // root model matrix
+		}uniformBlock{};
+
+		std::vector<Node*> nodes;
+		std::vector<Node*> linearNodes;
+		std::vector<Skin*> skins;
+		std::vector<Texture> textures;
+		std::vector<Material> materials;
+		std::vector<Animation> animations;
+		std::vector<GeometryNodeRT> geometryNodes;
+
+		struct Dimensions {
+			glm::vec3 min = glm::vec3(FLT_MAX);
+			glm::vec3 max = glm::vec3(-FLT_MAX);
+			glm::vec3 size;
+			glm::vec3 center;
+			float radius;
+		} dimensions;
+#pragma region Cluster
+		uint32_t numClusters = 0u;
+
+#pragma endregion Cluster
+
+		bool metallicRoughnessWorkflow = true;
+		bool buffersBound = false;
+		bool preTransform = false;
+		bool forceOneInstance = true;
+		std::string path;
+
+		ModelRT() {};
+		~ModelRT();
+		void loadNode(myglTF::Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, const tinygltf::Model& model, std::vector<uint32_t>& indexBuffer, std::vector<VertexType*>& vertices, float globalscale);
+		void loadSkins(tinygltf::Model& gltfModel);
+		void loadImages(tinygltf::Model& gltfModel, vks::VulkanDevice* device, VkQueue transferQueue);
+		void loadMaterials(tinygltf::Model& gltfModel);
+		void loadAnimations(tinygltf::Model& gltfModel);
+		void loadFromFile(std::string filename, vks::VulkanDevice* device, VkQueue transferQueue, uint32_t fileLoadingFlags = myglTF::FileLoadingFlags::None, float scale = 1.0f);
+		void bindBuffers(VkCommandBuffer commandBuffer);
 		void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
 		void getSceneDimensions();
 		void updateAnimation(uint32_t index, float time);

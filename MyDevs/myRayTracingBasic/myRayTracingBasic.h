@@ -8,7 +8,8 @@
 */
 
 #pragma once
-#include "myIncludes.h"
+#include "myVulkan.h"
+#include "myStructsRT.h"
 #include "myVulkanRTBase.h"
 #include "myglTFModel.h"
 
@@ -26,12 +27,6 @@ public:
 	uint32_t indexCount{ 0 };
 	vks::Buffer transformBuffer;
 
-	struct GeometryNode {
-		uint64_t vertexBufferDeviceAddress;
-		uint64_t indexBufferDeviceAddress;
-		int32_t textureIndexBaseColor;
-		int32_t textureIndexOcclusion;
-	};
 	vks::Buffer geometryNodesBuffer;
 
 	std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups{};
