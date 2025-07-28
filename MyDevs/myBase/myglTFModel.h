@@ -306,16 +306,16 @@ namespace myglTF
 		VkDescriptorPool descriptorPool;
 		typedef struct PRIMITIVE_TAG
 		{
-			uint32_t count;
-			VkBuffer buffer;
-			VkDeviceMemory memory;
+			uint32_t count = 0;
+			VkBuffer buffer = VK_NULL_HANDLE;
+			VkDeviceMemory memory = VK_NULL_HANDLE;
 		}Vertices, Indices, MeshletVertices, MeshletIndices, Meshlets;
-		Vertices vertices;
-		Indices indices;
+		Vertices vertices{};
+		Indices indices{};
 #pragma region MeshShader
-		Meshlets meshlets;
-		MeshletVertices meshletVertices;
-		MeshletIndices meshletIndices;
+		Meshlets meshlets{};
+		MeshletVertices meshletVertices{};
+		MeshletIndices meshletIndices{};
 		VkDescriptorBufferInfo vertexBufferDescriptor; // for Original vertex, used only for mesh shader
 		VkDescriptorBufferInfo meshletsDescriptor;
 		VkDescriptorBufferInfo meshletVerticesDescriptor;

@@ -26,7 +26,7 @@ layout (set = 1, binding = 0) uniform UBOModel
 #endif
 } uboModel;
 
-struct VertexType
+struct VertexType_std430
 {
 	vec3 pos;
 	float normalX;
@@ -53,7 +53,7 @@ taskPayloadSharedEXT Payload_MeshShader payload;
 
 layout (std430, set = 3, binding = 0) buffer SSBOVertexBuffer
 {
-	VertexType vertices[];
+	VertexType_std430 vertices[];
 }ssboVertices;
 layout (set = 3, binding = 1) buffer SSBOMeshlets
 {

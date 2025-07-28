@@ -26,6 +26,10 @@ struct AccelerationStructureBase
 
 class myVulkanRTBase : public VulkanExampleBase
 {
+protected:
+	// Update the default render pass with different color attachment load ops
+	void setupRenderPass() override;
+	void setupFrameBuffer() override;
 public:
 	struct StorageImage {
 		VkDeviceMemory memory = VK_NULL_HANDLE;
@@ -36,8 +40,6 @@ public:
 
 	bool rayQueryOnly = false;
 
-	ScratchBuffer createScratchBuffer(VkDeviceSize size);
-	void deleteScratchBuffer(ScratchBuffer& scratchBuffer);
 	void createStorageImage(VkFormat format, VkExtent3D extent);
 	void deleteStorageImage();
 	// Draw the ImGUI UI overlay using a render pass
@@ -47,12 +49,12 @@ public:
 
 class myVulkanRTBaseKHR : public myVulkanRTBase
 {
+public:
 	struct AccelerationStructureKHR : AccelerationStructureBase
 	{
 		VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
 	};
 
-public:
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = VK_NULL_HANDLE;
 	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = VK_NULL_HANDLE;
 	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = VK_NULL_HANDLE;
@@ -78,6 +80,8 @@ public:
 	};
 
 	void enableExtensions();
+	ScratchBuffer createScratchBuffer(VkDeviceSize size);
+	void deleteScratchBuffer(ScratchBuffer& scratchBuffer);
 	void createAccelerationStructure(AccelerationStructureKHR& accelerationStructure, VkAccelerationStructureTypeKHR type, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
 	void deleteAccelerationStructure(AccelerationStructureKHR& accelerationStructure);
 	uint64_t getBufferDeviceAddress(VkBuffer buffer);
@@ -89,7 +93,7 @@ public:
 
 class myVulkanRTBaseNV : public myVulkanRTBase
 {
-
+public:
 	struct AccelerationStructureKHR : AccelerationStructureBase
 	{
 		VkAccelerationStructureNV handle;
