@@ -118,7 +118,7 @@ set(EXAMPLES
     playground
     myMeshShader
     myRayTracingBasic
-    myClusterAcclerationStructureNV
+    myClusterAccelerationStructureNV
 )
 
 buildMyBase()

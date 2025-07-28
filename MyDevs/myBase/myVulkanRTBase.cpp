@@ -8,7 +8,7 @@
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
 
-void myVulkanRTBase::setupRenderPass()
+void MyVulkanRTBase::setupRenderPass()
 {
 	// Update the default render pass with different color attachment load ops to keep attachment contents
 // With this change, we can e.g. draw an UI on top of the ray traced scene
@@ -93,7 +93,7 @@ void myVulkanRTBase::setupRenderPass()
 	VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass));
 }
 
-void myVulkanRTBase::setupFrameBuffer()
+void MyVulkanRTBase::setupFrameBuffer()
 {
 	VkImageView attachments[2];
 
@@ -118,7 +118,7 @@ void myVulkanRTBase::setupFrameBuffer()
 	}
 }
 
-void myVulkanRTBase::createStorageImage(VkFormat format, VkExtent3D extent)
+void MyVulkanRTBase::createStorageImage(VkFormat format, VkExtent3D extent)
 {
 	// Release ressources if image is to be recreated
 	if (storageImage.image != VK_NULL_HANDLE) {
@@ -168,14 +168,14 @@ void myVulkanRTBase::createStorageImage(VkFormat format, VkExtent3D extent)
 	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
 }
 
-void myVulkanRTBase::deleteStorageImage()
+void MyVulkanRTBase::deleteStorageImage()
 {
 	vkDestroyImageView(vulkanDevice->logicalDevice, storageImage.view, nullptr);
 	vkDestroyImage(vulkanDevice->logicalDevice, storageImage.image, nullptr);
 	vkFreeMemory(vulkanDevice->logicalDevice, storageImage.memory, nullptr);
 }
 
-void myVulkanRTBase::drawUI(VkCommandBuffer commandBuffer, VkFramebuffer framebuffer)
+void MyVulkanRTBase::drawUI(VkCommandBuffer commandBuffer, VkFramebuffer framebuffer)
 {
 	VkClearValue clearValues[2];
 	clearValues[0].color = defaultClearColor;
@@ -197,7 +197,7 @@ void myVulkanRTBase::drawUI(VkCommandBuffer commandBuffer, VkFramebuffer framebu
 	vkCmdEndRenderPass(commandBuffer);
 }
 
-void myVulkanRTBaseKHR::enableExtensions()
+void MyVulkanRTBase::enableExtensions()
 {
 	// Require Vulkan 1.1
 	apiVersion = VK_API_VERSION_1_4;
@@ -220,7 +220,7 @@ void myVulkanRTBaseKHR::enableExtensions()
 	enabledDeviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
 }
 
-ScratchBuffer myVulkanRTBaseKHR::createScratchBuffer(VkDeviceSize size)
+ScratchBuffer MyVulkanRTBase::createScratchBuffer(VkDeviceSize size)
 {
 	ScratchBuffer scratchBuffer{};
 	// Buffer and memory
@@ -249,7 +249,7 @@ ScratchBuffer myVulkanRTBaseKHR::createScratchBuffer(VkDeviceSize size)
 	return scratchBuffer;
 }
 
-void myVulkanRTBaseKHR::deleteScratchBuffer(ScratchBuffer& scratchBuffer)
+void MyVulkanRTBase::deleteScratchBuffer(ScratchBuffer& scratchBuffer)
 {
 	if (scratchBuffer.memory != VK_NULL_HANDLE) {
 		vkFreeMemory(vulkanDevice->logicalDevice, scratchBuffer.memory, nullptr);
@@ -260,7 +260,7 @@ void myVulkanRTBaseKHR::deleteScratchBuffer(ScratchBuffer& scratchBuffer)
 }
 
 
-void myVulkanRTBaseKHR::createAccelerationStructure(AccelerationStructureKHR& accelerationStructure,
+void MyVulkanRTBase::createAccelerationStructure(AccelerationStructure& accelerationStructure,
                                                     VkAccelerationStructureTypeKHR type, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
 {
 	// Buffer and memory
@@ -295,14 +295,14 @@ void myVulkanRTBaseKHR::createAccelerationStructure(AccelerationStructureKHR& ac
 	accelerationStructure.deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(vulkanDevice->logicalDevice, &accelerationDeviceAddressInfo);
 }
 
-void myVulkanRTBaseKHR::deleteAccelerationStructure(AccelerationStructureKHR& accelerationStructure)
+void MyVulkanRTBase::deleteAccelerationStructure(AccelerationStructure& accelerationStructure)
 {
 	vkFreeMemory(device, accelerationStructure.memory, nullptr);
 	vkDestroyBuffer(device, accelerationStructure.buffer, nullptr);
 	vkDestroyAccelerationStructureKHR(device, accelerationStructure.handle, nullptr);
 }
 
-uint64_t myVulkanRTBaseKHR::getBufferDeviceAddress(VkBuffer buffer)
+uint64_t MyVulkanRTBase::getBufferDeviceAddress(VkBuffer buffer)
 {
 	VkBufferDeviceAddressInfoKHR bufferDeviceAI{};
 	bufferDeviceAI.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -311,7 +311,7 @@ uint64_t myVulkanRTBaseKHR::getBufferDeviceAddress(VkBuffer buffer)
 }
 
 
-VkStridedDeviceAddressRegionKHR myVulkanRTBaseKHR::getSbtEntryStridedDeviceAddressRegion(VkBuffer buffer,
+VkStridedDeviceAddressRegionKHR MyVulkanRTBase::getSbtEntryStridedDeviceAddressRegion(VkBuffer buffer,
 	uint32_t handleCount)
 {
 	const uint32_t handleSizeAligned = vks::tools::alignedSize(rayTracingPipelineProperties.shaderGroupHandleSize, rayTracingPipelineProperties.shaderGroupHandleAlignment);
@@ -322,7 +322,7 @@ VkStridedDeviceAddressRegionKHR myVulkanRTBaseKHR::getSbtEntryStridedDeviceAddre
 	return stridedDeviceAddressRegionKHR;
 }
 
-void myVulkanRTBaseKHR::createShaderBindingTable(ShaderBindingTable& shaderBindingTable, uint32_t handleCount)
+void MyVulkanRTBase::createShaderBindingTable(ShaderBindingTable& shaderBindingTable, uint32_t handleCount)
 {
 	// Create buffer to hold all shader handles for the SBT
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(
@@ -336,7 +336,7 @@ void myVulkanRTBaseKHR::createShaderBindingTable(ShaderBindingTable& shaderBindi
 	shaderBindingTable.map();
 }
 
-void myVulkanRTBaseKHR::prepare()
+void MyVulkanRTBase::prepare()
 {
 	VulkanExampleBase::prepare();
 	// Get properties and features

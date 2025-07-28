@@ -8,3 +8,6 @@
 [submodule "external/meshoptimizer"]
 	path = external/meshoptimizer
 	url = https://github.com/zeux/meshoptimizer.git
+[submodule "external/nv_cluster_builder"]
+	path = external/nv_cluster_builder
+	url = https://github.com/nvpro-samples/nv_cluster_builder.git

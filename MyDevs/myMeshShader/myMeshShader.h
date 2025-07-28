@@ -21,7 +21,8 @@
 #define TINYGLTF_ANDROID_LOAD_FROM_ASSETS
 #endif
 #include "tiny_gltf.h"*/
-
+#pragma once
+#include "myIncludes.h"
 #include "vulkanexamplebase.h"
 #include "myglTFModel.h"
 
