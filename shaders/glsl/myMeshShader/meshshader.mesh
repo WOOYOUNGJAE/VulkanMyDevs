@@ -28,9 +28,10 @@ layout (set = 1, binding = 0) uniform UBOModel
 
 struct VertexType
 {
-	vec3 pos; float pad0;
-	vec3 normal; float pad1;
-	vec2 uv;vec2 pad;
+	vec3 pos;
+	float normalX;
+	vec2 normalYZ;
+	vec2 uv;
 	vec4 color;
 	vec4 tangent;
 #ifdef USE_SKINNING
@@ -50,7 +51,7 @@ struct Meshlet
 };
 taskPayloadSharedEXT Payload_MeshShader payload;
 
-layout (set = 3, binding = 0) buffer SSBOVertexBuffer
+layout (std430, set = 3, binding = 0) buffer SSBOVertexBuffer
 {
 	VertexType vertices[];
 }ssboVertices;

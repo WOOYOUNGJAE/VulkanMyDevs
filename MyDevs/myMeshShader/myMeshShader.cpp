@@ -284,7 +284,7 @@ void MyMeshShader::prepare()
 
 
 
-#if __DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
+#if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
 	std::string batchPath = getShadersPath() + "myMeshShader/ShaderCompile.bat";
 	system(batchPath.c_str());
 	std::cout << "\t...current project's shaders compile completed.\n";

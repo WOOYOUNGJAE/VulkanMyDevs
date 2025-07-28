@@ -247,16 +247,16 @@ namespace myglTF
 
 	typedef struct VERTEX_TYPE
 	{
-		alignas(16)glm::vec3 pos;
-		alignas(16)glm::vec3 normal;
-		alignas(16)glm::vec2 uv;
-		alignas(16)glm::vec4 color;
-		alignas(16)glm::vec4 tangent;
+		glm::vec3 pos;
+		glm::vec3 normal;
+		glm::vec2 uv;
+		glm::vec4 color;
+		glm::vec4 tangent;
 	}VertexType, VertexSimple;
 	struct VertexSkinning : public VertexType
 	{
-		alignas(16)glm::vec4 joint0;
-		alignas(16)glm::vec4 weight0;
+		glm::vec4 joint0;
+		glm::vec4 weight0;
 	};
 
 	enum FileLoadingFlags {
