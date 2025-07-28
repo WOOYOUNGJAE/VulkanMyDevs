@@ -15,8 +15,11 @@
 #define VK_GLTF_MATERIAL_IDS
 #include "myglTFModel.h"
 
-class MyRayTracingBasic : public MyVulkanRTBase
+class MyClusterAccelerationStructureNV : public MyVulkanRTBase
 {
+private: // NV Cluster Acceleration Structure extensions
+	VkPhysicalDeviceClusterAccelerationStructureFeaturesNV clustersNV = {
+	  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV };
 public:
 	AccelerationStructure TLAS{};
 	AccelerationStructure BLAS{};
@@ -59,8 +62,8 @@ public:
 
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 public:
-	MyRayTracingBasic();
-	~MyRayTracingBasic();
+	MyClusterAccelerationStructureNV();
+	~MyClusterAccelerationStructureNV();
 
 	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
 
@@ -121,7 +124,8 @@ public:
 
 	void loadAssets();
 
-	void prepare();
+	void enableExtensions() override;
+	void prepare() override;
 
 	void draw();
 

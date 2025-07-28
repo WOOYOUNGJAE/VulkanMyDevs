@@ -8,18 +8,19 @@
 */
 
 #pragma once
-#include "myIncludes.h"
+
+#pragma once
 #include "myVulkanRTBase.h"
 #include "myglTFModel.h"
 
 #define VK_GLTF_MATERIAL_IDS
 #include "myglTFModel.h"
 
-class MyRayTracingBasic : public MyVulkanRTBase
+class myRaytracingBasicNV : public myVulkanRTBaseNV
 {
 public:
-	AccelerationStructure TLAS{};
-	AccelerationStructure BLAS{};
+	AccelerationStructureNV TLAS{};
+	AccelerationStructureNV BLAS{};
 
 	vks::Buffer vertexBuffer;
 	vks::Buffer indexBuffer;
@@ -34,7 +35,7 @@ public:
 	};
 	vks::Buffer geometryNodesBuffer;
 
-	std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups{};
+	std::vector<VkRayTracingShaderGroupCreateInfoNV> shaderGroups{};
 	struct ShaderBindingTables {
 		ShaderBindingTable raygen;
 		ShaderBindingTable miss;
@@ -59,10 +60,10 @@ public:
 
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 public:
-	MyRayTracingBasic();
-	~MyRayTracingBasic();
+	myRaytracingBasicNV();
+	~myRaytracingBasicNV();
 
-	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
+	void createAccelerationStructureBuffer(AccelerationStructureNV& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
 
 	/*
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)

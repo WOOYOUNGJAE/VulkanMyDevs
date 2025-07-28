@@ -17,43 +17,32 @@ struct ScratchBuffer
 	VkDeviceMemory memory = VK_NULL_HANDLE;
 };
 
-struct AccelerationStructureBase
+struct AccelerationStructure
 {
 	uint64_t deviceAddress = 0;
 	VkDeviceMemory memory = VK_NULL_HANDLE;
 	VkBuffer buffer = VK_NULL_HANDLE;
+	VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
 };
 
-class myVulkanRTBase : public VulkanExampleBase
+class MyVulkanRTBase : public VulkanExampleBase
 {
 protected:
 	// Update the default render pass with different color attachment load ops
 	void setupRenderPass() override;
 	void setupFrameBuffer() override;
 public:
+	class ShaderBindingTable : public vks::Buffer
+	{
+	public:
+		VkStridedDeviceAddressRegionKHR stridedDeviceAddressRegion{};
+	};
 	struct StorageImage {
 		VkDeviceMemory memory = VK_NULL_HANDLE;
 		VkImage image = VK_NULL_HANDLE;
 		VkImageView view = VK_NULL_HANDLE;
 		VkFormat format;
 	} storageImage;
-
-	bool rayQueryOnly = false;
-
-	void createStorageImage(VkFormat format, VkExtent3D extent);
-	void deleteStorageImage();
-	// Draw the ImGUI UI overlay using a render pass
-	void drawUI(VkCommandBuffer commandBuffer, VkFramebuffer framebuffer);
-};
-
-
-class myVulkanRTBaseKHR : public myVulkanRTBase
-{
-public:
-	struct AccelerationStructureKHR : AccelerationStructureBase
-	{
-		VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
-	};
 
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = VK_NULL_HANDLE;
 	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = VK_NULL_HANDLE;
@@ -73,29 +62,19 @@ public:
 	VkPhysicalDeviceRayTracingPipelineFeaturesKHR enabledRayTracingPipelineFeatures{};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR enabledAccelerationStructureFeatures{};
 
-	class ShaderBindingTable : public vks::Buffer
-	{
-	public:
-		VkStridedDeviceAddressRegionKHR stridedDeviceAddressRegion{};
-	};
-
-	void enableExtensions();
+	bool rayQueryOnly = false;
+	void createStorageImage(VkFormat format, VkExtent3D extent);
+	void deleteStorageImage();
+	// Draw the ImGUI UI overlay using a render pass
+	void drawUI(VkCommandBuffer commandBuffer, VkFramebuffer framebuffer);
 	ScratchBuffer createScratchBuffer(VkDeviceSize size);
 	void deleteScratchBuffer(ScratchBuffer& scratchBuffer);
-	void createAccelerationStructure(AccelerationStructureKHR& accelerationStructure, VkAccelerationStructureTypeKHR type, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
-	void deleteAccelerationStructure(AccelerationStructureKHR& accelerationStructure);
+	void createAccelerationStructure(AccelerationStructure& accelerationStructure, VkAccelerationStructureTypeKHR type, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
+	void deleteAccelerationStructure(AccelerationStructure& accelerationStructure);
 	uint64_t getBufferDeviceAddress(VkBuffer buffer);
 	VkStridedDeviceAddressRegionKHR getSbtEntryStridedDeviceAddressRegion(VkBuffer buffer, uint32_t handleCount);
 	void createShaderBindingTable(ShaderBindingTable& shaderBindingTable, uint32_t handleCount);
 
+	virtual void enableExtensions();
 	virtual void prepare();
-};
-
-class myVulkanRTBaseNV : public myVulkanRTBase
-{
-public:
-	struct AccelerationStructureKHR : AccelerationStructureBase
-	{
-		VkAccelerationStructureNV handle;
-	};
 };

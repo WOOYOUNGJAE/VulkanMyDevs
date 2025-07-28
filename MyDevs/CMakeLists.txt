@@ -19,6 +19,7 @@ function(buildMyBase)
 
     target_link_libraries(myBase PUBLIC base)
     target_link_libraries(myBase PUBLIC meshoptimizer)
+    target_link_libraries(myBase PUBLIC nv_cluster_builder)
 
     target_include_directories(myBase PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/myBase")
     set_target_properties(myBase PROPERTIES FOLDER "myDevs")
@@ -118,7 +119,7 @@ set(EXAMPLES
     playground
     myMeshShader
     myRayTracingBasic
-    myClusterAcclerationStructureNV
+    myClusterAccelerationStructureNV
 )
 
 buildMyBase()

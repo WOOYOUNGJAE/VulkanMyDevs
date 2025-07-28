@@ -11,15 +11,15 @@
 * This sample comes with a tutorial, see the README.md in this folder
 */
 
-#include "myRayTracingBasic.h"
+#include "myClusterAccelerationStructureNV.h"
 
 /*
 	Vulkan Example class
 */
 
-MyRayTracingBasic::MyRayTracingBasic()
+MyClusterAccelerationStructureNV::MyClusterAccelerationStructureNV()
 {
-	title = "MyRayTracingBasic";
+	title = "MyClusterAccelerationStructureNV";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
 	camera.setRotation(glm::vec3(0.0f, 0.0f, 0.0f));
@@ -34,7 +34,7 @@ MyRayTracingBasic::MyRayTracingBasic()
 	enabledDeviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
 }
 
-MyRayTracingBasic::~MyRayTracingBasic()
+MyClusterAccelerationStructureNV::~MyClusterAccelerationStructureNV()
 {
 	if (device) {
 		vkDestroyPipeline(device, pipeline, nullptr);
@@ -54,8 +54,8 @@ MyRayTracingBasic::~MyRayTracingBasic()
 	}
 }
 
-void MyRayTracingBasic::createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure,
-                                                             VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
+void MyClusterAccelerationStructureNV::createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure,
+	VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
 {
 	VkBufferCreateInfo bufferCreateInfo{};
 	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -76,7 +76,7 @@ void MyRayTracingBasic::createAccelerationStructureBuffer(AccelerationStructure&
 	VK_CHECK_RESULT(vkBindBufferMemory(device, accelerationStructure.buffer, accelerationStructure.memory, 0));
 }
 
-void MyRayTracingBasic::createBottomLevelAccelerationStructure()
+void MyClusterAccelerationStructureNV::createBottomLevelAccelerationStructure()
 {
 	// Use transform matrices from the glTF nodes
 	std::vector<VkTransformMatrixKHR> transformMatrices{};
@@ -228,7 +228,7 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 	deleteScratchBuffer(scratchBuffer);
 }
 
-void MyRayTracingBasic::createTopLevelAccelerationStructure()
+void MyClusterAccelerationStructureNV::createTopLevelAccelerationStructure()
 {
 	// We flip the matrix [1][1] = -1.0f to accomodate for the glTF up vector
 	VkTransformMatrixKHR transformMatrix = {
@@ -333,7 +333,7 @@ void MyRayTracingBasic::createTopLevelAccelerationStructure()
 	instancesBuffer.destroy();
 }
 
-void MyRayTracingBasic::createShaderBindingTables()
+void MyClusterAccelerationStructureNV::createShaderBindingTables()
 {
 	const uint32_t handleSize = rayTracingPipelineProperties.shaderGroupHandleSize;
 	const uint32_t handleSizeAligned = vks::tools::alignedSize(rayTracingPipelineProperties.shaderGroupHandleSize, rayTracingPipelineProperties.shaderGroupHandleAlignment);
@@ -354,7 +354,7 @@ void MyRayTracingBasic::createShaderBindingTables()
 	memcpy(shaderBindingTables.hit.mapped, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize);
 }
 
-void MyRayTracingBasic::createRayTracingPipeline()
+void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 {
 	const uint32_t imageCount = static_cast<uint32_t>(model.textures.size());
 
@@ -401,7 +401,7 @@ void MyRayTracingBasic::createRayTracingPipeline()
 
 	// Ray generation group
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myClusterAccelerationStructureNV/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
@@ -414,7 +414,7 @@ void MyRayTracingBasic::createRayTracingPipeline()
 
 	// Miss group
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myClusterAccelerationStructureNV/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
@@ -424,14 +424,14 @@ void MyRayTracingBasic::createRayTracingPipeline()
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		shaderGroups.push_back(shaderGroup);
 		// Second shader for shadows
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/shadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myClusterAccelerationStructureNV/shadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroups.push_back(shaderGroup);
 	}
 
 	// Closest hit group for doing texture lookups
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myClusterAccelerationStructureNV/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
@@ -439,7 +439,7 @@ void MyRayTracingBasic::createRayTracingPipeline()
 		shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		// This group also uses an anyhit shader for doing transparency (see anyhit.rahit for details)
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/anyhit.rahit.spv", VK_SHADER_STAGE_ANY_HIT_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myClusterAccelerationStructureNV/anyhit.rahit.spv", VK_SHADER_STAGE_ANY_HIT_BIT_KHR));
 		shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroups.push_back(shaderGroup);
 	}
@@ -458,7 +458,7 @@ void MyRayTracingBasic::createRayTracingPipeline()
 	VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &pipeline));
 }
 
-void MyRayTracingBasic::createDescriptorSets()
+void MyClusterAccelerationStructureNV::createDescriptorSets()
 {
 	uint32_t imageCount = static_cast<uint32_t>(model.textures.size());
 	std::vector<VkDescriptorPoolSize> poolSizes = {
@@ -530,7 +530,7 @@ void MyRayTracingBasic::createDescriptorSets()
 	vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
-void MyRayTracingBasic::createUniformBuffer()
+void MyClusterAccelerationStructureNV::createUniformBuffer()
 {
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -543,7 +543,7 @@ void MyRayTracingBasic::createUniformBuffer()
 	updateUniformBuffers();
 }
 
-void MyRayTracingBasic::handleResize()
+void MyClusterAccelerationStructureNV::handleResize()
 {
 	// Recreate image
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -554,7 +554,7 @@ void MyRayTracingBasic::handleResize()
 	resized = false;
 }
 
-void MyRayTracingBasic::buildCommandBuffers()
+void MyClusterAccelerationStructureNV::buildCommandBuffers()
 {
 	if (resized)
 	{
@@ -636,7 +636,7 @@ void MyRayTracingBasic::buildCommandBuffers()
 	}
 }
 
-void MyRayTracingBasic::updateUniformBuffers()
+void MyClusterAccelerationStructureNV::updateUniformBuffers()
 {
 	uniformData.projInverse = glm::inverse(camera.matrices.perspective);
 	uniformData.viewInverse = glm::inverse(camera.matrices.view);
@@ -648,7 +648,7 @@ void MyRayTracingBasic::updateUniformBuffers()
 	memcpy(uniformBuffer.mapped, &uniformData, sizeof(uniformData));
 }
 
-void MyRayTracingBasic::getEnabledFeatures()
+void MyClusterAccelerationStructureNV::getEnabledFeatures()
 {
 	// Enable features required for ray tracing using feature chaining via pNext		
 	enabledBufferDeviceAddresFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
@@ -673,18 +673,25 @@ void MyRayTracingBasic::getEnabledFeatures()
 	enabledFeatures.samplerAnisotropy = VK_TRUE;
 }
 
-void MyRayTracingBasic::loadAssets()
+void MyClusterAccelerationStructureNV::loadAssets()
 {
 	myglTF::Model::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue/*, myglTF::FileLoadingFlags::PreTransformVertices*/);
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }
 
-void MyRayTracingBasic::prepare()
+void MyClusterAccelerationStructureNV::enableExtensions()
+{
+	MyVulkanRTBase::enableExtensions();
+
+	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+}
+
+void MyClusterAccelerationStructureNV::prepare()
 {
 	MyVulkanRTBase::prepare();
 #if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
-	std::string batchPath = getShadersPath() + "myRayTracingBasic/ShaderCompile.bat";
+	std::string batchPath = getShadersPath() + "myClusterAccelerationStructureNV/ShaderCompile.bat";
 	system(batchPath.c_str());
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
@@ -703,7 +710,7 @@ void MyRayTracingBasic::prepare()
 	prepared = true;
 }
 
-void MyRayTracingBasic::draw()
+void MyClusterAccelerationStructureNV::draw()
 {
 	VulkanExampleBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
@@ -712,7 +719,7 @@ void MyRayTracingBasic::draw()
 	VulkanExampleBase::submitFrame();
 }
 
-void MyRayTracingBasic::render()
+void MyClusterAccelerationStructureNV::render()
 {
 	if (!prepared)
 		return;
@@ -724,12 +731,12 @@ void MyRayTracingBasic::render()
 	draw();
 }
 
-MyRayTracingBasic* myRayTracingBasic;
+MyClusterAccelerationStructureNV* myClusterAccelerationStructureNV;
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	if (myRayTracingBasic != NULL)
+	if (myClusterAccelerationStructureNV != NULL)
 	{
-		myRayTracingBasic->handleMessages(hWnd, uMsg, wParam, lParam);
+		myClusterAccelerationStructureNV->handleMessages(hWnd, uMsg, wParam, lParam);
 	}
 	return (DefWindowProc(hWnd, uMsg, wParam, lParam));
 }
@@ -738,12 +745,12 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance
 #ifdef _DEBUG
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
-	for (int32_t i = 0; i < __argc; i++) { MyRayTracingBasic::args.push_back(__argv[i]); };
-	myRayTracingBasic = new MyRayTracingBasic();
-	myRayTracingBasic->initVulkan();
-	myRayTracingBasic->setupWindow(hInstance, WndProc);
-	myRayTracingBasic->prepare();
-	myRayTracingBasic->renderLoop();
-	delete(myRayTracingBasic);
+	for (int32_t i = 0; i < __argc; i++) { MyClusterAccelerationStructureNV::args.push_back(__argv[i]); };
+	myClusterAccelerationStructureNV = new MyClusterAccelerationStructureNV();
+	myClusterAccelerationStructureNV->initVulkan();
+	myClusterAccelerationStructureNV->setupWindow(hInstance, WndProc);
+	myClusterAccelerationStructureNV->prepare();
+	myClusterAccelerationStructureNV->renderLoop();
+	delete(myClusterAccelerationStructureNV);
 	return 0;
 }
