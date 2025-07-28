@@ -4,10 +4,16 @@
  *
  */
 
-#version 450
+#version 460
 #extension GL_EXT_mesh_shader : require
 
+#include "../../../MyDevs/myBase/myIncludesCPUGPU.h"
+
+taskPayloadSharedEXT Payload_MeshShader payload;
+
+layout(local_size_x = WAVE_SIZE, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
-	EmitMeshTasksEXT(1, 1, 1);
+	payload.meshletIndices[gl_LocalInvocationID.x] = gl_GlobalInvocationID.x; // globalThreadID == (blockIdx*blockDim+threadID)
+	EmitMeshTasksEXT(WAVE_SIZE, 1, 1);
 }

@@ -1,4 +1,4 @@
-#version 450
+#version 460
 
 layout (set = 2, binding = 0) uniform sampler2D samplerColorMap;
 layout (set = 2, binding = 1) uniform sampler2D samplerNormalMap;

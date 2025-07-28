@@ -6,13 +6,12 @@
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 *
 * Summary:
-* Render a complete scene loaded from an glTF file. The sample is based on the glTF model loading sample, 
-* and adds data structures, functions and shaders required to render a more complex scene using Crytek's Sponza model.
+* Cluster Acceleration Structure(CLAS) of Nvidia extension
 *
 * This sample comes with a tutorial, see the README.md in this folder
 */
 
-#include "myMeshShader.h"
+#include "myClusterAcclerationStructureNV.h"
 
 // global
 bool g_useMeshShader = 1;
@@ -23,7 +22,7 @@ bool g_useTaskShader = 1;
 	Vulkan Example class
 */
 
-MyMeshShader::MyMeshShader() : VulkanExampleBase()
+myClusterAcclerationStructureNV::myClusterAcclerationStructureNV() : VulkanExampleBase()
 {
 	apiVersion = VK_API_VERSION_1_4;
 
@@ -52,7 +51,7 @@ MyMeshShader::MyMeshShader() : VulkanExampleBase()
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 256.0f);
 }
 
-MyMeshShader::~MyMeshShader()
+myClusterAcclerationStructureNV::~myClusterAcclerationStructureNV()
 {
 	if (device) {
 		vkDestroyPipelineLayout(device, traditionalPipelineLayout, nullptr);
@@ -63,12 +62,12 @@ MyMeshShader::~MyMeshShader()
 	}
 }
 
-void MyMeshShader::getEnabledFeatures()
+void myClusterAcclerationStructureNV::getEnabledFeatures()
 {
 	enabledFeatures.samplerAnisotropy = deviceFeatures.samplerAnisotropy;
 }
 
-void MyMeshShader::buildCommandBuffers()
+void myClusterAcclerationStructureNV::buildCommandBuffers()
 {
 	VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
 
@@ -113,7 +112,7 @@ void MyMeshShader::buildCommandBuffers()
 }
 
 
-void MyMeshShader::loadAssets()
+void myClusterAcclerationStructureNV::loadAssets()
 {
 	myglTF::FileLoadingFlags loadingFlag = (myglTF::FileLoadingFlags)(
 		myglTF::FileLoadingFlags::PreTransformVertices | myglTF::FileLoadingFlags::PrepareTraditionalPipeline | myglTF::FileLoadingFlags::PrepareMeshShaderPipeline);
@@ -121,7 +120,7 @@ void MyMeshShader::loadAssets()
 	//model.loadFromFile("D:\\MyHome\\Assets\\San_Miguel\\gltf\\San_Miguel.gltf", vulkanDevice, queue, loadingFlag);
 }
 
-void MyMeshShader::setupDescriptors()
+void myClusterAcclerationStructureNV::setupDescriptors()
 {
 	/*
 		This sample uses separate descriptor sets (and layouts) for the matrices and materials (textures)
@@ -157,7 +156,7 @@ void MyMeshShader::setupDescriptors()
 
 }
 
-void MyMeshShader::preparePipelines()
+void myClusterAcclerationStructureNV::preparePipelines()
 {
 	// Layout
 	// Pipeline layout uses both descriptor sets (set 0 = matrices, set 1 = material)
@@ -209,16 +208,16 @@ void MyMeshShader::preparePipelines()
 	pipelineCI.pDepthStencilState = &depthStencilStateCI;
 	pipelineCI.pDynamicState = &dynamicStateCI;
 
-	traditionalShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/sceneBind.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	traditionalShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/sceneBind.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	traditionalShaderStages[0] = loadShader(getShadersPath() + "myClusterAcclerationStructureNV/sceneBind.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	traditionalShaderStages[1] = loadShader(getShadersPath() + "myClusterAcclerationStructureNV/sceneBind.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	meshShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/meshshader.task.spv", VK_SHADER_STAGE_TASK_BIT_EXT);
-	meshShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
-	meshShaderStages[2] = loadShader(getShadersPath() + "myMeshShader/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	meshShaderStages[0] = loadShader(getShadersPath() + "myClusterAcclerationStructureNV/meshshader.task.spv", VK_SHADER_STAGE_TASK_BIT_EXT);
+	meshShaderStages[1] = loadShader(getShadersPath() + "myClusterAcclerationStructureNV/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
+	meshShaderStages[2] = loadShader(getShadersPath() + "myClusterAcclerationStructureNV/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	///*TODO no task shader yet*/
-	//meshShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
-	//meshShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	//meshShaderStages[0] = loadShader(getShadersPath() + "myClusterAcclerationStructureNV/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
+	//meshShaderStages[1] = loadShader(getShadersPath() + "myClusterAcclerationStructureNV/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	// POI: Instead if using a few fixed pipelines, we create one traditionalPipeline for each material using the properties of that material
 	for (auto &material : model.materials) {
@@ -263,13 +262,13 @@ void MyMeshShader::preparePipelines()
 
 }
 
-void MyMeshShader::prepareUniformBuffers()
+void myClusterAcclerationStructureNV::prepareUniformBuffers()
 {
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &shaderData.buffer, sizeof(shaderData.values)));
 	VK_CHECK_RESULT(shaderData.buffer.map());
 }
 
-void MyMeshShader::updateUniformBuffers()
+void myClusterAcclerationStructureNV::updateUniformBuffers()
 {
 	shaderData.values.projection = camera.matrices.perspective;
 	shaderData.values.view = camera.matrices.view;
@@ -277,7 +276,7 @@ void MyMeshShader::updateUniformBuffers()
 	memcpy(shaderData.buffer.mapped, &shaderData.values, sizeof(shaderData.values));
 }
 
-void MyMeshShader::prepare()
+void myClusterAcclerationStructureNV::prepare()
 {
 	VulkanExampleBase::prepare();
 	vkCmdDrawMeshTasksEXT = reinterpret_cast<PFN_vkCmdDrawMeshTasksEXT>(vkGetDeviceProcAddr(device, "vkCmdDrawMeshTasksEXT"));
@@ -285,7 +284,7 @@ void MyMeshShader::prepare()
 
 
 #if __DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
-	std::string batchPath = getShadersPath() + "myMeshShader/ShaderCompile.bat";
+	std::string batchPath = getShadersPath() + "myClusterAcclerationStructureNV/ShaderCompile.bat";
 	system(batchPath.c_str());
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
@@ -297,13 +296,13 @@ void MyMeshShader::prepare()
 	prepared = true;
 }
 
-void MyMeshShader::render()
+void myClusterAcclerationStructureNV::render()
 {
 	updateUniformBuffers();
 	renderFrame();
 }
 
-void MyMeshShader::OnUpdateUIOverlay(vks::UIOverlay* overlay)
+void myClusterAcclerationStructureNV::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 {
 	if (overlay->header("Visibility"))
 	{
@@ -312,12 +311,12 @@ void MyMeshShader::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 }
 
 //VULKAN_EXAMPLE_MAIN()
-MyMeshShader* myMeshShader;														
+myClusterAcclerationStructureNV* myClusterAcclerationStructureNV;														
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	if (myMeshShader != NULL)
+	if (myClusterAcclerationStructureNV != NULL)
 	{
-		myMeshShader->handleMessages(hWnd, uMsg, wParam, lParam);
+		myClusterAcclerationStructureNV->handleMessages(hWnd, uMsg, wParam, lParam);
 	}
 	return (DefWindowProc(hWnd, uMsg, wParam, lParam));
 }
@@ -326,12 +325,12 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance
 #ifdef _DEBUG
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
-	for (int32_t i = 0; i < __argc; i++) { MyMeshShader::args.push_back(__argv[i]); };
-	myMeshShader = new MyMeshShader();
-	myMeshShader->initVulkan();
-	myMeshShader->setupWindow(hInstance, WndProc);
-	myMeshShader->prepare();
-	myMeshShader->renderLoop();
-	delete(myMeshShader);
+	for (int32_t i = 0; i < __argc; i++) { myClusterAcclerationStructureNV::args.push_back(__argv[i]); };
+	myClusterAcclerationStructureNV = new myClusterAcclerationStructureNV();
+	myClusterAcclerationStructureNV->initVulkan();
+	myClusterAcclerationStructureNV->setupWindow(hInstance, WndProc);
+	myClusterAcclerationStructureNV->prepare();
+	myClusterAcclerationStructureNV->renderLoop();
+	delete(myClusterAcclerationStructureNV);
 	return 0;
 }

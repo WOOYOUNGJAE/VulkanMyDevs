@@ -306,7 +306,7 @@ namespace myglTF
 		VkDescriptorPool descriptorPool;
 		typedef struct PRIMITIVE_TAG
 		{
-			int count;
+			uint32_t count;
 			VkBuffer buffer;
 			VkDeviceMemory memory;
 		}Vertices, Indices, MeshletVertices, MeshletIndices, Meshlets;
@@ -360,7 +360,7 @@ namespace myglTF
 		void loadAnimations(tinygltf::Model& gltfModel);
 		void loadFromFile(std::string filename, vks::VulkanDevice* device, VkQueue transferQueue, uint32_t fileLoadingFlags = myglTF::FileLoadingFlags::None, float scale = 1.0f);
 		void bindBuffers(VkCommandBuffer commandBuffer);
-		void drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t renderFlags = 0, VkPipelineLayout pipelineLayout = VK_NULL_HANDLE, uint32_t bindImageSet = 1, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT = nullptr);
+		void drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t renderFlags = 0, VkPipelineLayout pipelineLayout = VK_NULL_HANDLE, uint32_t bindImageSet = 1);
 		void draw(VkCommandBuffer commandBuffer, uint32_t renderFlags = 0, VkPipelineLayout pipelineLayout = VK_NULL_HANDLE, uint32_t bindImageSet = 1, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT = nullptr);
 		void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
 		void getSceneDimensions();

@@ -1,4 +1,5 @@
 #include "myglTFModel.h"
+#include "myIncludesCPUGPU.h"
 
 VkMemoryPropertyFlags myglTF::Model::memoryPropertyFlags = 0;
 uint32_t myglTF::Model::descriptorBindingFlags = myglTF::DescriptorBindingFlags::ImageBaseColor | myglTF::DescriptorBindingFlags::ImageNormalMap;
@@ -725,8 +726,8 @@ void myglTF::Model::loadFromFile(std::string filename, vks::VulkanDevice* device
 
 		// Fill Meshlet buffers count data
 		meshlets.count = numMeshlets;
-		meshletVertices.count = tempMeshletVertices.size();
-		meshletIndices.count = tempMeshletPackedTriangles.size();
+		meshletVertices.count = static_cast<int>(tempMeshletVertices.size());
+		meshletIndices.count = static_cast<int>(tempMeshletPackedTriangles.size());
 
 		// Copy from staging buffers
 		//VkCommandBuffer copyCmd = device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -941,7 +942,7 @@ void myglTF::Model::bindBuffers(VkCommandBuffer commandBuffer)
 }
 
 void myglTF::Model::drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t renderFlags,
-	VkPipelineLayout pipelineLayout, uint32_t bindImageSet, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT)
+                             VkPipelineLayout pipelineLayout, uint32_t bindImageSet)
 {
 	if (node->mesh) {
 		for (Primitive* primitive : node->mesh->primitives) {
@@ -970,7 +971,7 @@ void myglTF::Model::drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t
 		}
 	}
 	for (auto& child : node->children) {
-		drawNode(child, commandBuffer, renderFlags, pipelineLayout, bindImageSet, vkCmdDrawMeshTasksEXT);
+		drawNode(child, commandBuffer, renderFlags, pipelineLayout, bindImageSet);
 	}
 }
 
@@ -982,7 +983,8 @@ void myglTF::Model::draw(VkCommandBuffer commandBuffer, uint32_t renderFlags, Vk
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &rootUniformBuffer.descriptorSet, 0, nullptr);
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 3, 1, &meshShaderDescriptorSet, 0, nullptr);
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshShaderPipeline);
-		vkCmdDrawMeshTasksEXT(commandBuffer, meshlets.count, 1, 1);
+		uint32_t gridDimX = meshlets.count / WAVE_SIZE + 1; // num Thread Blocks
+		vkCmdDrawMeshTasksEXT(commandBuffer, gridDimX, 1, 1);
 	}
 	else // traditional pipeline
 	{
@@ -994,7 +996,7 @@ void myglTF::Model::draw(VkCommandBuffer commandBuffer, uint32_t renderFlags, Vk
 			}
 		}
 		for (auto& node : nodes) {
-			drawNode(node, commandBuffer, renderFlags, pipelineLayout, bindImageSet, vkCmdDrawMeshTasksEXT);
+			drawNode(node, commandBuffer, renderFlags, pipelineLayout, bindImageSet);
 		}
 	}
 }
@@ -1855,7 +1857,7 @@ void myglTF::Model::generateMeshlets(const std::vector<VertexType*>& originalVer
 	}
 
 	// move meshlets to outParam
-	outNumMeshlets = meshlets.size();
+	outNumMeshlets = static_cast<uint32_t>(meshlets.size());
 	*outMeshlets = new meshopt_Meshlet[meshlets.size()]; // released after buffer created
 	std::move(meshlets.begin(), meshlets.end(), *outMeshlets);
 }

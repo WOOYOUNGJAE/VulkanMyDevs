@@ -117,6 +117,7 @@ endfunction(buildExamples)
 set(EXAMPLES
     playground
     myMeshShader
+    myClusterAcclerationStructureNV
 )
 
 buildMyBase()

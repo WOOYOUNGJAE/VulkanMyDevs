@@ -4,8 +4,10 @@
  *
  */
 
-#version 450
+#version 460
 #extension GL_EXT_mesh_shader : require
+
+#include "../../../MyDevs/myBase/myIncludesCPUGPU.h"
 
 layout (set = 0, binding = 0) uniform UBOScene 
 {
@@ -46,6 +48,7 @@ struct Meshlet
 	uint vertexCount;
 	uint triangleCount;
 };
+taskPayloadSharedEXT Payload_MeshShader payload;
 
 layout (set = 3, binding = 0) buffer SSBOVertexBuffer
 {
@@ -66,19 +69,19 @@ layout (set = 3, binding = 3) buffer SSBOMeshletsIndexBuffer
 
 
 layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
-layout(triangles, max_vertices = 64, max_primitives = 128) out;
 
 layout(location = 0) out MeshOutput
 {
 	vec4 color;
 } meshOutput[];
-
+layout(triangles, max_vertices = 64, max_primitives = 128) out;
 void main()
 {
 	uint liID = gl_LocalInvocationID.x; // threadIdx
 	uint wgID = gl_WorkGroupID.x; // blockIdx
+	uint meshletIndex = payload.meshletIndices[wgID];
 
-	Meshlet m = ssboMeshlets.meshlet[wgID];
+	Meshlet m = ssboMeshlets.meshlet[meshletIndex];
 	SetMeshOutputsEXT(m.vertexCount, m.triangleCount);
 
 	if (liID < m.triangleCount)
@@ -106,9 +109,9 @@ void main()
 		gl_MeshVerticesEXT[liID].gl_Position = mvp * vec4(ssboVertices.vertices[vertexIndex].pos, 1);
 
         vec3 color = vec3(
-            float(wgID & 1),
-            float(wgID & 3) / 4,
-            float(wgID & 7) / 8);
+            float(meshletIndex & 1),
+            float(meshletIndex & 3) / 4,
+            float(meshletIndex & 7) / 8);
 		meshOutput[liID].color = vec4(color, 1);
 	}
 }
