@@ -58,12 +58,12 @@ public:
 	VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
 	VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };
 
-	myglTF::Model model;
+	myglTF::ModelRT model;
 
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 public:
 	MyClusterAccelerationStructureNV();
-	~MyClusterAccelerationStructureNV();
+	~MyClusterAccelerationStructureNV() override;
 
 	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
 

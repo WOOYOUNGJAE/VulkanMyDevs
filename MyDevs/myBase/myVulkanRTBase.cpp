@@ -1,4 +1,5 @@
 #include "myVulkanRTBase.h"
+#include "myDeviceFuncTable.h"
 /*
 * Ray Tracing Base
 *
@@ -7,6 +8,11 @@
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
+
+MyVulkanRTBase::~MyVulkanRTBase()
+{
+	delete deviceFuncTable; deviceFuncTable = nullptr;
+}
 
 void MyVulkanRTBase::setupRenderPass()
 {
@@ -350,6 +356,10 @@ void MyVulkanRTBase::prepare()
 	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 	deviceFeatures2.pNext = &accelerationStructureFeatures;
 	vkGetPhysicalDeviceFeatures2(physicalDevice, &deviceFeatures2);
+
+	// Create Vulkan Func Table
+	deviceFuncTable = new MyDeviceFuncTable(device);
+
 	// Get the function pointers required for ray tracing
 	vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(vkGetDeviceProcAddr(device, "vkGetBufferDeviceAddressKHR"));
 	vkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(device, "vkCmdBuildAccelerationStructuresKHR"));

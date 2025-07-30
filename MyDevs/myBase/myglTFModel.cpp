@@ -1,5 +1,8 @@
 #include "myglTFModel.h"
+
+#include "myDeviceFuncTable.h"
 #include "myIncludesCPUGPU.h"
+#include "MyVulkanRTBase.h"
 
 VkMemoryPropertyFlags myglTF::Model::memoryPropertyFlags = 0;
 uint32_t myglTF::Model::descriptorBindingFlags = myglTF::DescriptorBindingFlags::ImageBaseColor | myglTF::DescriptorBindingFlags::ImageNormalMap;
@@ -1828,8 +1831,6 @@ void myglTF::Model::generateMeshlets(const std::vector<VertexType*>& originalVer
 		// make meshlet indices(triangles) aligned to 4 bytes
 		meshletTriangles.resize(lastMeshlet.triangle_offset + ((lastMeshlet.triangle_count * 3 + 3) & ~3));
 		meshlets.resize(meshletCount);
-
-		vertexPositions.clear();
 	}
 
 	// generate packed triangle
@@ -1865,6 +1866,122 @@ void myglTF::Model::generateMeshlets(const std::vector<VertexType*>& originalVer
 }
 
 //-----------------------------
+
+void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions)
+{
+	// Do Cluster things - Strongly influenced by https://github.com/nvpro-samples/vk_animated_clusters
+	uint32_t clusterTriangles = 64;
+	uint32_t clusterVertices = 64;
+	size_t minTriangles = (clusterTriangles / 4) & ~3; // allow smaller clusters to be generated when that significantly improves their bounds
+	size_t maxVerticesPerMeshlet = clusterVertices; // Same for MeshShader
+	size_t maxIndicesPerMeshlet = minTriangles; // If MeshShader:124
+	float clusterMeshoptSpatialFill = 0.5f;
+
+	// build geometry clusters - Use MeshOptimizer(https://github.com/zeux/meshoptimizer)
+	{
+		std::vector<meshopt_Meshlet> meshlets(meshopt_buildMeshletsBound(originalIndices.size(), 64, minTriangles));
+
+		m_clusterLocalTriangles.resize(meshlets.size() * clusterTriangles * 3);
+		m_clusterLocalVertices.resize(meshlets.size() * clusterVertices);
+
+		size_t numClusters = meshopt_buildMeshletsSpatial(
+			meshlets.data(),
+			m_clusterLocalVertices.data(),
+			m_clusterLocalTriangles.data(),
+			originalIndices.data(),
+			originalIndices.size(),
+			reinterpret_cast<const float*>(vertexPositions.data()),
+			vertexPositions.size(),
+			sizeof(glm::vec3),
+			std::min(255u, clusterVertices),
+			minTriangles,
+			clusterTriangles,
+			clusterMeshoptSpatialFill);
+
+		m_numClusters = static_cast<uint32_t>(numClusters);
+
+		if (m_numClusters)
+		{
+			m_clusters.resize(m_numClusters);
+			m_clusters.shrink_to_fit();
+
+			// Fill Cluster Data
+			uint64_t clusterIdx = 0;
+			for (; clusterIdx < numClusters; ++clusterIdx)
+			{
+				meshopt_Meshlet& meshlet = meshlets[clusterIdx];
+				ClusterRT& cluster = m_clusters[clusterIdx];
+				cluster = {};
+				cluster.numTriangles = static_cast<uint16_t>(meshlet.triangle_count);
+				cluster.numVertices = static_cast<uint16_t>(meshlet.vertex_count);
+				cluster.firstLocalTriangle = meshlet.triangle_offset;
+				cluster.firstLocalVertex = meshlet.vertex_offset;
+			}
+
+			ClusterRT& lastCluster = m_clusters[clusterIdx - 1];
+			m_clusterLocalTriangles.resize(lastCluster.firstLocalTriangle + lastCluster.numTriangles * 3);
+			m_clusterLocalVertices.resize(lastCluster.firstLocalVertex + lastCluster.numVertices);
+			m_clusterLocalTriangles.shrink_to_fit();
+			m_clusterLocalVertices.shrink_to_fit();
+			m_numClusterVertices = static_cast<uint32_t>(m_clusterLocalVertices.size());
+		}
+	}
+
+	// Fill Cluster BBoxes Data
+	{
+		m_clusterBBoxes.resize(m_numClusters);
+		for (uint64_t clusterIdx = 0; clusterIdx < m_clusters.size(); ++clusterIdx)
+		{
+			ClusterRT& cluster = m_clusters[clusterIdx];
+			BBox bbox = { {FLT_MAX, FLT_MAX, FLT_MAX}, {-FLT_MAX, -FLT_MAX, -FLT_MAX} };
+			for (uint32_t vertexLocalIdx = 0; vertexLocalIdx < cluster.numVertices; ++vertexLocalIdx)
+			{
+				uint32_t  vertexGlobalIdx = m_clusterLocalVertices[cluster.firstLocalVertex + vertexLocalIdx];
+				glm::vec3 pos = vertexPositions[vertexGlobalIdx];
+
+				bbox.min = glm::min(bbox.min, pos);
+				bbox.max = glm::max(bbox.max, pos);
+			}
+			m_clusterBBoxes[clusterIdx] = bbox;
+		}
+	}
+	// Re-order Global(Model's) Index Array in order of Clusters
+	{
+		for (uint64_t clusterIdx = 0; clusterIdx < m_clusters.size(); ++clusterIdx)
+		{
+			ClusterRT& cluster = m_clusters[clusterIdx];
+			for (uint32_t t = 0; t < cluster.numTriangles; ++t) // per triangle in Cluster
+			{
+				// cur triangle in clusrter
+				glm::uvec3 localVertices = { m_clusterLocalTriangles[cluster.firstLocalTriangle + t * 3 + 0],
+											m_clusterLocalTriangles[cluster.firstLocalTriangle + t * 3 + 1],
+											m_clusterLocalTriangles[cluster.firstLocalTriangle + t * 3 + 2] };
+
+				assert(localVertices.x < cluster.numVertices);
+				assert(localVertices.y < cluster.numVertices);
+				assert(localVertices.z < cluster.numVertices);
+
+				glm::uvec3 globalVertices;
+
+				if (true) // !m_config.clusterDedicatedVertices from scene.cpp(https://github.com/nvpro-samples/vk_animated_clusters/blob/main/src/scene.cpp)
+				{
+					// need one more indirection
+					globalVertices = { m_clusterLocalVertices[globalVertices.x], m_clusterLocalVertices[globalVertices.y],
+									  m_clusterLocalVertices[globalVertices.z] };
+				}
+				else
+				{
+					globalVertices = { localVertices.x + cluster.firstLocalVertex, localVertices.y + cluster.firstLocalVertex,
+											  localVertices.z + cluster.firstLocalVertex };
+				}
+
+				originalIndices[cluster.firstTriangle + t + 0] = globalVertices.x;
+				originalIndices[cluster.firstTriangle + t + 1] = globalVertices.y;
+				originalIndices[cluster.firstTriangle + t + 2] = globalVertices.z;
+			}
+		}
+	}
+}
 
 myglTF::ModelRT::~ModelRT()
 {
@@ -2331,6 +2448,15 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 {
 	tinygltf::Model gltfModel;
 	tinygltf::TinyGLTF gltfContext;
+	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = MyDeviceFuncTable::Get()->vkGetBufferDeviceAddressKHR;
+	auto getBufferDeviceAddress = [&](VkBuffer buffer)
+	{
+		VkBufferDeviceAddressInfoKHR bufferDeviceAI{};
+		bufferDeviceAI.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		bufferDeviceAI.buffer = buffer;
+		return vkGetBufferDeviceAddressKHR(device->logicalDevice, &bufferDeviceAI);
+	};
+
 	if (fileLoadingFlags & FileLoadingFlags::DontLoadImages) {
 		gltfContext.SetImageLoader(loadImageDataFuncEmpty, nullptr);
 	}
@@ -2437,12 +2563,27 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		byteOffset += vertexSize;
 	}
 
+	// reorder index array for better cache hit
+	meshopt_optimizeVertexCache(tempIndicesCPU.data(), tempIndicesCPU.data(), tempIndicesCPU.size(), tempVerticesCPU.size());
+
 	size_t vertexBufferSize = tempVerticesCPU.size() * vertexSize;
 	size_t indexBufferSize = tempIndicesCPU.size() * sizeof(uint32_t);
 	indices.count = static_cast<uint32_t>(tempIndicesCPU.size());
 	vertices.count = static_cast<uint32_t>(tempVerticesCPU.size());
+	uint32_t numTriangles = indices.count / 3;
 
-	assert((vertexBufferSize > 0) && (indexBufferSize > 0));
+
+	getSceneDimensions();
+
+	// Do Cluster Things
+	{
+		std::vector<glm::vec3> vertexPositions;
+		for (const auto& vertex : tempVerticesCPU) // Fill vertexPositions vector
+		{
+			vertexPositions.emplace_back(vertex->pos);
+		}
+		initClusters(tempIndicesCPU, vertexPositions);		
+	}
 
 	struct StagingBuffer {
 		VkBuffer buffer;
@@ -2501,7 +2642,28 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	vkDestroyBuffer(device->logicalDevice, indexStaging.buffer, nullptr);
 	vkFreeMemory(device->logicalDevice, indexStaging.memory, nullptr);
 
-	getSceneDimensions();
+
+	// Raytracing Geometrynode per primitive of mesh
+	for (auto& node : linearNodes)
+	{
+		if (node->mesh)
+		{
+			for (const auto& primitive : node->mesh->primitives)
+			{
+				GeometryNodeRT geometryNode{};
+				VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
+				VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
+				vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(vertices.buffer);// bindless vertices
+				indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(indices.buffer) + primitive->firstIndex * sizeof(uint32_t);
+				geometryNode.vertexBufferDeviceAddress = vertexBufferDeviceAddress.deviceAddress;
+				geometryNode.indexBufferDeviceAddress = indexBufferDeviceAddress.deviceAddress;
+				geometryNode.textureIndexBaseColor = primitive->material.baseColorTexture->index;
+				geometryNode.textureIndexOcclusion = primitive->material.occlusionTexture ? primitive->material.occlusionTexture->index : -1;
+				geometryNodes.push_back(geometryNode);
+			}
+		}
+	}
+
 
 	// Setup descriptors
 	uint32_t uboCount{ 0 };

@@ -675,7 +675,7 @@ void MyClusterAccelerationStructureNV::getEnabledFeatures()
 
 void MyClusterAccelerationStructureNV::loadAssets()
 {
-	myglTF::Model::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue/*, myglTF::FileLoadingFlags::PreTransformVertices*/);
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }

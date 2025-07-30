@@ -14,7 +14,6 @@
  */
 #pragma once
 #include "myVulkan.h"
-//#include "VulkanglTFModel.h"
 
 #include <stdlib.h>
 #include <string>
@@ -43,6 +42,9 @@
 #if defined(__ANDROID__)
 #include <android/asset_manager.h>
 #endif
+
+#include "nvcluster/nvcluster.h"
+#include "nvcluster/nvcluster_storage.hpp"
 
 struct meshopt_Meshlet;
 namespace myglTF
@@ -420,8 +422,13 @@ namespace myglTF
 			float radius;
 		} dimensions;
 #pragma region Cluster
-		uint32_t numClusters = 0u;
-
+		uint32_t m_numClusters = 0u;
+		uint32_t m_numClusterVertices = 0u;
+		std::vector<uint8_t> m_clusterLocalTriangles;
+		std::vector<uint32_t> m_clusterLocalVertices;
+		std::vector<ClusterRT> m_clusters;
+		std::vector<BBox> m_clusterBBoxes;
+		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions);
 #pragma endregion Cluster
 
 		bool metallicRoughnessWorkflow = true;
@@ -440,7 +447,7 @@ namespace myglTF
 		void loadFromFile(std::string filename, vks::VulkanDevice* device, VkQueue transferQueue, uint32_t fileLoadingFlags = myglTF::FileLoadingFlags::None, float scale = 1.0f);
 		void bindBuffers(VkCommandBuffer commandBuffer);
 		void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
-		void getSceneDimensions();
+		void getSceneDimensions();	
 		void updateAnimation(uint32_t index, float time);
 		Node* findNode(Node* parent, uint32_t index);
 		Node* nodeFromIndex(uint32_t index);

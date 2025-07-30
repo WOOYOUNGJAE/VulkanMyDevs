@@ -55,7 +55,7 @@ public:
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 public:
 	MyRayTracingBasic();
-	~MyRayTracingBasic();
+	~MyRayTracingBasic() override;
 
 	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
 

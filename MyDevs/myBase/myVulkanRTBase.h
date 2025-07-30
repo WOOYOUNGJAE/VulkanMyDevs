@@ -27,6 +27,10 @@ struct AccelerationStructure
 
 class MyVulkanRTBase : public VulkanExampleBase
 {
+private:
+	class MyDeviceFuncTable* deviceFuncTable = nullptr;
+protected:
+	~MyVulkanRTBase() override;
 protected:
 	// Update the default render pass with different color attachment load ops
 	void setupRenderPass() override;

@@ -183,16 +183,36 @@ void VulkanSwapChain::initSurface(screen_context_t screen_context, screen_window
 
 	// We want to get a format that best suits our needs, so we try to get one from a set of preferred formats
 	// Initialize the format to the first one returned by the implementation in case we can't find one of the preffered formats
+	//VkSurfaceFormatKHR selectedFormat = surfaceFormats[0];
+	//std::vector<VkFormat> preferredImageFormats = { 
+	//	VK_FORMAT_B8G8R8A8_UNORM,
+	//	VK_FORMAT_R8G8B8A8_UNORM, 
+	//	VK_FORMAT_A8B8G8R8_UNORM_PACK32 
+	//};
+
+	//for (auto& availableFormat : surfaceFormats) {
+	//	if (std::find(preferredImageFormats.begin(), preferredImageFormats.end(), availableFormat.format) != preferredImageFormats.end()) {
+	//		selectedFormat = availableFormat;
+	//		break;
+	//	}
+	//}
 	VkSurfaceFormatKHR selectedFormat = surfaceFormats[0];
-	std::vector<VkFormat> preferredImageFormats = { 
-		VK_FORMAT_B8G8R8A8_UNORM,
-		VK_FORMAT_R8G8B8A8_UNORM, 
-		VK_FORMAT_A8B8G8R8_UNORM_PACK32 
+	std::vector<VkFormat> preferredImageFormats = {
+	   VK_FORMAT_R8G8B8A8_UNORM,
+	   VK_FORMAT_B8G8R8A8_UNORM,
+	   VK_FORMAT_A8B8G8R8_UNORM_PACK32
 	};
 
-	for (auto& availableFormat : surfaceFormats) {
-		if (std::find(preferredImageFormats.begin(), preferredImageFormats.end(), availableFormat.format) != preferredImageFormats.end()) {
-			selectedFormat = availableFormat;
+	for (auto& preferredFormat : preferredImageFormats) {
+		auto it = std::find_if(
+			surfaceFormats.begin(),
+			surfaceFormats.end(),
+			[preferredFormat](const VkSurfaceFormatKHR& surfaceFormat) {
+				return surfaceFormat.format == preferredFormat;
+			}
+		);
+		if (it != surfaceFormats.end()) {
+			selectedFormat = *it;
 			break;
 		}
 	}
