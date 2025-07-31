@@ -273,6 +273,7 @@ namespace myglTF
 		PrepareMeshShaderPipeline = 0x000000040,
 		GeometryNodePerPrimitive = 0x000000080, // Original Sascha Style
 		GeometryNodePerMesh = 0x000000100, // New Style
+		MakeClusters = 0x000000200, // for CLAS
 	};
 
 	// descriptorset bind num into pipeline
@@ -392,13 +393,14 @@ namespace myglTF
 	public:
 		vks::VulkanDevice* device;
 		VkDescriptorPool descriptorPool;
-		typedef struct PRIMITIVE_TAG
+		typedef struct BUFFER_TAG
 		{
 			uint32_t count = 0;
 			VkBuffer buffer = VK_NULL_HANDLE;
 			VkDeviceMemory memory = VK_NULL_HANDLE;
 			VkDescriptorBufferInfo descriptor{};
 		}Vertices, Indices, ClusterVertices, ClusterIndices, ClusterBBoxes, Clusters, GeometryNodes, Primitives;
+		void CleanBufferMemory(BUFFER_TAG& bufferAndMemory);
 		Vertices vertices{};
 		Indices indices{};
 		GeometryNodes geometryNodes{};
@@ -463,4 +465,13 @@ namespace myglTF
 		Node* nodeFromIndex(uint32_t index);
 		void prepareNodeDescriptor(myglTF::Node* node, VkDescriptorSetLayout descriptorSetLayout);
 	};
+
+	inline void ModelRT::CleanBufferMemory(BUFFER_TAG& bufferAndMemory)
+	{
+		if (bufferAndMemory.buffer || bufferAndMemory.memory)
+		{
+			vkDestroyBuffer(device->logicalDevice, bufferAndMemory.buffer, nullptr);
+			vkFreeMemory(device->logicalDevice, bufferAndMemory.memory, nullptr);
+		}
+	}
 }

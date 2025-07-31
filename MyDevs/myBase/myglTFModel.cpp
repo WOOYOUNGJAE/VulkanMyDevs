@@ -1986,30 +1986,19 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 
 myglTF::ModelRT::~ModelRT()
 {
-	if (primitives.buffer || primitives.memory)
-	{
-		vkDestroyBuffer(device->logicalDevice, primitives.buffer, nullptr);
-		vkFreeMemory(device->logicalDevice, primitives.memory, nullptr);
-	}
-	vkDestroyBuffer(device->logicalDevice, geometryNodes.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, geometryNodes.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, clusterVerticesGPU.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, clusterVerticesGPU.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, clusterIndicesGPU.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, clusterIndicesGPU.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, clusterBBoxesGPU.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, clusterBBoxesGPU.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, clustersGPU.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, clustersGPU.memory, nullptr);
+	CleanBufferMemory(primitives);
+	CleanBufferMemory(geometryNodes);
+	CleanBufferMemory(clusterVerticesGPU);
+	CleanBufferMemory(clusterIndicesGPU);
+	CleanBufferMemory(clusterBBoxesGPU);
+	CleanBufferMemory(clustersGPU);
+	CleanBufferMemory(vertices);
+	CleanBufferMemory(indices);
 
 
 	vkDestroyBuffer(device->logicalDevice, rootUniformBuffer.buffer, nullptr);
 	vkFreeMemory(device->logicalDevice, rootUniformBuffer.memory, nullptr);
 
-	vkDestroyBuffer(device->logicalDevice, vertices.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, vertices.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, indices.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, indices.memory, nullptr);
 	for (auto& texture : textures) {
 		texture.destroy();
 	}
@@ -2467,6 +2456,9 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	tinygltf::Model gltfModel;
 	tinygltf::TinyGLTF gltfContext;
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = MyDeviceFuncTable::Get()->vkGetBufferDeviceAddressKHR;
+	// flag things
+	const bool isGeometryNodePerPrimitive = fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerPrimitive;
+	const bool bMakeClusters = fileLoadingFlags & myglTF::FileLoadingFlags::MakeClusters;
 	auto getBufferDeviceAddress = [&](VkBuffer buffer)
 	{
 		VkBufferDeviceAddressInfoKHR bufferDeviceAI{};
@@ -2591,20 +2583,23 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	//uint32_t numTriangles = indices.count / 3;
 
 	// Do Cluster Things
-	for (auto& node : linearNodes)
+	if (bMakeClusters)
 	{
-		if (node->mesh)
+		for (auto& node : linearNodes)
 		{
-			std::vector<glm::vec3> vertexPositions;
-			for (const auto& vertex : tempVerticesCPU) // Fill vertexPositions vector
+			if (node->mesh)
 			{
-				vertexPositions.emplace_back(vertex->pos);
+				std::vector<glm::vec3> vertexPositions;
+				for (const auto& vertex : tempVerticesCPU) // Fill vertexPositions vector
+				{
+					vertexPositions.emplace_back(vertex->pos);
+				}
+				initClusters(tempIndicesCPU, vertexPositions);
+				for (const auto& primitive : node->mesh->primitives)
+				{
+				}
 			}
-			initClusters(tempIndicesCPU, vertexPositions);
-			for (const auto& primitive : node->mesh->primitives)
-			{
-			}
-		}
+		}		
 	}
 
 	getSceneDimensions();
@@ -2662,7 +2657,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	// Process Raytracing Geometrynode per primitive or mesh
 	uint32_t primitiveStartOffset = 0;
 	std::vector<PrimitiveRT> tempPrimitives; // for GeometryNodePerMesh
-	bool isGeometryNodePerPrimitive = fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerPrimitive;
+	
 	for (auto& node : linearNodes)
 	{
 		if (node->mesh)
@@ -2705,7 +2700,10 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 
 	// Create staging buffers
-	uint32_t additionalBufferUsageFlag = 0x00000000; // uint32 becuase VkBufferUsageFlagBits does not have 0
+	if (bMakeClusters)
+	{
+		
+	}
 	size_t clusterVertexBufferSize = m_numClusterVertices * sizeof(uint32_t);
 	size_t clusterIndexBufferSize = tempCusterLocalIndicesCPU.size() * sizeof(uint8_t);
 	size_t clusterBBoxBufferSize = tempClusterBBoxesCPU.size() * sizeof(BBox);

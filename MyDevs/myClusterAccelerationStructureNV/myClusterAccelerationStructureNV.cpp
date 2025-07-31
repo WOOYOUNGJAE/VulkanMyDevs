@@ -13,7 +13,7 @@
 
 #include "myClusterAccelerationStructureNV.h"
 
-myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags::GeometryNodePerPrimitive;
+myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::GeometryNodePerPrimitive | myglTF::FileLoadingFlags::MakeClusters);
 
 
 MyClusterAccelerationStructureNV::MyClusterAccelerationStructureNV()
@@ -460,7 +460,7 @@ void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 	}
 
 	/*
-			Create the ray tracing pipeline
+		Create the ray tracing pipeline
 	*/
 	VkRayTracingPipelineCreateInfoKHR rayTracingPipelineCI{};
 	rayTracingPipelineCI.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
