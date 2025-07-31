@@ -363,6 +363,63 @@ namespace vks
 		return VK_SUCCESS;
 	}
 
+	VkResult VulkanDevice::createBuffer2(VkBufferUsageFlags2 usageFlags, VkMemoryPropertyFlags memoryPropertyFlags,
+		VkDeviceSize size, VkBuffer* buffer, VkDeviceMemory* memory, void* data)
+	{
+		// Create the buffer handle
+		const VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
+			.sType = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO,
+			.usage = usageFlags | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+		}; 
+		const VkBufferCreateInfo bufferCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			.pNext = &bufferUsageFlags2CreateInfo,
+			.size = size,
+			.usage = 0,
+			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+		};
+		VK_CHECK_RESULT(vkCreateBuffer(logicalDevice, &bufferCreateInfo, nullptr, buffer));
+
+		// Create the memory backing up the buffer handle
+		VkMemoryRequirements memReqs;
+		VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
+		vkGetBufferMemoryRequirements(logicalDevice, *buffer, &memReqs);
+		memAlloc.allocationSize = memReqs.size;
+		// Find a memory type index that fits the properties of the buffer
+		memAlloc.memoryTypeIndex = getMemoryType(memReqs.memoryTypeBits, memoryPropertyFlags);
+		// If the buffer has VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT set we also need to enable the appropriate flag during allocation
+		VkMemoryAllocateFlagsInfoKHR allocFlagsInfo{};
+		if (usageFlags & VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT) {
+			allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR;
+			allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+			memAlloc.pNext = &allocFlagsInfo;
+		}
+		VK_CHECK_RESULT(vkAllocateMemory(logicalDevice, &memAlloc, nullptr, memory));
+
+		// If a pointer to the buffer data has been passed, map the buffer and copy over the data
+		if (data != nullptr)
+		{
+			void* mapped;
+			VK_CHECK_RESULT(vkMapMemory(logicalDevice, *memory, 0, size, 0, &mapped));
+			memcpy(mapped, data, size);
+			// If host coherency hasn't been requested, do a manual flush to make writes visible
+			if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
+			{
+				VkMappedMemoryRange mappedRange = vks::initializers::mappedMemoryRange();
+				mappedRange.memory = *memory;
+				mappedRange.offset = 0;
+				mappedRange.size = size;
+				vkFlushMappedMemoryRanges(logicalDevice, 1, &mappedRange);
+			}
+			vkUnmapMemory(logicalDevice, *memory);
+		}
+
+		// Attach the memory to the buffer object
+		VK_CHECK_RESULT(vkBindBufferMemory(logicalDevice, *buffer, *memory, 0));
+
+		return VK_SUCCESS;
+	}
+
 	/**
 	* Create a buffer on the device
 	*

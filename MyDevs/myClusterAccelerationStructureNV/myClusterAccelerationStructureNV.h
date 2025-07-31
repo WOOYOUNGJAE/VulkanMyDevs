@@ -20,6 +20,8 @@ class MyClusterAccelerationStructureNV : public MyVulkanRTBase
 private: // NV Cluster Acceleration Structure extensions
 	VkPhysicalDeviceClusterAccelerationStructureFeaturesNV clustersNV = {
 	  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV };
+	PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2 = VK_NULL_HANDLE;
+	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 public:
 	AccelerationStructure TLAS{};
 	AccelerationStructure BLAS{};
@@ -35,7 +37,7 @@ public:
 		int32_t textureIndexBaseColor;
 		int32_t textureIndexOcclusion;
 	};
-	vks::Buffer geometryNodesBuffer;
+	vks::Buffer primitivesBuffer;
 
 	std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups{};
 	struct ShaderBindingTables {
@@ -60,7 +62,6 @@ public:
 
 	myglTF::ModelRT model;
 
-	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 public:
 	MyClusterAccelerationStructureNV();
 	~MyClusterAccelerationStructureNV() override;

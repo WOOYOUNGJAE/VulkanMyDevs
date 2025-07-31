@@ -271,6 +271,8 @@ namespace myglTF
 		ForceNodesTransformIdentity = 0x000000010, // apply node's transform to vertices while loading
 		PrepareTraditionalPipeline = 0x000000020,
 		PrepareMeshShaderPipeline = 0x000000040,
+		GeometryNodePerPrimitive = 0x000000080, // Original Sascha Style
+		GeometryNodePerMesh = 0x000000100, // New Style
 	};
 
 	// descriptorset bind num into pipeline
@@ -395,10 +397,11 @@ namespace myglTF
 			uint32_t count = 0;
 			VkBuffer buffer = VK_NULL_HANDLE;
 			VkDeviceMemory memory = VK_NULL_HANDLE;
-		}Vertices, Indices;
+			VkDescriptorBufferInfo descriptor{};
+		}Vertices, Indices, ClusterVertices, ClusterIndices, ClusterBBoxes, Clusters, GeometryNodes, Primitives;
 		Vertices vertices{};
 		Indices indices{};
-
+		GeometryNodes geometryNodes{};
 		// Used only if model needs only single representing uniform data
 		RootNodeUniformBuffer rootUniformBuffer{};
 		struct UniformData
@@ -412,7 +415,8 @@ namespace myglTF
 		std::vector<Texture> textures;
 		std::vector<Material> materials;
 		std::vector<Animation> animations;
-		std::vector<GeometryNodeRT> geometryNodes;
+		std::vector<GeometryNodePerPrimitiveRT> geometryNodesPerPrimitive;
+		std::vector<GeometryNodePerMeshRT> geometryNodesPerMesh;
 
 		struct Dimensions {
 			glm::vec3 min = glm::vec3(FLT_MAX);
@@ -422,12 +426,18 @@ namespace myglTF
 			float radius;
 		} dimensions;
 #pragma region Cluster
+		Primitives primitives;
+		std::vector<ClusteredGeometryNodeRT> clusteredGeometryNodes; // per mesh
 		uint32_t m_numClusters = 0u;
 		uint32_t m_numClusterVertices = 0u;
-		std::vector<uint8_t> m_clusterLocalTriangles;
-		std::vector<uint32_t> m_clusterLocalVertices;
-		std::vector<ClusterRT> m_clusters;
-		std::vector<BBox> m_clusterBBoxes;
+		std::vector<uint32_t> tempClusterLocalVerticesCPU;
+		std::vector<uint8_t> tempCusterLocalIndicesCPU;
+		std::vector<BBox> tempClusterBBoxesCPU;
+		std::vector<ClusterRT> tempClustersCPU;
+		ClusterVertices clusterVerticesGPU{};
+		ClusterIndices clusterIndicesGPU{};
+		ClusterBBoxes clusterBBoxesGPU{};
+		Clusters clustersGPU{};
 		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions);
 #pragma endregion Cluster
 

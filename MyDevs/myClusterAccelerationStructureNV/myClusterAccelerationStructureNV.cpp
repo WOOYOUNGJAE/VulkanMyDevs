@@ -6,19 +6,33 @@
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 *
 * Summary:
-* Ray tracing basic
+* Ray tracing Cluster Acceleration Sturcture basic
 *
 * This sample comes with a tutorial, see the README.md in this folder
 */
 
 #include "myClusterAccelerationStructureNV.h"
 
-/*
-	Vulkan Example class
-*/
+myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags::GeometryNodePerPrimitive;
+
 
 MyClusterAccelerationStructureNV::MyClusterAccelerationStructureNV()
 {
+	apiVersion = VK_API_VERSION_1_4;
+
+	// Extensions required
+	enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+
+	// Required by VK_KHR_spirv_1_4
+	enabledDeviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
+
+	// We need to enable the mesh and task shader feature using a new struct introduced with the extension	
+	deviceCreatepNextChain = &clustersNV;
+
 	title = "MyClusterAccelerationStructureNV";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
@@ -29,9 +43,6 @@ MyClusterAccelerationStructureNV::MyClusterAccelerationStructureNV()
 
 	// Buffer device address requires the 64-bit integer feature to be enabled
 	enabledFeatures.shaderInt64 = VK_TRUE;
-
-	enabledDeviceExtensions.push_back(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
 }
 
 MyClusterAccelerationStructureNV::~MyClusterAccelerationStructureNV()
@@ -50,7 +61,6 @@ MyClusterAccelerationStructureNV::~MyClusterAccelerationStructureNV()
 		shaderBindingTables.miss.destroy();
 		shaderBindingTables.hit.destroy();
 		uniformBuffer.destroy();
-		geometryNodesBuffer.destroy();
 	}
 }
 
@@ -78,6 +88,7 @@ void MyClusterAccelerationStructureNV::createAccelerationStructureBuffer(Acceler
 
 void MyClusterAccelerationStructureNV::createBottomLevelAccelerationStructure()
 {
+	bool isGeometryNodePerPrimitive = g_loadingFlag & myglTF::FileLoadingFlags::GeometryNodePerPrimitive;
 	// Use transform matrices from the glTF nodes
 	std::vector<VkTransformMatrixKHR> transformMatrices{};
 	for (auto node : model.linearNodes) {
@@ -108,6 +119,7 @@ void MyClusterAccelerationStructureNV::createBottomLevelAccelerationStructure()
 	std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
 	std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
 	std::vector<GeometryNode> geometryNodes{};
+	uint32_t primitiveOffset = 0u;
 	for (auto node : model.linearNodes) {
 		if (node->mesh) {
 			for (auto primitive : node->mesh->primitives) {
@@ -118,7 +130,7 @@ void MyClusterAccelerationStructureNV::createBottomLevelAccelerationStructure()
 
 					vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.vertices.buffer);// +primitive->firstVertex * sizeof(vkglTF::Vertex);
 					indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.indices.buffer) + primitive->firstIndex * sizeof(uint32_t);
-					transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + static_cast<uint32_t>(geometryNodes.size()) * sizeof(VkTransformMatrixKHR);
+					transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + primitiveOffset++ * sizeof(VkTransformMatrixKHR);
 
 					VkAccelerationStructureGeometryKHR geometry{};
 					geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -141,39 +153,35 @@ void MyClusterAccelerationStructureNV::createBottomLevelAccelerationStructure()
 					buildRangeInfo.primitiveCount = primitive->indexCount / 3;
 					buildRangeInfo.transformOffset = 0;
 					buildRangeInfos.push_back(buildRangeInfo);
-
-					GeometryNode geometryNode{};
-					geometryNode.vertexBufferDeviceAddress = vertexBufferDeviceAddress.deviceAddress;
-					geometryNode.indexBufferDeviceAddress = indexBufferDeviceAddress.deviceAddress;
-					geometryNode.textureIndexBaseColor = primitive->material.baseColorTexture->index;
-					geometryNode.textureIndexOcclusion = primitive->material.occlusionTexture ? primitive->material.occlusionTexture->index : -1;
-					geometryNodes.push_back(geometryNode);
 				}
 			}
 		}
-	}
+	}	
 	for (auto& rangeInfo : buildRangeInfos) {
 		pBuildRangeInfos.push_back(&rangeInfo);
 	}
 
-	vks::Buffer stagingBuffer;
+	//vks::Buffer stagingBuffer;
+	//VkDeviceSize geometryNodeBufferSize = isGeometryNodePerPrimitive ? model.geometryNodesPerPrimitive.size() * sizeof(GeometryNodePerPrimitiveRT) : model.geometryNodesPerMesh.size() * sizeof(GeometryNodePerMeshRT);
+	////VkDeviceSize primitievBufferSize = isGeometryNodePerPrimitive ? 0 : model.primi
+	//VkDeviceSize stagingBufferSizeMax = std::max(model.geometryNodesPerPrimitive.size() * sizeof(GeometryNodePerPrimitiveRT), model.geometryNodesPerMesh.size() * sizeof(GeometryNodePerMeshRT));
+	//void* geometryNodesData = isGeometryNodePerPrimitive ? (void*)model.geometryNodesPerPrimitive.data() : (void*)model.geometryNodesPerMesh.data();
+	//VK_CHECK_RESULT(vulkanDevice->createBuffer(
+	//	VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+	//	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+	//	&stagingBuffer,
+	//	stagingBufferSizeMax,
+	//	geometryNodesData));
 
-	VK_CHECK_RESULT(vulkanDevice->createBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		&stagingBuffer,
-		static_cast<uint32_t>(geometryNodes.size()) * sizeof(GeometryNode),
-		geometryNodes.data()));
+	//VK_CHECK_RESULT(vulkanDevice->createBuffer(
+	//	VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	//	&geometryNodesBuffer,
+	//	geometryNodeBufferSize));
 
-	VK_CHECK_RESULT(vulkanDevice->createBuffer(
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&geometryNodesBuffer,
-		static_cast<uint32_t>(geometryNodes.size()) * sizeof(GeometryNode)));
+	//vulkanDevice->copyBuffer(&stagingBuffer, &geometryNodesBuffer, queue);
 
-	vulkanDevice->copyBuffer(&stagingBuffer, &geometryNodesBuffer, queue);
-
-	stagingBuffer.destroy();
+	//stagingBuffer.destroy();
 
 	// Get size info
 	VkAccelerationStructureBuildGeometryInfoKHR accelerationStructureBuildGeometryInfo{};
@@ -370,13 +378,18 @@ void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 		// Binding 4: Geometry node information SSBO
 		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 4),
 		// Binding 5: All images used by the glTF model
-		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 5, imageCount)
+		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 5, imageCount),
 	};
+	if (g_loadingFlag & myglTF::FileLoadingFlags::GeometryNodePerMesh)
+		setLayoutBindings.push_back(
+			// Binding 6: All Primtivies SSBO.
+			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 6)
+			);
 
 	// Unbound set
 	VkDescriptorSetLayoutBindingFlagsCreateInfoEXT setLayoutBindingFlags{};
 	setLayoutBindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
-	setLayoutBindingFlags.bindingCount = 6;
+	setLayoutBindingFlags.bindingCount = setLayoutBindings.size();
 	std::vector<VkDescriptorBindingFlagsEXT> descriptorBindingFlags = {
 		0,
 		0,
@@ -385,6 +398,8 @@ void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 		0,
 		VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT
 	};
+	if (g_loadingFlag & myglTF::FileLoadingFlags::GeometryNodePerMesh)
+		descriptorBindingFlags.push_back(0);
 	setLayoutBindingFlags.pBindingFlags = descriptorBindingFlags.data();
 
 	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);
@@ -446,7 +461,7 @@ void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 
 	/*
 			Create the ray tracing pipeline
-		*/
+	*/
 	VkRayTracingPipelineCreateInfoKHR rayTracingPipelineCI{};
 	rayTracingPipelineCI.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
 	rayTracingPipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
@@ -469,6 +484,9 @@ void MyClusterAccelerationStructureNV::createDescriptorSets()
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 },
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(model.textures.size()) }
 	};
+	if (g_loadingFlag & myglTF::FileLoadingFlags::GeometryNodePerMesh)
+		poolSizes.push_back(VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1)); // primitives
+
 	VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 1);
 	VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &descriptorPool));
 
@@ -496,7 +514,7 @@ void MyClusterAccelerationStructureNV::createDescriptorSets()
 	accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
 	VkDescriptorImageInfo storageImageDescriptor{ VK_NULL_HANDLE, storageImage.view, VK_IMAGE_LAYOUT_GENERAL };
-
+	
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 		// Binding 0: Top level acceleration structure
 		accelerationStructureWrite,
@@ -505,7 +523,7 @@ void MyClusterAccelerationStructureNV::createDescriptorSets()
 		// Binding 2: Uniform data
 		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2, &uniformBuffer.descriptor),
 		// Binding 4: Geometry node information SSBO
-		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &geometryNodesBuffer.descriptor),
+		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &model.geometryNodes.descriptor),
 	};
 
 	// Image descriptors for the image array
@@ -526,6 +544,9 @@ void MyClusterAccelerationStructureNV::createDescriptorSets()
 	writeDescriptorImgArray.dstSet = descriptorSet;
 	writeDescriptorImgArray.pImageInfo = textureDescriptors.data();
 	writeDescriptorSets.push_back(writeDescriptorImgArray);
+
+	if (g_loadingFlag & myglTF::FileLoadingFlags::GeometryNodePerMesh)
+		writeDescriptorSets.push_back(vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, writeDescriptorSets.size(), &primitivesBuffer.descriptor)); // primitives
 
 	vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
@@ -675,8 +696,8 @@ void MyClusterAccelerationStructureNV::getEnabledFeatures()
 
 void MyClusterAccelerationStructureNV::loadAssets()
 {
-	myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue/*, myglTF::FileLoadingFlags::PreTransformVertices*/);
+	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }
 
@@ -690,6 +711,7 @@ void MyClusterAccelerationStructureNV::enableExtensions()
 void MyClusterAccelerationStructureNV::prepare()
 {
 	MyVulkanRTBase::prepare();
+
 #if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
 	std::string batchPath = getShadersPath() + "myClusterAccelerationStructureNV/ShaderCompile.bat";
 	system(batchPath.c_str());
