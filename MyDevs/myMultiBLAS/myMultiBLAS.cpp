@@ -6,20 +6,31 @@
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 *
 * Summary:
-* Ray tracing basic
+* Muti BLAS per one gltf model
 *
 * This sample comes with a tutorial, see the README.md in this folder
 */
 
-#include "myRayTracingBasic.h"
+#include "myMultiBLAS.h"
 
-/*
-	Vulkan Example class
-*/
+myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::GeometryNodePerMesh);
 
-MyRayTracingBasic::MyRayTracingBasic()
+
+MyMultiBLAS::MyMultiBLAS()
 {
-	title = "MyRayTracingBasic";
+	apiVersion = VK_API_VERSION_1_4;
+
+	// Extensions required
+	enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+
+	// Required by VK_KHR_spirv_1_4
+	enabledDeviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
+
+	title = "MyMultiBLAS";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
 	camera.setRotation(glm::vec3(0.0f, 0.0f, 0.0f));
@@ -29,19 +40,17 @@ MyRayTracingBasic::MyRayTracingBasic()
 
 	// Buffer device address requires the 64-bit integer feature to be enabled
 	enabledFeatures.shaderInt64 = VK_TRUE;
-
-	enabledDeviceExtensions.push_back(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
 }
 
-MyRayTracingBasic::~MyRayTracingBasic()
+MyMultiBLAS::~MyMultiBLAS()
 {
 	if (device) {
 		vkDestroyPipeline(device, pipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 		deleteStorageImage();
-		deleteAccelerationStructure(BLAS);
+		for (auto& blas : BLASes)
+			deleteAccelerationStructure(blas);
 		deleteAccelerationStructure(TLAS);
 		vertexBuffer.destroy();
 		indexBuffer.destroy();
@@ -50,12 +59,11 @@ MyRayTracingBasic::~MyRayTracingBasic()
 		shaderBindingTables.miss.destroy();
 		shaderBindingTables.hit.destroy();
 		uniformBuffer.destroy();
-		geometryNodesBuffer.destroy();
 	}
 }
 
-void MyRayTracingBasic::createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure,
-                                                             VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
+void MyMultiBLAS::createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure,
+	VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
 {
 	VkBufferCreateInfo bufferCreateInfo{};
 	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -76,12 +84,13 @@ void MyRayTracingBasic::createAccelerationStructureBuffer(AccelerationStructure&
 	VK_CHECK_RESULT(vkBindBufferMemory(device, accelerationStructure.buffer, accelerationStructure.memory, 0));
 }
 
-void MyRayTracingBasic::createBottomLevelAccelerationStructure()
+void MyMultiBLAS::createBLASes()
 {
 	// Use transform matrices from the glTF nodes
-	std::vector<VkTransformMatrixKHR> transformMatrices{};
+	std::vector<VkTransformMatrixKHR> transformMatrices{}; // per node
 	for (auto node : model.linearNodes) {
-		if (node->mesh) {
+		if (node->mesh)
+		{
 			for (auto primitive : node->mesh->primitives) {
 				if (primitive->indexCount > 0) {
 					VkTransformMatrixKHR transformMatrix{};
@@ -92,7 +101,7 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 			}
 		}
 	}
-
+	
 	// Transform buffer
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
@@ -101,79 +110,61 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 		static_cast<uint32_t>(transformMatrices.size()) * sizeof(VkTransformMatrixKHR),
 		transformMatrices.data()));
 
+	uint32_t nodeIdx = 0u; // node containing mesh
+	for (auto node : model.linearNodes) {
+		if (node->mesh)
+			createBLAS(node, nodeIdx++);
+	}
+	BLASes.shrink_to_fit();
+}
+
+void MyMultiBLAS::createBLAS(myglTF::Node* node, uint32_t nodeIdx)
+{
+	AccelerationStructure blas{};
+	const myglTF::Mesh* mesh = node->mesh;
 	// Build
 	// One geometry per glTF node, so we can index materials using gl_GeometryIndexEXT
 	std::vector<uint32_t> maxPrimitiveCounts{};
 	std::vector<VkAccelerationStructureGeometryKHR> geometries{};
 	std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
 	std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
-	std::vector<GeometryNodePerPrimitiveRT> geometryNodes{};
-	for (auto node : model.linearNodes) {
-		if (node->mesh) {
-			for (auto primitive : node->mesh->primitives) {
-				if (primitive->indexCount > 0) {
-					VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
-					VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
-					VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
 
-					vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.vertices.buffer);// +primitive->firstVertex * sizeof(vkglTF::Vertex);
-					indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.indices.buffer) + primitive->firstIndex * sizeof(uint32_t);
-					transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + static_cast<uint32_t>(geometryNodes.size()) * sizeof(VkTransformMatrixKHR);
+	for (auto primitive : mesh->primitives) {
+		if (primitive->indexCount > 0) {
+			VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
+			VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
+			VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
 
-					VkAccelerationStructureGeometryKHR geometry{};
-					geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-					geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-					geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
-					geometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-					geometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
-					//geometry.geometry.triangles.maxVertex = model.vertices.count;
-					geometry.geometry.triangles.maxVertex = primitive->vertexCount + 1;
-					geometry.geometry.triangles.vertexStride = sizeof(myglTF::VertexSimple);
-					geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
-					geometry.geometry.triangles.indexData = indexBufferDeviceAddress;
-					geometry.geometry.triangles.transformData = transformBufferDeviceAddress;
-					geometries.push_back(geometry);
-					maxPrimitiveCounts.push_back(primitive->indexCount / 3);
+			vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.vertices.buffer);// +primitive->firstVertex * sizeof(vkglTF::Vertex);
+			indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.indices.buffer) + primitive->firstIndex * sizeof(uint32_t);
+			transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + nodeIdx * sizeof(VkTransformMatrixKHR);
 
-					VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
-					buildRangeInfo.firstVertex = 0;
-					buildRangeInfo.primitiveOffset = 0; // primitive->firstIndex * sizeof(uint32_t);
-					buildRangeInfo.primitiveCount = primitive->indexCount / 3;
-					buildRangeInfo.transformOffset = 0;
-					buildRangeInfos.push_back(buildRangeInfo);
+			VkAccelerationStructureGeometryKHR asGeometry{}; // per gltf primitive
+			asGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+			asGeometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+			asGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+			asGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+			asGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
+			asGeometry.geometry.triangles.maxVertex = primitive->vertexCount + 1;
+			asGeometry.geometry.triangles.vertexStride = sizeof(myglTF::VertexSimple);
+			asGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+			asGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
+			asGeometry.geometry.triangles.transformData = transformBufferDeviceAddress;
+			geometries.push_back(asGeometry);
+			maxPrimitiveCounts.push_back(primitive->indexCount / 3);
 
-					GeometryNodePerPrimitiveRT geometryNode{};
-					geometryNode.vertexBufferDeviceAddress = vertexBufferDeviceAddress.deviceAddress;
-					geometryNode.indexBufferDeviceAddress = indexBufferDeviceAddress.deviceAddress;
-					geometryNode.textureIndexBaseColor = primitive->material.baseColorTexture->index;
-					geometryNode.textureIndexOcclusion = primitive->material.occlusionTexture ? primitive->material.occlusionTexture->index : -1;
-					geometryNodes.push_back(geometryNode);
-				}
-			}
+			VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
+			buildRangeInfo.firstVertex = 0;
+			buildRangeInfo.primitiveOffset = 0; // primitive->firstIndex * sizeof(uint32_t);
+			buildRangeInfo.primitiveCount = primitive->indexCount / 3;
+			buildRangeInfo.transformOffset = 0;
+			buildRangeInfos.push_back(buildRangeInfo);
 		}
 	}
+
 	for (auto& rangeInfo : buildRangeInfos) {
 		pBuildRangeInfos.push_back(&rangeInfo);
 	}
-
-	vks::Buffer stagingBuffer;
-
-	VK_CHECK_RESULT(vulkanDevice->createBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		&stagingBuffer,
-		static_cast<uint32_t>(geometryNodes.size()) * sizeof(GeometryNodePerPrimitiveRT),
-		geometryNodes.data()));
-
-	VK_CHECK_RESULT(vulkanDevice->createBuffer(
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		&geometryNodesBuffer,
-		static_cast<uint32_t>(geometryNodes.size()) * sizeof(GeometryNodePerPrimitiveRT)));
-
-	vulkanDevice->copyBuffer(&stagingBuffer, &geometryNodesBuffer, queue);
-
-	stagingBuffer.destroy();
 
 	// Get size info
 	VkAccelerationStructureBuildGeometryInfoKHR accelerationStructureBuildGeometryInfo{};
@@ -192,20 +183,20 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 		maxPrimitiveCounts.data(),
 		&accelerationStructureBuildSizesInfo);
 
-	createAccelerationStructureBuffer(BLAS, accelerationStructureBuildSizesInfo);
+	createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
 
 	VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
 	accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-	accelerationStructureCreateInfo.buffer = BLAS.buffer;
+	accelerationStructureCreateInfo.buffer = blas.buffer;
 	accelerationStructureCreateInfo.size = accelerationStructureBuildSizesInfo.accelerationStructureSize;
 	accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-	vkCreateAccelerationStructureKHR(device, &accelerationStructureCreateInfo, nullptr, &BLAS.handle);
+	vkCreateAccelerationStructureKHR(device, &accelerationStructureCreateInfo, nullptr, &blas.handle);
 
 	// Create a small scratch buffer used during build of the bottom level acceleration structure
 	ScratchBuffer scratchBuffer = createScratchBuffer(accelerationStructureBuildSizesInfo.buildScratchSize);
 
 	accelerationStructureBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-	accelerationStructureBuildGeometryInfo.dstAccelerationStructure = BLAS.handle;
+	accelerationStructureBuildGeometryInfo.dstAccelerationStructure = blas.handle;
 	accelerationStructureBuildGeometryInfo.scratchData.deviceAddress = scratchBuffer.deviceAddress;
 
 	const VkAccelerationStructureBuildRangeInfoKHR* buildOffsetInfo = buildRangeInfos.data();
@@ -222,13 +213,20 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 
 	VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 	accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-	accelerationDeviceAddressInfo.accelerationStructure = BLAS.handle;
-	BLAS.deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &accelerationDeviceAddressInfo);
+	accelerationDeviceAddressInfo.accelerationStructure = blas.handle;
+	blas.deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &accelerationDeviceAddressInfo);
+
+	BLASes.push_back(blas);
 
 	deleteScratchBuffer(scratchBuffer);
 }
 
-void MyRayTracingBasic::createTopLevelAccelerationStructure()
+void MyMultiBLAS::createBottomLevelAccelerationStructure()
+{
+	
+}
+
+void MyMultiBLAS::createTopLevelAccelerationStructure()
 {
 	// We flip the matrix [1][1] = -1.0f to accomodate for the glTF up vector
 	VkTransformMatrixKHR transformMatrix = {
@@ -236,22 +234,28 @@ void MyRayTracingBasic::createTopLevelAccelerationStructure()
 		0.0f, -1.0f, 0.0f, 0.0f,
 		0.0f, 0.0f, 1.0f, 0.0f };
 
-	VkAccelerationStructureInstanceKHR instance{};
-	instance.transform = transformMatrix;
-	instance.instanceCustomIndex = 0;
-	instance.mask = 0xFF;
-	instance.instanceShaderBindingTableRecordOffset = 0;
-	instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-	instance.accelerationStructureReference = BLAS.deviceAddress;
-
+	std::vector<VkAccelerationStructureInstanceKHR> blasInstances;
+	for (auto& blas : BLASes)
+	{
+		VkAccelerationStructureInstanceKHR blasInstance{};
+		blasInstance.transform = transformMatrix;
+		blasInstance.instanceCustomIndex = 0;
+		blasInstance.mask = 0xFF;
+		blasInstance.instanceShaderBindingTableRecordOffset = 0;
+		blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+		blasInstance.accelerationStructureReference = blas.deviceAddress;
+		blasInstances.push_back(blasInstance);
+	}
+	blasInstances.shrink_to_fit();
+	uint32_t numBlasInstances = blasInstances.size();
 	// Buffer for instance data
 	vks::Buffer instancesBuffer;
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&instancesBuffer,
-		sizeof(VkAccelerationStructureInstanceKHR),
-		&instance));
+		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
+		blasInstances.data()));
 
 	VkDeviceOrHostAddressConstKHR instanceDataDeviceAddress{};
 	instanceDataDeviceAddress.deviceAddress = getBufferDeviceAddress(instancesBuffer.buffer);
@@ -267,15 +271,14 @@ void MyRayTracingBasic::createTopLevelAccelerationStructure()
 	// Get size info
 	/*
 		The pSrcAccelerationStructure, dstAccelerationStructure, and mode members of pBuildInfo are ignored. Any VkDeviceOrHostAddressKHR members of pBuildInfo are ignored by this command, except that the hostAddress member of VkAccelerationStructureGeometryTrianglesDataKHR::transformData will be examined to check if it is NULL.*
-		*/
+	*/
 	VkAccelerationStructureBuildGeometryInfoKHR accelerationStructureBuildGeometryInfo{};
 	accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
 	accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 	accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-	accelerationStructureBuildGeometryInfo.geometryCount = 1;
+	accelerationStructureBuildGeometryInfo.geometryCount = 1; // num TLAS
 	accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
 
-	uint32_t primitive_count = 1;
 
 	VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
 	accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
@@ -283,7 +286,7 @@ void MyRayTracingBasic::createTopLevelAccelerationStructure()
 		device,
 		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
 		&accelerationStructureBuildGeometryInfo,
-		&primitive_count,
+		&numBlasInstances,
 		&accelerationStructureBuildSizesInfo);
 
 	createAccelerationStructureBuffer(TLAS, accelerationStructureBuildSizesInfo);
@@ -298,18 +301,13 @@ void MyRayTracingBasic::createTopLevelAccelerationStructure()
 	// Create a small scratch buffer used during build of the top level acceleration structure
 	ScratchBuffer scratchBuffer = createScratchBuffer(accelerationStructureBuildSizesInfo.buildScratchSize);
 
-	VkAccelerationStructureBuildGeometryInfoKHR accelerationBuildGeometryInfo{};
-	accelerationBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-	accelerationBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-	accelerationBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-	accelerationBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-	accelerationBuildGeometryInfo.dstAccelerationStructure = TLAS.handle;
-	accelerationBuildGeometryInfo.geometryCount = 1;
-	accelerationBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
-	accelerationBuildGeometryInfo.scratchData.deviceAddress = scratchBuffer.deviceAddress;
+	accelerationStructureBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+	accelerationStructureBuildGeometryInfo.dstAccelerationStructure = TLAS.handle;
+	accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
+	accelerationStructureBuildGeometryInfo.scratchData.deviceAddress = scratchBuffer.deviceAddress;
 
 	VkAccelerationStructureBuildRangeInfoKHR accelerationStructureBuildRangeInfo{};
-	accelerationStructureBuildRangeInfo.primitiveCount = 1;
+	accelerationStructureBuildRangeInfo.primitiveCount = numBlasInstances;
 	accelerationStructureBuildRangeInfo.primitiveOffset = 0;
 	accelerationStructureBuildRangeInfo.firstVertex = 0;
 	accelerationStructureBuildRangeInfo.transformOffset = 0;
@@ -321,7 +319,7 @@ void MyRayTracingBasic::createTopLevelAccelerationStructure()
 	vkCmdBuildAccelerationStructuresKHR(
 		commandBuffer,
 		1,
-		&accelerationBuildGeometryInfo,
+		&accelerationStructureBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
 	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
 
@@ -333,7 +331,7 @@ void MyRayTracingBasic::createTopLevelAccelerationStructure()
 	instancesBuffer.destroy();
 }
 
-void MyRayTracingBasic::createShaderBindingTables()
+void MyMultiBLAS::createShaderBindingTables()
 {
 	const uint32_t handleSize = rayTracingPipelineProperties.shaderGroupHandleSize;
 	const uint32_t handleSizeAligned = vks::tools::alignedSize(rayTracingPipelineProperties.shaderGroupHandleSize, rayTracingPipelineProperties.shaderGroupHandleAlignment);
@@ -354,7 +352,7 @@ void MyRayTracingBasic::createShaderBindingTables()
 	memcpy(shaderBindingTables.hit.mapped, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize);
 }
 
-void MyRayTracingBasic::createRayTracingPipeline()
+void MyMultiBLAS::createRayTracingPipeline()
 {
 	const uint32_t imageCount = static_cast<uint32_t>(model.textures.size());
 
@@ -369,15 +367,19 @@ void MyRayTracingBasic::createRayTracingPipeline()
 		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 3),
 		// Binding 4: Geometry node information SSBO
 		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 4),
-		// Binding 5: All images used by the glTF model
-		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 5, imageCount)
+		// Binding 5: All Primtivies SSBO.
+		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 5),
+		// Binding 6: All images used by the glTF model
+		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 6, imageCount),
 	};
+
 
 	// Unbound set
 	VkDescriptorSetLayoutBindingFlagsCreateInfoEXT setLayoutBindingFlags{};
 	setLayoutBindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
-	setLayoutBindingFlags.bindingCount = 6;
+	setLayoutBindingFlags.bindingCount = setLayoutBindings.size();
 	std::vector<VkDescriptorBindingFlagsEXT> descriptorBindingFlags = {
+		0,
 		0,
 		0,
 		0,
@@ -391,17 +393,25 @@ void MyRayTracingBasic::createRayTracingPipeline()
 	descriptorSetLayoutCI.pNext = &setLayoutBindingFlags;
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayout));
 
+	// Push constant - bind scene vertex/index buffer device address
+	VkPushConstantRange pushConstantRange{};
+	pushConstantRange.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+	pushConstantRange.offset = 0;
+	pushConstantRange.size = sizeof(PushConstantData);
+
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayout, 1);
+	pipelineLayoutCI.pushConstantRangeCount = 1;
+	pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
 	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
 
 	/*
-			Setup ray tracing shader groups
-		*/
+		Setup ray tracing shader groups
+	*/
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
 
 	// Ray generation group
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myMultiBLAS/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
@@ -414,7 +424,7 @@ void MyRayTracingBasic::createRayTracingPipeline()
 
 	// Miss group
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myMultiBLAS/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
@@ -424,14 +434,14 @@ void MyRayTracingBasic::createRayTracingPipeline()
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		shaderGroups.push_back(shaderGroup);
 		// Second shader for shadows
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/shadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myMultiBLAS/shadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroups.push_back(shaderGroup);
 	}
 
 	// Closest hit group for doing texture lookups
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myMultiBLAS/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
@@ -439,14 +449,14 @@ void MyRayTracingBasic::createRayTracingPipeline()
 		shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		// This group also uses an anyhit shader for doing transparency (see anyhit.rahit for details)
-		shaderStages.push_back(loadShader(getShadersPath() + "myRaytracingBasic/anyhit.rahit.spv", VK_SHADER_STAGE_ANY_HIT_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myMultiBLAS/anyhit.rahit.spv", VK_SHADER_STAGE_ANY_HIT_BIT_KHR));
 		shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroups.push_back(shaderGroup);
 	}
 
 	/*
-			Create the ray tracing pipeline
-		*/
+		Create the ray tracing pipeline
+	*/
 	VkRayTracingPipelineCreateInfoKHR rayTracingPipelineCI{};
 	rayTracingPipelineCI.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
 	rayTracingPipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
@@ -458,7 +468,7 @@ void MyRayTracingBasic::createRayTracingPipeline()
 	VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &pipeline));
 }
 
-void MyRayTracingBasic::createDescriptorSets()
+void MyMultiBLAS::createDescriptorSets()
 {
 	uint32_t imageCount = static_cast<uint32_t>(model.textures.size());
 	std::vector<VkDescriptorPoolSize> poolSizes = {
@@ -467,8 +477,10 @@ void MyRayTracingBasic::createDescriptorSets()
 		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 },
+		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(model.textures.size()) }
 	};
+
 	VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 1);
 	VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &descriptorPool));
 
@@ -496,7 +508,7 @@ void MyRayTracingBasic::createDescriptorSets()
 	accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
 	VkDescriptorImageInfo storageImageDescriptor{ VK_NULL_HANDLE, storageImage.view, VK_IMAGE_LAYOUT_GENERAL };
-
+	
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 		// Binding 0: Top level acceleration structure
 		accelerationStructureWrite,
@@ -505,7 +517,9 @@ void MyRayTracingBasic::createDescriptorSets()
 		// Binding 2: Uniform data
 		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2, &uniformBuffer.descriptor),
 		// Binding 4: Geometry node information SSBO
-		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &geometryNodesBuffer.descriptor),
+		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &model.geometryNodes.descriptor),
+		// Binding 5 : All Mesh Primitives
+		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &model.primitives.descriptor)
 	};
 
 	// Image descriptors for the image array
@@ -520,7 +534,7 @@ void MyRayTracingBasic::createDescriptorSets()
 
 	VkWriteDescriptorSet writeDescriptorImgArray{};
 	writeDescriptorImgArray.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	writeDescriptorImgArray.dstBinding = 5;
+	writeDescriptorImgArray.dstBinding = 6;
 	writeDescriptorImgArray.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	writeDescriptorImgArray.descriptorCount = imageCount;
 	writeDescriptorImgArray.dstSet = descriptorSet;
@@ -530,7 +544,7 @@ void MyRayTracingBasic::createDescriptorSets()
 	vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
-void MyRayTracingBasic::createUniformBuffer()
+void MyMultiBLAS::createUniformBuffer()
 {
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -543,7 +557,7 @@ void MyRayTracingBasic::createUniformBuffer()
 	updateUniformBuffers();
 }
 
-void MyRayTracingBasic::handleResize()
+void MyMultiBLAS::handleResize()
 {
 	// Recreate image
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -554,7 +568,7 @@ void MyRayTracingBasic::handleResize()
 	resized = false;
 }
 
-void MyRayTracingBasic::buildCommandBuffers()
+void MyMultiBLAS::buildCommandBuffers()
 {
 	if (resized)
 	{
@@ -573,6 +587,13 @@ void MyRayTracingBasic::buildCommandBuffers()
 			Dispatch the ray tracing commands
 		*/
 		vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+
+		// push constant - vertex/index device addressvkCmdPushConstants(
+		vkCmdPushConstants(drawCmdBuffers[i], pipelineLayout,
+			VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
+			0, sizeof(PushConstantData), &pushConstantData
+		);
+
 		vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineLayout, 0, 1, &descriptorSet, 0, 0);
 
 		VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
@@ -636,7 +657,7 @@ void MyRayTracingBasic::buildCommandBuffers()
 	}
 }
 
-void MyRayTracingBasic::updateUniformBuffers()
+void MyMultiBLAS::updateUniformBuffers()
 {
 	uniformData.projInverse = glm::inverse(camera.matrices.perspective);
 	uniformData.viewInverse = glm::inverse(camera.matrices.view);
@@ -648,7 +669,7 @@ void MyRayTracingBasic::updateUniformBuffers()
 	memcpy(uniformBuffer.mapped, &uniformData, sizeof(uniformData));
 }
 
-void MyRayTracingBasic::getEnabledFeatures()
+void MyMultiBLAS::getEnabledFeatures()
 {
 	// Enable features required for ray tracing using feature chaining via pNext		
 	enabledBufferDeviceAddresFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
@@ -673,25 +694,34 @@ void MyRayTracingBasic::getEnabledFeatures()
 	enabledFeatures.samplerAnisotropy = VK_TRUE;
 }
 
-void MyRayTracingBasic::loadAssets()
+void MyMultiBLAS::loadAssets()
 {
-	myglTF::Model::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue/*, myglTF::FileLoadingFlags::PreTransformVertices*/);
+	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }
 
-void MyRayTracingBasic::prepare()
+void MyMultiBLAS::enableExtensions()
+{
+	MyVulkanRTBase::enableExtensions();
+
+	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+}
+
+void MyMultiBLAS::prepare()
 {
 	MyVulkanRTBase::prepare();
+
 #if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
-	std::string batchPath = getShadersPath() + "myRayTracingBasic/ShaderCompile.bat";
+	std::string batchPath = getShadersPath() + "myClusterAccelerationStructureNV/ShaderCompile.bat";
 	system(batchPath.c_str());
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
 	loadAssets();
-
+	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
+	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 	// Create the acceleration structures used to render the ray traced scene
-	createBottomLevelAccelerationStructure();
+	createBLASes();
 	createTopLevelAccelerationStructure();
 
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -703,7 +733,7 @@ void MyRayTracingBasic::prepare()
 	prepared = true;
 }
 
-void MyRayTracingBasic::draw()
+void MyMultiBLAS::draw()
 {
 	VulkanExampleBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
@@ -712,7 +742,7 @@ void MyRayTracingBasic::draw()
 	VulkanExampleBase::submitFrame();
 }
 
-void MyRayTracingBasic::render()
+void MyMultiBLAS::render()
 {
 	if (!prepared)
 		return;
@@ -724,12 +754,12 @@ void MyRayTracingBasic::render()
 	draw();
 }
 
-MyRayTracingBasic* myRayTracingBasic;
+MyMultiBLAS* myClusterAccelerationStructureNV;
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	if (myRayTracingBasic != NULL)
+	if (myClusterAccelerationStructureNV != NULL)
 	{
-		myRayTracingBasic->handleMessages(hWnd, uMsg, wParam, lParam);
+		myClusterAccelerationStructureNV->handleMessages(hWnd, uMsg, wParam, lParam);
 	}
 	return (DefWindowProc(hWnd, uMsg, wParam, lParam));
 }
@@ -738,12 +768,12 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance
 #ifdef _DEBUG
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
-	for (int32_t i = 0; i < __argc; i++) { MyRayTracingBasic::args.push_back(__argv[i]); };
-	myRayTracingBasic = new MyRayTracingBasic();
-	myRayTracingBasic->initVulkan();
-	myRayTracingBasic->setupWindow(hInstance, WndProc);
-	myRayTracingBasic->prepare();
-	myRayTracingBasic->renderLoop();
-	delete(myRayTracingBasic);
+	for (int32_t i = 0; i < __argc; i++) { MyMultiBLAS::args.push_back(__argv[i]); };
+	myClusterAccelerationStructureNV = new MyMultiBLAS();
+	myClusterAccelerationStructureNV->initVulkan();
+	myClusterAccelerationStructureNV->setupWindow(hInstance, WndProc);
+	myClusterAccelerationStructureNV->prepare();
+	myClusterAccelerationStructureNV->renderLoop();
+	delete(myClusterAccelerationStructureNV);
 	return 0;
 }
