@@ -120,6 +120,7 @@ set(EXAMPLES
     myMeshShader
     myRayTracingBasic
     myClusterAccelerationStructureNV
+    myMultiBLAS
 )
 
 buildMyBase()

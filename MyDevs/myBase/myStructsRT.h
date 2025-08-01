@@ -10,7 +10,7 @@ namespace RT_INOUT{}
 struct GeometryNodePerPrimitiveRT
 {
 	uint64_t vertexBufferDeviceAddress;
-	uint64_t indexBufferDeviceAddress;
+	uint64_t indexBufferDeviceAddress; 
 	int32_t textureIndexBaseColor;
 	int32_t textureIndexOcclusion;
 };
@@ -18,17 +18,17 @@ struct GeometryNodePerPrimitiveRT
 
 struct GeometryNodePerMeshRT
 {
-	uint64_t vertexBufferDeviceAddress;
-	uint64_t indexBufferDeviceAddress;
-
+	uint32_t vertexStartOffset; // from scene's total vertex buffer
+	uint32_t indexStartOffset; // from scene's total Index buffer
 	// primitive contains material info
-	//uint32_t numPrimitives;
-	// Access like AllPrimitives[primitiveStartIndex + gl_GeometryIndexEXT]
-	uint32_t primitiveStartIndex;
+	// Access like AllPrimitives[primitiveStartOffset + gl_GeometryIndexEXT]
+	uint32_t primitiveStartOffset;
 };
 
-struct PrimitiveRT
+struct MeshPrimitive
 {
+	uint32_t vertexStartOffsetInMesh;
+	uint32_t IndexStartOffsetInMesh;
 	int32_t textureIndexBaseColor;
 	int32_t textureIndexOcclusion;
 };

@@ -2595,9 +2595,6 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 					vertexPositions.emplace_back(vertex->pos);
 				}
 				initClusters(tempIndicesCPU, vertexPositions);
-				for (const auto& primitive : node->mesh->primitives)
-				{
-				}
 			}
 		}		
 	}
@@ -2656,12 +2653,17 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 	// Process Raytracing Geometrynode per primitive or mesh
 	uint32_t primitiveStartOffset = 0;
-	std::vector<PrimitiveRT> tempPrimitives; // for GeometryNodePerMesh
+	uint32_t vertexStartOffset = 0;
+	uint32_t indexStartOffset = 0;
+	std::vector<MeshPrimitive> tempPrimitives; // for GeometryNodePerMesh
 	
 	for (auto& node : linearNodes)
 	{
+		uint32_t vertexCountInMesh = 0u;
 		if (node->mesh)
 		{
+			uint32_t vertexStartOffsetInMesh = 0u;
+			uint32_t indexStartOffsetInMesh = 0u;
 			if (isGeometryNodePerPrimitive)
 			{
 				for (const auto& primitive : node->mesh->primitives)
@@ -2679,19 +2681,25 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 				}
 			}
 			else if (fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerMesh)
-			{
+			{				
 				GeometryNodePerMeshRT geometryNode{};
-				geometryNode.vertexBufferDeviceAddress = getBufferDeviceAddress(vertices.buffer);
-				geometryNode.indexBufferDeviceAddress = getBufferDeviceAddress(indices.buffer) + node->mesh->primitives[0]->firstIndex * sizeof(uint32_t);
-				geometryNode.primitiveStartIndex = primitiveStartOffset;
+				geometryNode.vertexStartOffset = vertexStartOffset;
+				geometryNode.indexStartOffset = indexStartOffset;
+				geometryNode.primitiveStartOffset = primitiveStartOffset;
 
 				for (const auto& primitive : node->mesh->primitives)
 				{
 					const Material& material = primitive->material;
-					PrimitiveRT primitiveRT{};
+					MeshPrimitive primitiveRT{};
 					primitiveRT.textureIndexBaseColor = static_cast<int32_t>(material.baseColorTexture->index);
 					primitiveRT.textureIndexOcclusion = primitive->material.occlusionTexture ? material.occlusionTexture->index : -1;
+					primitiveRT.vertexStartOffsetInMesh = vertexStartOffsetInMesh;
+					primitiveRT.IndexStartOffsetInMesh = indexStartOffsetInMesh;
 					tempPrimitives.push_back(primitiveRT); ++primitiveStartOffset;
+					vertexStartOffset += primitive->vertexCount;
+					indexStartOffset += primitive->indexCount;
+					vertexStartOffsetInMesh += primitive->vertexCount;
+					indexStartOffsetInMesh += primitive->indexCount;
 				}
 				geometryNodesPerMesh.push_back(geometryNode);
 			}
@@ -2702,47 +2710,90 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	// Create staging buffers
 	if (bMakeClusters)
 	{
-		
+		size_t clusterVertexBufferSize = m_numClusterVertices * sizeof(uint32_t);
+		size_t clusterIndexBufferSize = tempCusterLocalIndicesCPU.size() * sizeof(uint8_t);
+		size_t clusterBBoxBufferSize = tempClusterBBoxesCPU.size() * sizeof(BBox);
+		size_t clusterBufferSize = m_numClusters * sizeof(ClusterRT);
+		// Staging Buffer - Cluster Vertex
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			clusterVertexBufferSize,
+			&clusterVertexStaging.buffer,
+			&clusterVertexStaging.memory,
+			tempClusterLocalVerticesCPU.data()));
+		// Staging Buffer - Cluster Index
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			clusterIndexBufferSize,
+			&clusterIndexStaging.buffer,
+			&clusterIndexStaging.memory,
+			tempCusterLocalIndicesCPU.data()));
+		// Staging Buffer - Cluster BBox
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			clusterBBoxBufferSize,
+			&clusterBBoxStaging.buffer,
+			&clusterBBoxStaging.memory,
+			tempClusterBBoxesCPU.data()));
+		// Staging Buffer - Cluster
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			clusterBufferSize,
+			&clusterStaging.buffer,
+			&clusterStaging.memory,
+			tempClustersCPU.data()));
+
+		// Cluster Vertex buffer
+		VK_CHECK_RESULT(device->createBuffer2(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			clusterVertexBufferSize,
+			&clusterVerticesGPU.buffer,
+			&clusterVerticesGPU.memory));
+		// Cluster Index buffer
+		VK_CHECK_RESULT(device->createBuffer2(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			clusterIndexBufferSize,
+			&clusterIndicesGPU.buffer,
+			&clusterIndicesGPU.memory));
+		// Cluster BBox buffer
+		VK_CHECK_RESULT(device->createBuffer2(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			clusterBBoxBufferSize,
+			&clusterBBoxesGPU.buffer,
+			&clusterBBoxesGPU.memory));
+		// Cluster buffer
+		VK_CHECK_RESULT(device->createBuffer2(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			clusterBufferSize,
+			&clustersGPU.buffer,
+			&clustersGPU.memory));
+
+
+		VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
+		VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
+
+		copyRegion.size = clusterVertexBufferSize;
+		vkCmdCopyBuffer(copyCmd, clusterVertexStaging.buffer, clusterVerticesGPU.buffer, 1, &copyRegion);
+		copyRegion.size = clusterIndexBufferSize;
+		vkCmdCopyBuffer(copyCmd, clusterIndexStaging.buffer, clusterIndicesGPU.buffer, 1, &copyRegion);
+		copyRegion.size = clusterBBoxBufferSize;
+		vkCmdCopyBuffer(copyCmd, clusterBBoxStaging.buffer, clusterBBoxesGPU.buffer, 1, &copyRegion);
+		copyRegion.size = clusterBufferSize;
+		vkCmdCopyBuffer(copyCmd, clusterStaging.buffer, clustersGPU.buffer, 1, &copyRegion);
+
+		device->flushCommandBuffer(copyCmd, transferQueue, false);
 	}
-	size_t clusterVertexBufferSize = m_numClusterVertices * sizeof(uint32_t);
-	size_t clusterIndexBufferSize = tempCusterLocalIndicesCPU.size() * sizeof(uint8_t);
-	size_t clusterBBoxBufferSize = tempClusterBBoxesCPU.size() * sizeof(BBox);
-	size_t clusterBufferSize = m_numClusters * sizeof(ClusterRT);
 	size_t geometryNodeBufferSize = isGeometryNodePerPrimitive ? geometryNodesPerPrimitive.size() * sizeof(GeometryNodePerPrimitiveRT) :
 		geometryNodesPerMesh.size() * sizeof(GeometryNodePerMeshRT);
 
-	// Staging Buffer - Cluster Vertex
-	VK_CHECK_RESULT(device->createBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		clusterVertexBufferSize,
-		&clusterVertexStaging.buffer,
-		&clusterVertexStaging.memory,
-		tempClusterLocalVerticesCPU.data()));
-	// Staging Buffer - Cluster Index
-	VK_CHECK_RESULT(device->createBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		clusterIndexBufferSize,
-		&clusterIndexStaging.buffer,
-		&clusterIndexStaging.memory,
-		tempCusterLocalIndicesCPU.data()));
-	// Staging Buffer - Cluster BBox
-	VK_CHECK_RESULT(device->createBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		clusterBBoxBufferSize,
-		&clusterBBoxStaging.buffer,
-		&clusterBBoxStaging.memory,
-		tempClusterBBoxesCPU.data()));
-	// Staging Buffer - Cluster
-	VK_CHECK_RESULT(device->createBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		clusterBufferSize,
-		&clusterStaging.buffer,
-		&clusterStaging.memory,
-		tempClustersCPU.data()));
 	// Staging Buffer - GeometryNodes
 	void* geometryNodesData = isGeometryNodePerPrimitive ? (void*)geometryNodesPerPrimitive.data() : (void*)geometryNodesPerMesh.data();
 	VK_CHECK_RESULT(device->createBuffer(
@@ -2755,34 +2806,6 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 
 	// Create device local buffers
-	// Cluster Vertex buffer
-	VK_CHECK_RESULT(device->createBuffer2(
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		clusterVertexBufferSize,
-		&clusterVerticesGPU.buffer,
-		&clusterVerticesGPU.memory));
-	// Cluster Index buffer
-	VK_CHECK_RESULT(device->createBuffer2(
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		clusterIndexBufferSize,
-		&clusterIndicesGPU.buffer,
-		&clusterIndicesGPU.memory));
-	// Cluster BBox buffer
-	VK_CHECK_RESULT(device->createBuffer2(
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		clusterBBoxBufferSize,
-		&clusterBBoxesGPU.buffer,
-		&clusterBBoxesGPU.memory));
-	// Cluster buffer
-	VK_CHECK_RESULT(device->createBuffer2(
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		clusterBufferSize,
-		&clustersGPU.buffer,
-		&clustersGPU.memory));
 	// GeometryNode buffer
 	VK_CHECK_RESULT(device->createBuffer2(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
@@ -2793,14 +2816,6 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 	VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
 	VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
-	copyRegion.size = clusterVertexBufferSize;
-	vkCmdCopyBuffer(copyCmd, clusterVertexStaging.buffer, clusterVerticesGPU.buffer, 1, &copyRegion);
-	copyRegion.size = clusterIndexBufferSize;
-	vkCmdCopyBuffer(copyCmd, clusterIndexStaging.buffer, clusterIndicesGPU.buffer, 1, &copyRegion);
-	copyRegion.size = clusterBBoxBufferSize;
-	vkCmdCopyBuffer(copyCmd, clusterBBoxStaging.buffer, clusterBBoxesGPU.buffer, 1, &copyRegion);
-	copyRegion.size = clusterBufferSize;
-	vkCmdCopyBuffer(copyCmd, clusterStaging.buffer, clustersGPU.buffer, 1, &copyRegion);
 	copyRegion.size = geometryNodeBufferSize;
 	vkCmdCopyBuffer(copyCmd, geometryNodeStaging.buffer, geometryNodes.buffer, 1, &copyRegion);
 
@@ -2815,7 +2830,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	// For Primitives
 	if (fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerMesh)
 	{
-		size_t primitiveBufferSize = tempPrimitives.size() * sizeof(PrimitiveRT);
+		size_t primitiveBufferSize = tempPrimitives.size() * sizeof(MeshPrimitive);
 		// Staging Buffer - Primitives
 		VK_CHECK_RESULT(device->createBuffer(
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -2833,6 +2848,8 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			&primitives.memory));
 		copyRegion.size = primitiveBufferSize;
 		vkCmdCopyBuffer(copyCmd, primitiveStaging.buffer, primitives.buffer, 1, &copyRegion);
+
+		primitives.descriptor = { primitives.buffer, 0, primitiveBufferSize };
 	}
 
 	device->flushCommandBuffer(copyCmd, transferQueue, false);
