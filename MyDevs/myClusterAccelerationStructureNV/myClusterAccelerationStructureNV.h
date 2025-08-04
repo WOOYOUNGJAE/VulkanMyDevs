@@ -49,6 +49,13 @@ public:
 
 #pragma region CLAS
 	VkDeviceSize clasScratchSizeMax = 0;
+	AccelerationStructure clas{};
+	// for indirectly building clas argment
+	struct ArgumentBuffer
+	{
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceMemory memory = VK_NULL_HANDLE;
+	}clusterBuildInfoBuffer{}, clusterDstAddressBuffer{}, clusterSizeBuffer{};
 	VkClusterAccelerationStructureTriangleClusterInputNV clasTriangleClusterInput{};
 #pragma endregion CLAS
 
@@ -93,7 +100,7 @@ public:
 	MyClusterAccelerationStructureNV();
 	~MyClusterAccelerationStructureNV() override;
 
-	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
+	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo, VkBufferUsageFlagBits usageFlag);
 
 	// Create class buffer and initialize indirect build info, but don't build on GPU yet.
 	void initCLASes();
@@ -102,7 +109,7 @@ public:
 	*/
 	// Only Called once after model loaded
 	void initBLASes();
-	void buildBLASes(); // Bvuil or Update
+	void buildBLASes(); // Build or Update
 
 	/*
 		The top level acceleration structure contains the scene's object instances

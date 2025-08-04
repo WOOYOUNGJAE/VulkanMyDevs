@@ -70,13 +70,14 @@ MyClusterAccelerationStructureNV::~MyClusterAccelerationStructureNV()
 		uniformBuffer.destroy();
 	}
 }
+
 void MyClusterAccelerationStructureNV::createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure,
-	VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
+	VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo, VkBufferUsageFlagBits usageFlag)
 {
 	VkBufferCreateInfo bufferCreateInfo{};
 	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferCreateInfo.size = buildSizeInfo.accelerationStructureSize;
-	bufferCreateInfo.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+	bufferCreateInfo.usage = usageFlag | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT;
 	VK_CHECK_RESULT(vkCreateBuffer(device, &bufferCreateInfo, nullptr, &accelerationStructure.buffer));
 	VkMemoryRequirements memoryRequirements{};
 	vkGetBufferMemoryRequirements(device, accelerationStructure.buffer, &memoryRequirements);
@@ -94,6 +95,7 @@ void MyClusterAccelerationStructureNV::createAccelerationStructureBuffer(Acceler
 
 void MyClusterAccelerationStructureNV::initCLASes()
 {
+	const uint32_t numClusters = model.m_numClusters;
 	clasTriangleClusterInput = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV };
 	clasTriangleClusterInput.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
 	clasTriangleClusterInput.maxClusterTriangleCount = model.m_clusterTriangleMax;
@@ -101,7 +103,7 @@ void MyClusterAccelerationStructureNV::initCLASes()
 	clasTriangleClusterInput.minPositionTruncateBitCount = 0;
 
 	VkClusterAccelerationStructureInputInfoNV clasInput = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV };
-	clasInput.maxAccelerationStructureCount = model.m_numClusters;
+	clasInput.maxAccelerationStructureCount = numClusters;
 	clasInput.opType = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_NV;
 	clasInput.opMode = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS_NV;
 	clasInput.opInput.pTriangleClusters = &clasTriangleClusterInput;
@@ -109,6 +111,33 @@ void MyClusterAccelerationStructureNV::initCLASes()
 	VkAccelerationStructureBuildSizesInfoKHR buildSizesInfo = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
 	vkGetClusterAccelerationStructureBuildSizesNV(device, &clasInput, &buildSizesInfo);
 	clasScratchSizeMax = std::max(clasScratchSizeMax, buildSizesInfo.buildScratchSize);
+
+	// create CLAS buffer
+	createAccelerationStructureBuffer(clas, buildSizesInfo, static_cast<VkBufferUsageFlagBits>(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR
+		| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR));
+
+	// Indirect Argument Buffer - cluster buildInfo
+	vulkanDevice->createBuffer2(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		sizeof(VkClusterAccelerationStructureBuildTriangleClusterInfoNV) * numClusters,
+		&clusterBuildInfoBuffer.buffer, &clusterBuildInfoBuffer.memory);
+	
+	// Indirect Argument Buffer - cluster dst address
+	vulkanDevice->createBuffer2(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		sizeof(uint64_t) * numClusters,
+		&clusterDstAddressBuffer.buffer, &clusterDstAddressBuffer.memory);
+	
+	// Indirect Argument Buffer - cluster buildInfo
+	vulkanDevice->createBuffer2(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		sizeof(uint32_t) * numClusters,
+		&clusterSizeBuffer.buffer, &clusterSizeBuffer.memory);
+
+	std::vector<VkClusterAccelerationStructureBuildTriangleClusterInfoNV> clusterBuildInfos(numClusters);
+	std::vector<uint64_t> clusterDstAddresses(numClusters);
+
+
+
+
+
 	for (const auto& node : model.linearNodes)
 	{
 		if (node->mesh)
@@ -217,7 +246,7 @@ void MyClusterAccelerationStructureNV::initBLASes()
 			blasScratchSizeMax = std::max(blasScratchSizeMax, curBuildSizeMax);
 
 			AccelerationStructure blas{};
-			createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
+			MyVulkanRTBase::createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
 			BLASes.push_back(blas);
 		}
 	}
@@ -363,7 +392,7 @@ void MyClusterAccelerationStructureNV::buildTLAS()
 			&numBlasInstances,
 			&accelerationStructureBuildSizesInfo);
 		tlasScratchSize = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
-		createAccelerationStructureBuffer(TLAS, accelerationStructureBuildSizesInfo);
+		MyVulkanRTBase::createAccelerationStructureBuffer(TLAS, accelerationStructureBuildSizesInfo);
 
 		VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
 		accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
