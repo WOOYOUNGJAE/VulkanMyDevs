@@ -57,8 +57,6 @@ public:
 	MyRayTracingBasic();
 	~MyRayTracingBasic() override;
 
-	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
-
 	/*
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/

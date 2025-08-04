@@ -63,14 +63,11 @@ public:
 	MyMultiBLAS();
 	~MyMultiBLAS() override;
 
-	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
-
 	/*
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/
 	void createBLASes();
 	void createBLAS(myglTF::Node* node, uint32_t nodeIdx);
-	void createBottomLevelAccelerationStructure(); // legacy
 
 	/*
 		The top level acceleration structure contains the scene's object instances

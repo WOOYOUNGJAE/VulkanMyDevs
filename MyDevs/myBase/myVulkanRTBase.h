@@ -78,6 +78,8 @@ public:
 	uint64_t getBufferDeviceAddress(VkBuffer buffer);
 	VkStridedDeviceAddressRegionKHR getSbtEntryStridedDeviceAddressRegion(VkBuffer buffer, uint32_t handleCount);
 	void createShaderBindingTable(ShaderBindingTable& shaderBindingTable, uint32_t handleCount);
+	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
+
 
 	virtual void enableExtensions();
 	virtual void prepare();
