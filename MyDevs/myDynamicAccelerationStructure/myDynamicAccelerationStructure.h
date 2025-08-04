@@ -33,7 +33,7 @@ public:
 	};
 	VkDeviceSize blasScratchSizeMax = 0;
 	AccelerationStructure TLAS{};
-	VkDeviceSize tlasScratchSize;
+	VkDeviceSize tlasScratchSize = 0;
 	ScratchBuffer tlasScratchBuffer{};
 	vks::Buffer blasInstancesBuffer;
 	VkAccelerationStructureBuildGeometryInfoKHR tlasBuildGeometryInfo{};
