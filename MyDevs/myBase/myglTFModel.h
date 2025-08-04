@@ -403,7 +403,8 @@ namespace myglTF
 		void CleanBufferMemory(BUFFER_TAG& bufferAndMemory);
 		Vertices vertices{};
 		Indices indices{};
-		GeometryNodes geometryNodes{};
+		GeometryNodes geometryNodes{}; // GeometryNode type and the buffer size are already determined at creation.
+		Primitives primitives; // for multi blas
 		// Used only if model needs only single representing uniform data
 		RootNodeUniformBuffer rootUniformBuffer{};
 		struct UniformData
@@ -428,7 +429,6 @@ namespace myglTF
 			float radius;
 		} dimensions;
 #pragma region Cluster
-		Primitives primitives;
 		std::vector<ClusteredGeometryNodeRT> clusteredGeometryNodes; // per mesh
 		uint32_t m_numClusters = 0u;
 		uint32_t m_numClusterVertices = 0u;

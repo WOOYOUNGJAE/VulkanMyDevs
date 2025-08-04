@@ -6,7 +6,7 @@
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 *
 * Summary:
-* Ray tracing Cluster Acceleration Sturcture basic
+* Ray tracing Cluster Acceleration Sturcture basic, without using CLAS templates
 * This work continues from the "MyMultiBLAS" implementation.
 * 
 * This sample comes with a tutorial, see the README.md in this folder
@@ -85,6 +85,18 @@ void MyClusterAccelerationStructureNV::createAccelerationStructureBuffer(Acceler
 	memoryAllocateInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &accelerationStructure.memory));
 	VK_CHECK_RESULT(vkBindBufferMemory(device, accelerationStructure.buffer, accelerationStructure.memory, 0));
+}
+
+void MyClusterAccelerationStructureNV::initCLASes()
+{
+	VkClusterAccelerationStructureInputInfoNV inputs = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV };
+	for (const auto& node : model.linearNodes)
+	{
+		if (node->mesh)
+		{
+			
+		}
+	}
 }
 
 void MyClusterAccelerationStructureNV::createBLASes()
@@ -719,6 +731,7 @@ void MyClusterAccelerationStructureNV::prepare()
 	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
 	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 	// Create the acceleration structures used to render the ray traced scene
+	initCLASes();
 	createBLASes();
 	createTopLevelAccelerationStructure();
 

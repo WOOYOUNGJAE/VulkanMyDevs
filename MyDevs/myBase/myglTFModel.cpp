@@ -2458,6 +2458,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = MyDeviceFuncTable::Get()->vkGetBufferDeviceAddressKHR;
 	// flag things
 	const bool isGeometryNodePerPrimitive = fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerPrimitive;
+	const bool isGeometryNodePerMesh = fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerMesh;
 	const bool bMakeClusters = fileLoadingFlags & myglTF::FileLoadingFlags::MakeClusters;
 	auto getBufferDeviceAddress = [&](VkBuffer buffer)
 	{
@@ -2680,7 +2681,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 					geometryNodesPerPrimitive.push_back(geometryNode);
 				}
 			}
-			else if (fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerMesh)
+			else if (isGeometryNodePerMesh)
 			{				
 				GeometryNodePerMeshRT geometryNode{};
 				geometryNode.vertexStartOffset = vertexStartOffset;
@@ -2702,6 +2703,29 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 					indexStartOffsetInMesh += primitive->indexCount;
 				}
 				geometryNodesPerMesh.push_back(geometryNode);
+			}
+			else if (bMakeClusters) // for Cluster Acceleration Structure
+			{
+				ClusteredGeometryNodeRT geometryNode{};
+				/*geometryNode.vertexStartOffset = vertexStartOffset;
+				geometryNode.indexStartOffset = indexStartOffset;*/
+				geometryNode.primitiveStartOffset = primitiveStartOffset;
+
+				for (const auto& primitive : node->mesh->primitives)
+				{
+					const Material& material = primitive->material;
+					MeshPrimitive primitiveRT{};
+					primitiveRT.textureIndexBaseColor = static_cast<int32_t>(material.baseColorTexture->index);
+					primitiveRT.textureIndexOcclusion = primitive->material.occlusionTexture ? material.occlusionTexture->index : -1;
+					primitiveRT.vertexStartOffsetInMesh = vertexStartOffsetInMesh;
+					primitiveRT.IndexStartOffsetInMesh = indexStartOffsetInMesh;
+					tempPrimitives.push_back(primitiveRT); ++primitiveStartOffset;
+					vertexStartOffset += primitive->vertexCount;
+					indexStartOffset += primitive->indexCount;
+					vertexStartOffsetInMesh += primitive->vertexCount;
+					indexStartOffsetInMesh += primitive->indexCount;
+				}
+				clusteredGeometryNodes.push_back(geometryNode);
 			}
 		}
 	}
@@ -2790,12 +2814,28 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		vkCmdCopyBuffer(copyCmd, clusterStaging.buffer, clustersGPU.buffer, 1, &copyRegion);
 
 		device->flushCommandBuffer(copyCmd, transferQueue, false);
-	}
-	size_t geometryNodeBufferSize = isGeometryNodePerPrimitive ? geometryNodesPerPrimitive.size() * sizeof(GeometryNodePerPrimitiveRT) :
-		geometryNodesPerMesh.size() * sizeof(GeometryNodePerMeshRT);
 
-	// Staging Buffer - GeometryNodes
-	void* geometryNodesData = isGeometryNodePerPrimitive ? (void*)geometryNodesPerPrimitive.data() : (void*)geometryNodesPerMesh.data();
+		// Create Descriptor Info
+		clusterVerticesGPU.descriptor = { clusterVerticesGPU.buffer, 0, clusterVertexBufferSize };
+		clusterIndicesGPU.descriptor = { clusterIndicesGPU.buffer, 0, clusterIndexBufferSize };
+		clusterBBoxesGPU.descriptor = { clusterBBoxesGPU.buffer, 0, clusterBBoxBufferSize };
+		clustersGPU.descriptor = { clustersGPU.buffer, 0, clusterBufferSize };
+	}
+	size_t geometryNodeBufferSize = 0;
+	void* geometryNodesData = nullptr;
+	if (isGeometryNodePerPrimitive) {
+		geometryNodeBufferSize = geometryNodesPerPrimitive.size() * sizeof(GeometryNodePerPrimitiveRT);
+		geometryNodesData = static_cast<void*>(geometryNodesPerPrimitive.data());
+	}
+	else if (isGeometryNodePerMesh) {
+		geometryNodeBufferSize = geometryNodesPerMesh.size() * sizeof(GeometryNodePerMeshRT);
+		geometryNodesData = static_cast<void*>(geometryNodesPerMesh.data());
+	}
+	else if (bMakeClusters) {
+		geometryNodeBufferSize = clusteredGeometryNodes.size() * sizeof(ClusteredGeometryNodeRT);
+		geometryNodesData = static_cast<void*>(clusteredGeometryNodes.data());
+	}
+
 	VK_CHECK_RESULT(device->createBuffer(
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -2819,16 +2859,14 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	copyRegion.size = geometryNodeBufferSize;
 	vkCmdCopyBuffer(copyCmd, geometryNodeStaging.buffer, geometryNodes.buffer, 1, &copyRegion);
 
-	// Create Descriptor for Raytracing
+	// Create Descriptor Info for Raytracing
 	{
 		// Create Descriptor
 		geometryNodes.descriptor = { geometryNodes.buffer, 0, geometryNodeBufferSize };
-		// TODO for CLAS
-
 	}
 
 	// For Primitives
-	if (fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerMesh)
+	if (isGeometryNodePerMesh)
 	{
 		size_t primitiveBufferSize = tempPrimitives.size() * sizeof(MeshPrimitive);
 		// Staging Buffer - Primitives

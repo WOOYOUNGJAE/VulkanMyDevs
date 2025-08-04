@@ -69,6 +69,8 @@ public:
 
 	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
 
+	// Create class buffer and initialize indirect build info, but don't build on GPU yet.
+	void initCLASes();
 	/*
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/

@@ -50,8 +50,8 @@ struct ClusteredGeometryNodeRT
 	uint32_t numClusters;
 	uint32_t geometryID;
 
-	int32_t textureIndexBaseColor;
-	int32_t textureIndexOcclusion;
+	// TODO: testing
+	uint32_t primitiveStartOffset;
 };
 
 struct ClusterRT
