@@ -34,6 +34,7 @@ function(buildExample EXAMPLE_NAME)
     message(STATUS "Generating project file for example in ${EXAMPLE_FOLDER}")
     # Main
     file(GLOB SOURCE *.cpp ${BASE_HEADERS} ${EXAMPLE_FOLDER}/*.cpp)
+    file(GLOB HEADER *.h ${BASE_HEADERS} ${EXAMPLE_FOLDER}/*.h)
     SET(MAIN_CPP ${EXAMPLE_FOLDER}/${EXAMPLE_NAME}.cpp)
     if(EXISTS ${EXAMPLE_FOLDER}/main.cpp)
         SET(MAIN_CPP ${EXAMPLE_FOLDER}/main.cpp)
@@ -63,7 +64,7 @@ function(buildExample EXAMPLE_NAME)
     # Add optional readme / tutorial
     file(GLOB README_FILES "${EXAMPLE_FOLDER}/*.md")
     if(WIN32)
-        add_executable(${EXAMPLE_NAME} WIN32 ${MAIN_CPP} ${SOURCE} ${MAIN_HEADER} ${SHADERS_GLSL} ${SHADERS_HLSL} ${SHADERS_SLANG} ${README_FILES})
+        add_executable(${EXAMPLE_NAME} WIN32 ${MAIN_CPP} ${SOURCE} ${MAIN_HEADER} ${HEADER} ${SHADERS_GLSL} ${SHADERS_HLSL} ${SHADERS_SLANG} ${README_FILES})
         set_target_properties(${EXAMPLE_NAME} PROPERTIES FOLDER "myDevs")
         target_link_libraries(${EXAMPLE_NAME} myBase Vulkan::Vulkan ${Vulkan_LIBRARY} ${WINLIBS})
     else(WIN32)
@@ -118,8 +119,7 @@ endfunction(buildExamples)
 set(EXAMPLES
     myMeshShader
     myRayTracingBasic
-    myMultiBLAS
-    myDynamicAccelerationStructure
+    myRayTracingLittleAdvanced
     myClusterAccelerationStructureNV
 )
 

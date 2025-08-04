@@ -8,20 +8,35 @@
 */
 
 #pragma once
-#include "myVulkan.h"
-#include "myVulkanRTBase.h"
-#include "myglTFModel.h"
+#include "myRayTracingLittleAdvanced.h"
 
-#define VK_GLTF_MATERIAL_IDS
-#include "myglTFModel.h"
-
-class MyMultiBLAS : public MyVulkanRTBase
+class MyDynamicAccelerationStructure : public MyVulkanRTBase
 {
 private:
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 public:
+	struct ASBuildInfo
+	{
+		VkDeviceSize asSize;
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
+
+		std::vector<VkAccelerationStructureGeometryKHR> asGeometries{};
+		VkAccelerationStructureBuildGeometryInfoKHR asBuildGeometryInfo{};
+
+		VkAccelerationStructureBuildSizesInfoKHR asBuildSizesInfo{};
+	};
+	VkDeviceSize blasScratchSizeMax = 0;
 	AccelerationStructure TLAS{};
+	VkDeviceSize tlasScratchSize = 0;
+	ScratchBuffer tlasScratchBuffer{};
+	vks::Buffer blasInstancesBuffer;
+	VkAccelerationStructureBuildGeometryInfoKHR tlasBuildGeometryInfo{};
+	VkAccelerationStructureGeometryKHR tlasGeometry{};
+	std::vector<VkAccelerationStructureInstanceKHR> blasInstances{};
+	ScratchBuffer blasesScratchBuffer{};
 	std::vector<AccelerationStructure> BLASes;
+	std::vector<ASBuildInfo> asBuildInfos;
 
 	vks::Buffer vertexBuffer;
 	vks::Buffer indexBuffer;
@@ -60,19 +75,21 @@ public:
 	myglTF::ModelRT model;
 
 public:
-	MyMultiBLAS();
-	~MyMultiBLAS() override;
+	MyDynamicAccelerationStructure();
+	~MyDynamicAccelerationStructure() override;
 
 	/*
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/
-	void createBLASes();
-	void createBLAS(myglTF::Node* node, uint32_t nodeIdx);
+
+	// Only Called once after model loaded
+	void initBLASes();
+	void buildBLASes(); // Bvuil or Update
 
 	/*
 		The top level acceleration structure contains the scene's object instances
 	*/
-	void createTopLevelAccelerationStructure();
+	void buildTLAS();
 
 	/*
 		Create the Shader Binding Tables that binds the programs and top-level acceleration structure
