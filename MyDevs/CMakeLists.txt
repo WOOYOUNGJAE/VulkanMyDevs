@@ -116,11 +116,11 @@ function(buildExamples)
 endfunction(buildExamples)
 
 set(EXAMPLES
-    playground
     myMeshShader
     myRayTracingBasic
-    myClusterAccelerationStructureNV
     myMultiBLAS
+    myDynamicAccelerationStructure
+    myClusterAccelerationStructureNV
 )
 
 buildMyBase()
