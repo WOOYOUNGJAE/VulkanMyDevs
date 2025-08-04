@@ -23,8 +23,28 @@ private: // NV Cluster Acceleration Structure extensions
 	PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2 = VK_NULL_HANDLE;
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 public:
+	struct ASBuildInfo
+	{
+		VkDeviceSize asSize;
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
+
+		std::vector<VkAccelerationStructureGeometryKHR> asGeometries{};
+		VkAccelerationStructureBuildGeometryInfoKHR asBuildGeometryInfo{};
+
+		VkAccelerationStructureBuildSizesInfoKHR asBuildSizesInfo{};
+	};
+	VkDeviceSize blasScratchSizeMax = 0;
 	AccelerationStructure TLAS{};
+	VkDeviceSize tlasScratchSize;
+	ScratchBuffer tlasScratchBuffer{};
+	vks::Buffer blasInstancesBuffer;
+	VkAccelerationStructureBuildGeometryInfoKHR tlasBuildGeometryInfo{};
+	VkAccelerationStructureGeometryKHR tlasGeometry{};
+	std::vector<VkAccelerationStructureInstanceKHR> blasInstances{};
+	ScratchBuffer blasesScratchBuffer{};
 	std::vector<AccelerationStructure> BLASes;
+	std::vector<ASBuildInfo> asBuildInfos;
 
 	vks::Buffer vertexBuffer;
 	vks::Buffer indexBuffer;
@@ -74,13 +94,14 @@ public:
 	/*
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/
-	void createBLASes();
-	void createBLAS(myglTF::Node* node, uint32_t nodeIdx);
+	// Only Called once after model loaded
+	void initBLASes();
+	void buildBLASes(); // Bvuil or Update
 
 	/*
 		The top level acceleration structure contains the scene's object instances
 	*/
-	void createTopLevelAccelerationStructure();
+	void buildTLAS();
 
 	/*
 		Create the Shader Binding Tables that binds the programs and top-level acceleration structure
