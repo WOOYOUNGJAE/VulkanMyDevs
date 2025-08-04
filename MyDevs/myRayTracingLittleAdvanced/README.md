@@ -7,8 +7,8 @@
 
 
 
-# 1. Multi BLAS [(link)](../myMultiBLAS/)
-<img src="../../screenshots/mydevs/MultiBLAS.jpg" height="256px">
+# 1. Multi BLAS [(link)](./myMultiBLAS.cpp)
+<img src="../images/MultiBLAS.jpg" height="256px">
 
 하나의 gltf model을 하나의 BLAS로 생성하는 기존의 구조 대신 Mesh마다 BLAS 생성
 
@@ -68,7 +68,7 @@ void findTriangle()
 ---
 ---
 
-# 2. Dynamic Acceleration Structure [(link)](../myDynamicAccelerationStructure/)
+# 2. Dynamic Acceleration Structure [(link)](./myDynamicAccelerationStructure.cpp)
 
 [MyMultiBLAS](../myMultiBLAS/) 프로젝트 베이스에서 확장
 
