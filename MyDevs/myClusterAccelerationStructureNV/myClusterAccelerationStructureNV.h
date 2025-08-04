@@ -24,19 +24,14 @@ private: // NV Cluster Acceleration Structure extensions
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 public:
 	AccelerationStructure TLAS{};
-	AccelerationStructure BLAS{};
+	std::vector<AccelerationStructure> BLASes;
 
 	vks::Buffer vertexBuffer;
 	vks::Buffer indexBuffer;
 	uint32_t indexCount{ 0 };
 	vks::Buffer transformBuffer;
 
-	struct GeometryNode {
-		uint64_t vertexBufferDeviceAddress;
-		uint64_t indexBufferDeviceAddress;
-		int32_t textureIndexBaseColor;
-		int32_t textureIndexOcclusion;
-	};
+
 	vks::Buffer primitivesBuffer;
 
 	std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups{};
@@ -55,6 +50,12 @@ public:
 	} uniformData;
 	vks::Buffer uniformBuffer;
 
+	struct PushConstantData
+	{
+		uint64_t sceneVertexBufferDeviceAddress = 0;
+		uint64_t sceneIndexBufferDeviceAddress = 0;
+	}pushConstantData;
+
 	VkPipeline pipeline{ VK_NULL_HANDLE };
 	VkPipelineLayout pipelineLayout{ VK_NULL_HANDLE };
 	VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
@@ -71,7 +72,8 @@ public:
 	/*
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/
-	void createBottomLevelAccelerationStructure();
+	void createBLASes();
+	void createBLAS(myglTF::Node* node, uint32_t nodeIdx);
 
 	/*
 		The top level acceleration structure contains the scene's object instances

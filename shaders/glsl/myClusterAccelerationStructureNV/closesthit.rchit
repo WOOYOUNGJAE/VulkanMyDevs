@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: MIT
  *
  */
-
 #version 460
 
 #extension GL_EXT_ray_tracing : require
@@ -12,6 +11,7 @@
 #extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types : require
 
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 layout(location = 2) rayPayloadEXT bool shadowed;
@@ -21,28 +21,38 @@ layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 layout(binding = 3, set = 0) uniform sampler2D image;
 
 struct GeometryNode {
-	uint64_t vertexBufferDeviceAddress;
-	uint64_t indexBufferDeviceAddress;
-	int textureIndexBaseColor;
-	int textureIndexOcclusion;
+	uint32_t vertexStartOffset; // from scene's total vertex buffer
+	uint32_t indexStartOffset; // from scene's total Index buffer
+	// primitive contains material info
+	uint32_t primitiveStartOffset;
 };
 layout(binding = 4, set = 0) buffer GeometryNodes { GeometryNode nodes[]; } geometryNodes;
 
-layout(binding = 5, set = 0) uniform sampler2D textures[];
+
+struct MeshPrimitive
+{
+	uint32_t vertexStartOffsetInMesh;
+	uint32_t IndexStartOffsetInMesh;
+	int32_t textureIndexBaseColor;
+	int32_t textureIndexOcclusion;
+};
+layout(binding = 5, set = 0) buffer MeshPrimitives { MeshPrimitive primitives[]; } meshPrimitives;
+layout(binding = 6, set = 0) uniform sampler2D textures[];
 
 #include "bufferreferences.glsl"
 #include "geometrytypes.glsl"
 
 void main()
 {
-	Triangle tri = unpackTriangle(gl_PrimitiveID, 112);
+	Triangle tri = unpackTriangle(gl_PrimitiveID, 64);
 	hitValue = vec3(tri.normal);
 
-	GeometryNode geometryNode = geometryNodes.nodes[gl_GeometryIndexEXT];
+	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
+	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];
 
-	vec3 color = texture(textures[nonuniformEXT(geometryNode.textureIndexBaseColor)], tri.uv).rgb;
-	if (geometryNode.textureIndexOcclusion > -1) {
-		float occlusion = texture(textures[nonuniformEXT(geometryNode.textureIndexOcclusion)], tri.uv).r;
+	vec3 color = texture(textures[nonuniformEXT(meshPrimitive.textureIndexBaseColor)], tri.uv).rgb;
+	if (meshPrimitive.textureIndexOcclusion > -1) {
+		float occlusion = texture(textures[nonuniformEXT(meshPrimitive.textureIndexOcclusion)], tri.uv).r;
 		color *= occlusion;
 	}
 

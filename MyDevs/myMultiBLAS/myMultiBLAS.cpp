@@ -221,11 +221,6 @@ void MyMultiBLAS::createBLAS(myglTF::Node* node, uint32_t nodeIdx)
 	deleteScratchBuffer(scratchBuffer);
 }
 
-void MyMultiBLAS::createBottomLevelAccelerationStructure()
-{
-	
-}
-
 void MyMultiBLAS::createTopLevelAccelerationStructure()
 {
 	// We flip the matrix [1][1] = -1.0f to accomodate for the glTF up vector

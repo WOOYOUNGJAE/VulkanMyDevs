@@ -25,16 +25,25 @@ struct Triangle {
 #endif
 
 
+#define INDEX_TYPE_SIZE 4
+
 // This function will unpack our vertex buffer data into a single triangle and calculates uv coordinates
-Triangle unpackTriangle(uint index, int vertexSize) {
+Triangle unpackTriangle(uint primitiveID, int vertexSize) {
 	Triangle tri;
-	const uint triIndex = index * 3;
+	const uint triIndex = primitiveID * 3;
 
-	GeometryNode geometryNode = geometryNodes.nodes[gl_GeometryIndexEXT];
+	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
+	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];
 
-	Indices indices   = Indices(geometryNode.indexBufferDeviceAddress);
-	Vertices vertices = Vertices(geometryNode.vertexBufferDeviceAddress);
+	
+	// move to start of this node(mesh)'s MeshPrimitive
+	uint64_t nodeVertexAddress = sceneDeviceAddress.vertexBufferAddress;// +vertexSize * (geometryNode.vertexStartOffset + meshPrimitive.vertexStartOffsetInMesh + primitiveID);
+	uint64_t nodeIndexAddress = sceneDeviceAddress.indexBufferAddress + INDEX_TYPE_SIZE * (geometryNode.indexStartOffset + meshPrimitive.IndexStartOffsetInMesh + (primitiveID * 3)); // index size
 
+	Vertices   vertices = Vertices(nodeVertexAddress);
+	Indices    indices = Indices(nodeIndexAddress);
+
+		
 	// Unpack vertices
 	// Data is packed as vec4 so we can map to the glTF vertex structure from the host side
 	// We match vkglTF::Vertex: pos.xyz+normal.x, normalyz+uv.xy
@@ -43,7 +52,7 @@ Triangle unpackTriangle(uint index, int vertexSize) {
 	// glm::vec2 uv;
 	// ...
 	for (uint i = 0; i < 3; i++) {
-		const uint offset = indices.i[triIndex + i] * NUM_VEC4_FROM_VERTEX_SIZE; // vertex stride
+		const uint offset = indices.i[i] * NUM_VEC4_FROM_VERTEX_SIZE; // vertex stride
 		vec4 d0 = vertices.v[offset + 0]; // pos.xyz, n.x
 		vec4 d1 = vertices.v[offset + 1]; // n.yz, uv.xy
 		tri.vertices[i].pos = d0.xyz;
