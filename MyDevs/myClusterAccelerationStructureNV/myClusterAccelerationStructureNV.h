@@ -34,17 +34,23 @@ public:
 
 		VkAccelerationStructureBuildSizesInfoKHR asBuildSizesInfo{};
 	};
-	VkDeviceSize blasScratchSizeMax = 0;
 	AccelerationStructure TLAS{};
-	VkDeviceSize tlasScratchSize;
+	VkDeviceSize tlasScratchSize = 0;
 	ScratchBuffer tlasScratchBuffer{};
 	vks::Buffer blasInstancesBuffer;
 	VkAccelerationStructureBuildGeometryInfoKHR tlasBuildGeometryInfo{};
 	VkAccelerationStructureGeometryKHR tlasGeometry{};
 	std::vector<VkAccelerationStructureInstanceKHR> blasInstances{};
-	ScratchBuffer blasesScratchBuffer{};
+
 	std::vector<AccelerationStructure> BLASes;
+	VkDeviceSize blasScratchSizeMax = 0;
+	ScratchBuffer blasesScratchBuffer{};
 	std::vector<ASBuildInfo> asBuildInfos;
+
+#pragma region CLAS
+	VkDeviceSize clasScratchSizeMax = 0;
+	VkClusterAccelerationStructureTriangleClusterInputNV clasTriangleClusterInput{};
+#pragma endregion CLAS
 
 	vks::Buffer vertexBuffer;
 	vks::Buffer indexBuffer;

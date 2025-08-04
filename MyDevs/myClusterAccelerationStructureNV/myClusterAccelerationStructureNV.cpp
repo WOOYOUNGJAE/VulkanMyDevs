@@ -7,6 +7,7 @@
 *
 * Summary:
 * Ray tracing Cluster Acceleration Sturcture basic, without using CLAS templates
+* - clas template (x) , implicit build(o)
 * This work continues from the "MyClusterAccelerationStructureNV" implementation.
 * 
 * This sample comes with a tutorial, see the README.md in this folder
@@ -93,7 +94,21 @@ void MyClusterAccelerationStructureNV::createAccelerationStructureBuffer(Acceler
 
 void MyClusterAccelerationStructureNV::initCLASes()
 {
-	VkClusterAccelerationStructureInputInfoNV inputs = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV };
+	clasTriangleClusterInput = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV };
+	clasTriangleClusterInput.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+	clasTriangleClusterInput.maxClusterTriangleCount = model.m_clusterTriangleMax;
+	clasTriangleClusterInput.maxClusterVertexCount = model.m_clusterVertexMax;
+	clasTriangleClusterInput.minPositionTruncateBitCount = 0;
+
+	VkClusterAccelerationStructureInputInfoNV clasInput = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV };
+	clasInput.maxAccelerationStructureCount = model.m_numClusters;
+	clasInput.opType = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_NV;
+	clasInput.opMode = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS_NV;
+	clasInput.opInput.pTriangleClusters = &clasTriangleClusterInput;
+	clasInput.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+	VkAccelerationStructureBuildSizesInfoKHR buildSizesInfo = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
+	vkGetClusterAccelerationStructureBuildSizesNV(device, &clasInput, &buildSizesInfo);
+	clasScratchSizeMax = std::max(clasScratchSizeMax, buildSizesInfo.buildScratchSize);
 	for (const auto& node : model.linearNodes)
 	{
 		if (node->mesh)

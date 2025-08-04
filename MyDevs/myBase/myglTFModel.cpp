@@ -1871,10 +1871,10 @@ void myglTF::Model::generateMeshlets(const std::vector<VertexType*>& originalVer
 void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions)
 {
 	// Do Cluster things - Strongly influenced by https://github.com/nvpro-samples/vk_animated_clusters
-	uint32_t clusterTriangles = 64;
-	uint32_t clusterVertices = 64;
-	size_t minTriangles = (clusterTriangles / 4) & ~3; // allow smaller clusters to be generated when that significantly improves their bounds
-	size_t maxVerticesPerMeshlet = clusterVertices; // Same for MeshShader
+	uint32_t clusterTrianglesMax = 64;
+	uint32_t clusterVerticesMax = 64;
+	size_t minTriangles = (clusterTrianglesMax / 4) & ~3; // allow smaller clusters to be generated when that significantly improves their bounds
+	size_t maxVerticesPerMeshlet = clusterVerticesMax; // Same for MeshShader
 	size_t maxIndicesPerMeshlet = minTriangles; // If MeshShader:124
 	float clusterMeshoptSpatialFill = 0.5f;
 
@@ -1882,8 +1882,8 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 	{
 		std::vector<meshopt_Meshlet> meshlets(meshopt_buildMeshletsBound(originalIndices.size(), 64, minTriangles));
 
-		tempCusterLocalIndicesCPU.resize(meshlets.size() * clusterTriangles * 3);
-		tempClusterLocalVerticesCPU.resize(meshlets.size() * clusterVertices);
+		tempCusterLocalIndicesCPU.resize(meshlets.size() * clusterTrianglesMax * 3);
+		tempClusterLocalVerticesCPU.resize(meshlets.size() * clusterVerticesMax);
 
 		size_t numClusters = meshopt_buildMeshletsSpatial(
 			meshlets.data(),
@@ -1894,9 +1894,9 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 			reinterpret_cast<const float*>(vertexPositions.data()),
 			vertexPositions.size(),
 			sizeof(glm::vec3),
-			std::min(255u, clusterVertices),
+			std::min(255u, clusterVerticesMax),
 			minTriangles,
-			clusterTriangles,
+			clusterTrianglesMax,
 			clusterMeshoptSpatialFill);
 
 		m_numClusters = static_cast<uint32_t>(numClusters);
@@ -1905,6 +1905,8 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 		{
 			tempClustersCPU.resize(m_numClusters);
 			tempClustersCPU.shrink_to_fit();
+			clusterTriangleHistogram.resize(clusterTrianglesMax + 1, 0);
+			clusterVertexHistogram.resize(clusterVerticesMax + 1, 0);
 
 			// Fill Cluster Data
 			uint64_t clusterIdx = 0;
@@ -1917,6 +1919,10 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 				cluster.numVertices = static_cast<uint16_t>(meshlet.vertex_count);
 				cluster.firstLocalTriangle = meshlet.triangle_offset;
 				cluster.firstLocalVertex = meshlet.vertex_offset;
+
+				// fill histogram thing
+				++clusterTriangleHistogram[cluster.numTriangles];
+				++clusterVertexHistogram[cluster.numVertices];
 			}
 
 			ClusterRT& lastCluster = tempClustersCPU[clusterIdx - 1];
@@ -1980,6 +1986,21 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 				originalIndices[cluster.firstTriangle + t + 1] = globalVertices.y;
 				originalIndices[cluster.firstTriangle + t + 2] = globalVertices.z;
 			}
+		}
+	}
+	// find max frequency and max
+	{
+		for (uint32_t i = 0; i < clusterTriangleHistogram.size(); i++)
+		{
+			mostFrequentNumOfClusterTriangles = std::max(mostFrequentNumOfClusterTriangles, clusterTriangleHistogram[i]);
+			if (clusterTriangleHistogram[i])
+				m_clusterTriangleMax = i;
+		}
+		for (uint32_t i = 0; i < clusterVertexHistogram.size(); i++)
+		{
+			mostFrequentNumOfClusterVertices = std::max(mostFrequentNumOfClusterVertices, clusterVertexHistogram[i]);
+			if (clusterVertexHistogram[i])
+				m_clusterVertexMax = i;
 		}
 	}
 }

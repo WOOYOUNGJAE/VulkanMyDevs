@@ -27,3 +27,8 @@ You can view the original README [here](https://github.com/SaschaWillems/Vulkan#
     <img src="screenshots/myDevs/MultiBLAS.jpg" height="256px">
     
 - [NV Cluster Acceleration Structuer](MyDevs/myClusterAccelerationStructureNV/)
+
+
+
+## About Coding Convention...
+기존 sascha의 convention을 따르려 하였으나, 멤버 변수와 지역 변수의 혼동이 우려되는 경우에 한해 멤버 변수 앞에 "m_" prefix 붙임.
