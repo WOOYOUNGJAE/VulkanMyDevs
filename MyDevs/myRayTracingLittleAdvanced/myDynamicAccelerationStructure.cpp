@@ -202,47 +202,45 @@ void MyDynamicAccelerationStructure::buildBLASes()
 	const bool isFirstBuild = (numStaticBlases && staticBLASes[0].handle == VK_NULL_HANDLE)
 		|| (numDynamicBlases && dynamicBLASes[0].handle == VK_NULL_HANDLE);
 
-	// static blas
-	for (uint32_t blasIdx = 0; blasIdx < staticPerBlasBuildInfos.size(); ++blasIdx)
-	{
-		AccelerationStructure& blas = staticBLASes[blasIdx];
-		PerBLASBuildInfo& refBuildInfo = staticPerBlasBuildInfos[blasIdx];
+	// ramda func
+	auto processBLASes = [&](auto& blases, auto& buildInfos, auto& buildingSets) {
+		for (uint32_t blasIdx = 0; blasIdx < buildInfos.size(); ++blasIdx) {
+			AccelerationStructure& blas = blases[blasIdx];
+			PerBLASBuildInfo& refBuildInfo = buildInfos[blasIdx];
 
-		if (isFirstBuild)
-		{
-			if (refBuildInfo.blasScratchBuffer.handle == VK_NULL_HANDLE)
-				refBuildInfo.blasScratchBuffer = createScratchBuffer(refBuildInfo.blasScratchSizeMax);
+			if (isFirstBuild) {
+				if (refBuildInfo.blasScratchBuffer.handle == VK_NULL_HANDLE)
+					refBuildInfo.blasScratchBuffer = createScratchBuffer(refBuildInfo.blasScratchSizeMax);
 
-			VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
-			accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-			accelerationStructureCreateInfo.buffer = blas.buffer;
-			accelerationStructureCreateInfo.size = refBuildInfo.asSize;
-			accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-			vkCreateAccelerationStructureKHR(device, &accelerationStructureCreateInfo, nullptr, &blas.handle);
+				VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
+				accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+				accelerationStructureCreateInfo.buffer = blas.buffer;
+				accelerationStructureCreateInfo.size = refBuildInfo.asSize;
+				accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+				vkCreateAccelerationStructureKHR(device, &accelerationStructureCreateInfo, nullptr, &blas.handle);
 
-			refBuildInfo.asBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-			refBuildInfo.asBuildGeometryInfo.dstAccelerationStructure = blas.handle;
-			refBuildInfo.asBuildGeometryInfo.scratchData.deviceAddress = refBuildInfo.blasScratchBuffer.deviceAddress;
+				refBuildInfo.asBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+				refBuildInfo.asBuildGeometryInfo.dstAccelerationStructure = blas.handle;
+				refBuildInfo.asBuildGeometryInfo.scratchData.deviceAddress = refBuildInfo.blasScratchBuffer.deviceAddress;
 
-			// push back array
-			staticBlasBuildingSets.buildRangeInfosArray.push_back(refBuildInfo.buildRangeInfos.data());
-			staticBlasBuildingSets.buildGeometryInfos.push_back(refBuildInfo.asBuildGeometryInfo);
-		}
-		else // !isFirstBuild (Update)
-		{
+				buildingSets.buildRangeInfosArray.push_back(refBuildInfo.buildRangeInfos.data());
+				buildingSets.buildGeometryInfos.push_back(refBuildInfo.asBuildGeometryInfo);
+			}
+			else { // Update
 #if FORCE_STATIC_SCENE
-			return;
+				return;
 #endif
-			refBuildInfo.asBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
-			refBuildInfo.asBuildGeometryInfo.srcAccelerationStructure = blas.handle;
-			refBuildInfo.asBuildGeometryInfo.dstAccelerationStructure = blas.handle;
+				refBuildInfo.asBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+				refBuildInfo.asBuildGeometryInfo.srcAccelerationStructure = blas.handle;
+				refBuildInfo.asBuildGeometryInfo.dstAccelerationStructure = blas.handle;
+			}
 		}
-	}
-	// dynamic(deformable) blas - TODO Later after static complete 
-	for (uint32_t blasIdx = 0; blasIdx < dynamicPerBlasBuildInfos.size(); ++blasIdx)
-	{
+		};
 
-	}
+	// static blas
+	processBLASes(staticBLASes, staticPerBlasBuildInfos, staticBlasBuildingSets);
+	// dynamic blas  
+	processBLASes(dynamicBLASes, dynamicPerBlasBuildInfos, dynamicBlasBuildingSets);
 
 	// dynamic blas
 	if (numDynamicBlases)
