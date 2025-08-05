@@ -10,28 +10,24 @@
 #pragma once
 #include "myRayTracingLittleAdvanced.h"
 
-class MyDynamicAccelerationStructure : public MyVulkanRTBase
+class MyBuildASIndirect : public MyVulkanRTBase
 {
 private:
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
+	PFN_vkCmdBuildAccelerationStructuresIndirectKHR vkCmdBuildAccelerationStructuresIndirectKHR = VK_NULL_HANDLE;
 public:
-	struct PerBLASBuildInfo // per blas
+	struct ASBuildInfo
 	{
-		VkDeviceSize blasScratchSizeMax = 0;
 		VkDeviceSize asSize;
-		ScratchBuffer blasScratchBuffer{};
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
+
 		std::vector<VkAccelerationStructureGeometryKHR> asGeometries{};
+		VkAccelerationStructureBuildGeometryInfoKHR asBuildGeometryInfo{};
 
-		std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{}; // copy this ptr to ASBuildSets
-		VkAccelerationStructureBuildGeometryInfoKHR asBuildGeometryInfo{}; // copy to ASBuildSets
+		VkAccelerationStructureBuildSizesInfoKHR asBuildSizesInfo{};
 	};
-	std::vector<PerBLASBuildInfo> staticPerBlasBuildInfos, dynamicPerBlasBuildInfos;
-
-	struct ASBuildSets // SOA
-	{
-		std::vector<VkAccelerationStructureBuildGeometryInfoKHR> buildGeometryInfos; // per blas
-		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> buildRangeInfosArray; // double ptr.
-	}staticBlasBuildingSets{}, dynamicBlasBuildingSets{};
+	VkDeviceSize blasScratchSizeMax = 0;
 	AccelerationStructure TLAS{};
 	VkDeviceSize tlasScratchSize = 0;
 	ScratchBuffer tlasScratchBuffer{};
@@ -39,8 +35,9 @@ public:
 	VkAccelerationStructureBuildGeometryInfoKHR tlasBuildGeometryInfo{};
 	VkAccelerationStructureGeometryKHR tlasGeometry{};
 	std::vector<VkAccelerationStructureInstanceKHR> blasInstances{};
-	//ScratchBuffer blasesScratchBuffer{};
-	std::vector<AccelerationStructure> staticBLASes,dynamicBLASes;
+	ScratchBuffer blasesScratchBuffer{};
+	std::vector<AccelerationStructure> BLASes;
+	std::vector<ASBuildInfo> blasBuildInfos;
 
 	vks::Buffer vertexBuffer;
 	vks::Buffer indexBuffer;
@@ -79,13 +76,14 @@ public:
 	myglTF::ModelRT model;
 
 public:
-	MyDynamicAccelerationStructure();
-	~MyDynamicAccelerationStructure() override;
+	MyBuildASIndirect();
+	~MyBuildASIndirect() override;
 
 	/*
-		prepare ASGeometries, buildSize,,,
-		Only Called once after model loaded
+		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/
+
+	// Only Called once after model loaded
 	void initBLASes();
 	void buildBLASes(); // Bvuil or Update
 

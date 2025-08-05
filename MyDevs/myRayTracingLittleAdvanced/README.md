@@ -1,9 +1,9 @@
 # My Raytracing Little Advanced
 ---
----
 ## Table of Contents
 + [Multi BLAS](#1.-Multi-BLAS)
 + [Dynamic Acceleration Structure](#2.-My-Dynamic-Acceleration-Structure)
++ [Build Acceleration Structure Indirect](#2.-My-Dynamic-Acceleration-Structure)
 
 
 
@@ -66,11 +66,10 @@ void findTriangle()
 3. geometryNode의 indexStartOffset, meshPrimitive의 IndexStartOffsetInMesh을 활용해 scene의 전체 index buffer 중 현 삼각형의 첫 index 지점(device address) 를 찾아낸다.
 
 ---
----
 
 # 2. Dynamic Acceleration Structure [(link)](./myDynamicAccelerationStructure.cpp)
 
-[MyMultiBLAS](../myMultiBLAS/) 프로젝트 베이스에서 확장
+[MyMultiBLAS](#2.-My-Dynamic-Acceleration-Structure)  베이스에서 확장
 
 Keyword : dynamic acceleration structure
 ## Description
@@ -81,3 +80,26 @@ Keyword : dynamic acceleration structure
 - 매 프레임 buildBLASes(), buildTLAS() 호출
 	- first build일 경우 vkCreateAccelerationStructureKHR와 vkCmdBuildAccelerationStructuresKHR 모두.
 	- update일 경우 vkCmdBuildAccelerationStructuresKHR만
+
+- 
+
+# 3. Build Acceleration Structure Indirect [(link)](./myBuildASIndirect.cpp)
+[MyDynamicAccelerationStructure](#2.-My-Dynamic-Acceleration-Structure) 베이스에서 확장
+
+keyword : vkCmdBuildAccelerationStructuresIndirectKHR
+
+## Description
+nvidia extension의 "VK_NV_cluster_acceleration_structure"은 CLAS의 indirect-build만을 지원하므로 indirect 빌드 명령 구현이 선행되어야 한다.
+
+본 예제에서는 vkCmdBuildAccelerationStructuresIndirectKHR로 BLAS를 빌드한다.
+
+```c++
+void vkCmdBuildAccelerationStructuresIndirectKHR(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    infoCount,
+    const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
+    const VkDeviceAddress*                      pIndirectDeviceAddresses,
+    const uint32_t*                             pIndirectStrides,
+    const uint32_t* const*                      ppMaxPrimitiveCounts);
+// 
+```

@@ -15,6 +15,10 @@ myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLo
 #include "myDynamicAccelerationStructure.h"
 myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::GeometryNodePerMesh);
 #define RT_CLASS MyDynamicAccelerationStructure
+#elif (RT_PROJECT_VERSION == 2)
+#include "myBuildASIndirect.h"
+myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::GeometryNodePerMesh);
+#define RT_CLASS MyBuildASIndirect
 #endif
 
 

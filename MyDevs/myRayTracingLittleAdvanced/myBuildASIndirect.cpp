@@ -11,10 +11,12 @@
 * This sample comes with a tutorial, see the README.md in this folder
 */
 
-#include "myDynamicAccelerationStructure.h"
+#include "myBuildASIndirect.h"
 #define FORCE_STATIC_SCENE 0
 
-MyDynamicAccelerationStructure::MyDynamicAccelerationStructure()
+#define FORCE_MULTIPLE_BUILD_DIRECT 0
+
+MyBuildASIndirect::MyBuildASIndirect()
 {
 	apiVersion = VK_API_VERSION_1_4;
 
@@ -28,7 +30,7 @@ MyDynamicAccelerationStructure::MyDynamicAccelerationStructure()
 	// Required by VK_KHR_spirv_1_4
 	enabledDeviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
 
-	title = "MyDynamicAccelerationStructure";
+	title = "MyBuildASIndirect";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
 	camera.setRotation(glm::vec3(0.0f, 0.0f, 0.0f));
@@ -40,28 +42,18 @@ MyDynamicAccelerationStructure::MyDynamicAccelerationStructure()
 	enabledFeatures.shaderInt64 = VK_TRUE;
 }
 
-MyDynamicAccelerationStructure::~MyDynamicAccelerationStructure()
+MyBuildASIndirect::~MyBuildASIndirect()
 {
 	if (device) {
 		blasInstancesBuffer.destroy();
 		deleteScratchBuffer(tlasScratchBuffer);
-		for (auto& blasBuildInfo : staticPerBlasBuildInfos)
-		{
-			deleteScratchBuffer(blasBuildInfo.blasScratchBuffer);
-		}
-		for (auto& blasBuildInfo : dynamicPerBlasBuildInfos)
-		{
-			deleteScratchBuffer(blasBuildInfo.blasScratchBuffer);
-		}
-		//deleteScratchBuffer(blasesScratchBuffer);
+		deleteScratchBuffer(blasesScratchBuffer);
 
 		vkDestroyPipeline(device, pipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 		deleteStorageImage();
-		for (auto& blas : staticBLASes)
-			deleteAccelerationStructure(blas);
-		for (auto& blas : dynamicBLASes)
+		for (auto& blas : BLASes)
 			deleteAccelerationStructure(blas);
 		deleteAccelerationStructure(TLAS);
 		vertexBuffer.destroy();
@@ -74,7 +66,7 @@ MyDynamicAccelerationStructure::~MyDynamicAccelerationStructure()
 	}
 }
 
-void MyDynamicAccelerationStructure::initBLASes()
+void MyBuildASIndirect::initBLASes()
 {
 	// Use transform matrices from the glTF nodes
 	std::vector<VkTransformMatrixKHR> transformMatrices{}; // per node
@@ -105,20 +97,14 @@ void MyDynamicAccelerationStructure::initBLASes()
 	{
 		if (node->mesh)
 		{
-			const bool isDeformable = node->skin; // isDynamicBlas?
-			if (isDeformable)
-				dynamicPerBlasBuildInfos.push_back(PerBLASBuildInfo{});
-			else
-				staticPerBlasBuildInfos.push_back(PerBLASBuildInfo{});
-
-			// avoid dangling pointer due to moving array;
-			PerBLASBuildInfo& refPerBlasBuildInfo = isDeformable ? dynamicPerBlasBuildInfos.back() : staticPerBlasBuildInfos.back();
+			blasBuildInfos.push_back(ASBuildInfo{});
+			ASBuildInfo& refBlasBuildInfo = blasBuildInfos.back(); // avoid dangling pointer due to moving array;
 
 			const myglTF::Mesh* mesh = node->mesh;
 			// Build
 			// One geometry per glTF node, so we can index materials using gl_GeometryIndexEXT
 			std::vector<uint32_t> maxPrimitiveCounts{};
-			//std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
+			std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
 
 			for (auto primitive : mesh->primitives) {
 				if (primitive->indexCount > 0) {
@@ -141,7 +127,7 @@ void MyDynamicAccelerationStructure::initBLASes()
 					asGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
 					asGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
 					asGeometry.geometry.triangles.transformData = transformBufferDeviceAddress;
-					refPerBlasBuildInfo.asGeometries.push_back(asGeometry);
+					refBlasBuildInfo.asGeometries.push_back(asGeometry);
 					maxPrimitiveCounts.push_back(primitive->indexCount / 3);
 
 					VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
@@ -149,22 +135,21 @@ void MyDynamicAccelerationStructure::initBLASes()
 					buildRangeInfo.primitiveOffset = 0; // primitive->firstIndex * sizeof(uint32_t);
 					buildRangeInfo.primitiveCount = primitive->indexCount / 3;
 					buildRangeInfo.transformOffset = 0;
-					refPerBlasBuildInfo.buildRangeInfos.push_back(buildRangeInfo);
+					refBlasBuildInfo.buildRangeInfos.push_back(buildRangeInfo);
 				}
 			}
 
 			// Get size info
-			VkAccelerationStructureBuildGeometryInfoKHR& accelerationStructureBuildGeometryInfo = refPerBlasBuildInfo.asBuildGeometryInfo;
+			VkAccelerationStructureBuildGeometryInfoKHR& accelerationStructureBuildGeometryInfo = refBlasBuildInfo.asBuildGeometryInfo;
 			accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
 			accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 #if FORCE_STATIC_SCENE
 			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 #else
-			accelerationStructureBuildGeometryInfo.flags = isDeformable ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR
-				: VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
 #endif
-			accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refPerBlasBuildInfo.asGeometries.size());
-			accelerationStructureBuildGeometryInfo.pGeometries = refPerBlasBuildInfo.asGeometries.data();
+			accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refBlasBuildInfo.asGeometries.size());
+			accelerationStructureBuildGeometryInfo.pGeometries = refBlasBuildInfo.asGeometries.data();
 
 			VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
 			accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
@@ -174,44 +159,37 @@ void MyDynamicAccelerationStructure::initBLASes()
 				&accelerationStructureBuildGeometryInfo,
 				maxPrimitiveCounts.data(),
 				&accelerationStructureBuildSizesInfo);
-			refPerBlasBuildInfo.asSize = accelerationStructureBuildSizesInfo.accelerationStructureSize;
+			refBlasBuildInfo.asSize = accelerationStructureBuildSizesInfo.accelerationStructureSize;
+			VkDeviceSize curBuildSizeMax = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
+			blasScratchSizeMax = std::max(blasScratchSizeMax, curBuildSizeMax);
 
 			AccelerationStructure blas{};
 			createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
-			// TODO: if static -> fix to buildScratchSize?
-			refPerBlasBuildInfo.blasScratchSizeMax = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
-			if (isDeformable)
-			{
-				dynamicBLASes.push_back(blas);
-			}
-			else
-			{
-				staticBLASes.push_back(blas);
-			}
+			BLASes.push_back(blas);
 		}
 	}
 }
 
-void MyDynamicAccelerationStructure::buildBLASes()
+void MyBuildASIndirect::buildBLASes()
 {
-	// TODO build Static-Dynamic BLAS Parallelly
-	uint32_t numStaticBlases = staticBLASes.size();
-	uint32_t numDynamicBlases = dynamicBLASes.size(); // for Deformable Mesh
+	uint32_t numBlases = BLASes.size();
 
-	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-	const bool isFirstBuild = (numStaticBlases && staticBLASes[0].handle == VK_NULL_HANDLE)
-		|| (numDynamicBlases && dynamicBLASes[0].handle == VK_NULL_HANDLE);
+	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, false);
+	const bool isFirstBuild = BLASes[0].handle == VK_NULL_HANDLE;
+	// create blases scratch buffer
+	if (isFirstBuild && blasesScratchBuffer.handle == VK_NULL_HANDLE)
+		blasesScratchBuffer = createScratchBuffer(blasScratchSizeMax);
 
-	// static blas
-	for (uint32_t blasIdx = 0; blasIdx < staticPerBlasBuildInfos.size(); ++blasIdx)
+	for (uint32_t blasIdx = 0; blasIdx < numBlases; ++blasIdx)
 	{
-		AccelerationStructure& blas = staticBLASes[blasIdx];
-		PerBLASBuildInfo& refBuildInfo = staticPerBlasBuildInfos[blasIdx];
-
+		AccelerationStructure& blas = BLASes[blasIdx];
+		ASBuildInfo& refBuildInfo = blasBuildInfos[blasIdx];
 		if (isFirstBuild)
 		{
-			if (refBuildInfo.blasScratchBuffer.handle == VK_NULL_HANDLE)
-				refBuildInfo.blasScratchBuffer = createScratchBuffer(refBuildInfo.blasScratchSizeMax);
+			for (auto& rangeInfo : refBuildInfo.buildRangeInfos) {
+				refBuildInfo.pBuildRangeInfos.push_back(&rangeInfo);
+			}
+			//refBuildInfo.accelerationStructureBuildGeometryInfo.pGeometries = refBuildInfo.asGeometries.data();
 
 			VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
 			accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
@@ -222,11 +200,22 @@ void MyDynamicAccelerationStructure::buildBLASes()
 
 			refBuildInfo.asBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
 			refBuildInfo.asBuildGeometryInfo.dstAccelerationStructure = blas.handle;
-			refBuildInfo.asBuildGeometryInfo.scratchData.deviceAddress = refBuildInfo.blasScratchBuffer.deviceAddress;
+			refBuildInfo.asBuildGeometryInfo.scratchData.deviceAddress = blasesScratchBuffer.deviceAddress;
 
-			// push back array
-			staticBlasBuildingSets.buildRangeInfosArray.push_back(refBuildInfo.buildRangeInfos.data());
-			staticBlasBuildingSets.buildGeometryInfos.push_back(refBuildInfo.asBuildGeometryInfo);
+			VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
+			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &cmdBufInfo));
+
+			vkCmdBuildAccelerationStructuresKHR(
+				commandBuffer,
+				1,
+				&refBuildInfo.asBuildGeometryInfo,
+				refBuildInfo.pBuildRangeInfos.data());
+
+			vulkanDevice->flushCommandBuffer(commandBuffer, queue, false);
+			VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
+			accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+			accelerationDeviceAddressInfo.accelerationStructure = blas.handle;
+			blas.deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &accelerationDeviceAddressInfo);
 		}
 		else // !isFirstBuild (Update)
 		{
@@ -236,61 +225,40 @@ void MyDynamicAccelerationStructure::buildBLASes()
 			refBuildInfo.asBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
 			refBuildInfo.asBuildGeometryInfo.srcAccelerationStructure = blas.handle;
 			refBuildInfo.asBuildGeometryInfo.dstAccelerationStructure = blas.handle;
-		}
-	}
-	// dynamic(deformable) blas - TODO Later after static complete 
-	for (uint32_t blasIdx = 0; blasIdx < dynamicPerBlasBuildInfos.size(); ++blasIdx)
-	{
+			refBuildInfo.asBuildGeometryInfo.scratchData.deviceAddress = blasesScratchBuffer.deviceAddress;
 
-	}
-
-	// dynamic blas
-	if (numDynamicBlases)
-	{
-		vkCmdBuildAccelerationStructuresKHR(
-			commandBuffer,
-			numDynamicBlases,
-			dynamicBlasBuildingSets.buildGeometryInfos.data(),
-			dynamicBlasBuildingSets.buildRangeInfosArray.data());
-
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue, false);
-		// TODO get rid of this if possible
-		{
 			VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &cmdBufInfo));
+			
+			vkCmdBuildAccelerationStructuresKHR(
+				commandBuffer,
+				1,
+				&refBuildInfo.asBuildGeometryInfo,
+				refBuildInfo.pBuildRangeInfos.data());
+
+			vulkanDevice->flushCommandBuffer(commandBuffer, queue, false);
 		}
 	}
 
-	// static blas
-	if (numStaticBlases)
-	{
-		vkCmdBuildAccelerationStructuresKHR(
-			commandBuffer,
-			numStaticBlases,
-			staticBlasBuildingSets.buildGeometryInfos.data(),
-			staticBlasBuildingSets.buildRangeInfosArray.data());
 
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue);
-	}
+	//std::vector<VkAccelerationStructureBuildGeometryInfoKHR*> pInfos(numBlases);
+	//for (uint32_t i = 0; i < numBlases; ++i)
+	//	pInfos[i] = blasBuildInfos[i].
+	//for (auto& pInfo : pInfos)
+	//	pInfo =
 
-	if (isFirstBuild)
-	{
-		auto updateDeviceAddresses = [&](auto& blasArray)
-			{
-				for (auto& blas : blasArray)
-				{
-					VkAccelerationStructureDeviceAddressInfoKHR info{};
-					info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-					info.accelerationStructure = blas.handle;
-					blas.deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &info);
-				}
-			};
-		updateDeviceAddresses(staticBLASes);
-		updateDeviceAddresses(dynamicBLASes);
-	}
+	//(VkCommandBuffer commandBuffer,
+	//uint32_t infoCount - num of building as
+	//const VkAccelerationStructureBuildGeometryInfoKHR * pInfos,
+	//const VkDeviceAddress * pIndirectDeviceAddresses,
+	//const uint32_t * pIndirectStrides,
+	//const uint32_t* const* ppMaxPrimitiveCounts);
+
+	//vkCmdBuildAccelerationStructuresIndirectKHR(commandBuffer, numBlases, blasBuildInfos.)
+
 }
 
-void MyDynamicAccelerationStructure::buildTLAS()
+void MyBuildASIndirect::buildTLAS()
 {
 	const bool isFirstBuild = (TLAS.handle == VK_NULL_HANDLE);
 	// We flip the matrix [1][1] = -1.0f to accomodate for the glTF up vector
@@ -301,18 +269,7 @@ void MyDynamicAccelerationStructure::buildTLAS()
 	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 	if (isFirstBuild)
 	{
-		for (auto& blas : staticBLASes)
-		{
-			VkAccelerationStructureInstanceKHR blasInstance{};
-			blasInstance.transform = transformMatrix;
-			blasInstance.instanceCustomIndex = 0;
-			blasInstance.mask = 0xFF;
-			blasInstance.instanceShaderBindingTableRecordOffset = 0;
-			blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-			blasInstance.accelerationStructureReference = blas.deviceAddress;
-			blasInstances.push_back(blasInstance);
-		}
-		for (auto& blas : dynamicBLASes)
+		for (auto& blas : BLASes)
 		{
 			VkAccelerationStructureInstanceKHR blasInstance{};
 			blasInstance.transform = transformMatrix;
@@ -407,7 +364,6 @@ void MyDynamicAccelerationStructure::buildTLAS()
 		VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 		accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
 		accelerationDeviceAddressInfo.accelerationStructure = TLAS.handle;
-		TLAS.deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &accelerationDeviceAddressInfo);
 	}
 	else // !isFirstBuild
 	{
@@ -435,12 +391,12 @@ void MyDynamicAccelerationStructure::buildTLAS()
 			&tlasBuildGeometryInfo,
 			accelerationBuildStructureRangeInfos.data());
 		vulkanDevice->flushCommandBuffer(commandBuffer, queue);
-		
+
 	}
 
 }
 
-void MyDynamicAccelerationStructure::createShaderBindingTables()
+void MyBuildASIndirect::createShaderBindingTables()
 {
 	const uint32_t handleSize = rayTracingPipelineProperties.shaderGroupHandleSize;
 	const uint32_t handleSizeAligned = vks::tools::alignedSize(rayTracingPipelineProperties.shaderGroupHandleSize, rayTracingPipelineProperties.shaderGroupHandleAlignment);
@@ -461,7 +417,7 @@ void MyDynamicAccelerationStructure::createShaderBindingTables()
 	memcpy(shaderBindingTables.hit.mapped, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize);
 }
 
-void MyDynamicAccelerationStructure::createRayTracingPipeline()
+void MyBuildASIndirect::createRayTracingPipeline()
 {
 	const uint32_t imageCount = static_cast<uint32_t>(model.textures.size());
 
@@ -577,7 +533,7 @@ void MyDynamicAccelerationStructure::createRayTracingPipeline()
 	VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &pipeline));
 }
 
-void MyDynamicAccelerationStructure::createDescriptorSets()
+void MyBuildASIndirect::createDescriptorSets()
 {
 	uint32_t imageCount = static_cast<uint32_t>(model.textures.size());
 	std::vector<VkDescriptorPoolSize> poolSizes = {
@@ -617,7 +573,7 @@ void MyDynamicAccelerationStructure::createDescriptorSets()
 	accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
 	VkDescriptorImageInfo storageImageDescriptor{ VK_NULL_HANDLE, storageImage.view, VK_IMAGE_LAYOUT_GENERAL };
-	
+
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 		// Binding 0: Top level acceleration structure
 		accelerationStructureWrite,
@@ -653,7 +609,7 @@ void MyDynamicAccelerationStructure::createDescriptorSets()
 	vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
-void MyDynamicAccelerationStructure::createUniformBuffer()
+void MyBuildASIndirect::createUniformBuffer()
 {
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -666,7 +622,7 @@ void MyDynamicAccelerationStructure::createUniformBuffer()
 	updateUniformBuffers();
 }
 
-void MyDynamicAccelerationStructure::handleResize()
+void MyBuildASIndirect::handleResize()
 {
 	// Recreate image
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -677,7 +633,7 @@ void MyDynamicAccelerationStructure::handleResize()
 	resized = false;
 }
 
-void MyDynamicAccelerationStructure::buildCommandBuffers()
+void MyBuildASIndirect::buildCommandBuffers()
 {
 	if (resized)
 	{
@@ -766,7 +722,7 @@ void MyDynamicAccelerationStructure::buildCommandBuffers()
 	}
 }
 
-void MyDynamicAccelerationStructure::updateUniformBuffers()
+void MyBuildASIndirect::updateUniformBuffers()
 {
 	uniformData.projInverse = glm::inverse(camera.matrices.perspective);
 	uniformData.viewInverse = glm::inverse(camera.matrices.view);
@@ -778,7 +734,7 @@ void MyDynamicAccelerationStructure::updateUniformBuffers()
 	memcpy(uniformBuffer.mapped, &uniformData, sizeof(uniformData));
 }
 
-void MyDynamicAccelerationStructure::getEnabledFeatures()
+void MyBuildASIndirect::getEnabledFeatures()
 {
 	// Enable features required for ray tracing using feature chaining via pNext		
 	enabledBufferDeviceAddresFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
@@ -790,6 +746,7 @@ void MyDynamicAccelerationStructure::getEnabledFeatures()
 
 	enabledAccelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
 	enabledAccelerationStructureFeatures.accelerationStructure = VK_TRUE;
+	enabledAccelerationStructureFeatures.accelerationStructureIndirectBuild = VK_TRUE; // new feature for this class
 	enabledAccelerationStructureFeatures.pNext = &enabledRayTracingPipelineFeatures;
 
 	physicalDeviceDescriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
@@ -797,32 +754,31 @@ void MyDynamicAccelerationStructure::getEnabledFeatures()
 	physicalDeviceDescriptorIndexingFeatures.runtimeDescriptorArray = VK_TRUE;
 	physicalDeviceDescriptorIndexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
 	physicalDeviceDescriptorIndexingFeatures.pNext = &enabledAccelerationStructureFeatures;
-
 	deviceCreatepNextChain = &physicalDeviceDescriptorIndexingFeatures;
 
 	enabledFeatures.samplerAnisotropy = VK_TRUE;
 }
 
-void MyDynamicAccelerationStructure::loadAssets()
+void MyBuildASIndirect::loadAssets()
 {
 	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }
 
-void MyDynamicAccelerationStructure::enableExtensions()
+void MyBuildASIndirect::enableExtensions()
 {
 	MyVulkanRTBase::enableExtensions();
 
 	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 }
 
-void MyDynamicAccelerationStructure::prepare()
+void MyBuildASIndirect::prepare()
 {
 	MyVulkanRTBase::prepare();
-
+	vkCmdBuildAccelerationStructuresIndirectKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresIndirectKHR>(vkGetDeviceProcAddr(device, "vkCmdBuildAccelerationStructuresIndirectKHR"));
 #if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
-	std::string batchPath = getShadersPath() + "myClusterAccelerationStructureNV/ShaderCompile.bat";
+	std::string batchPath = getShadersPath() + "myRayTracingLittleAdvanced/ShaderCompile.bat";
 	system(batchPath.c_str());
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
@@ -844,7 +800,7 @@ void MyDynamicAccelerationStructure::prepare()
 	prepared = true;
 }
 
-void MyDynamicAccelerationStructure::draw()
+void MyBuildASIndirect::draw()
 {
 	VulkanExampleBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
@@ -853,7 +809,7 @@ void MyDynamicAccelerationStructure::draw()
 	VulkanExampleBase::submitFrame();
 }
 
-void MyDynamicAccelerationStructure::render()
+void MyBuildASIndirect::render()
 {
 	if (!prepared)
 		return;
