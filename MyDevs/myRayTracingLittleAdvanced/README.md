@@ -107,16 +107,16 @@ void vkCmdBuildAccelerationStructuresIndirectKHR(
 # Others
 ## 1. GPU Timer [(code)](../myBase/myVulkanRTBase.h)
 ```c++
+/**
+ * @example
+ * gpuTimer.reset()
+ * gpuTimer.record()
+ * "Record On CommandBuffer Things"
+ * gpuTimer.record()
+ * float deltaTime = gpuTimer.timerResult()
+ */	
 class GPUTimer // in MyVulkanRTBase.h
 {
-	/**
-	 * @example
-	 * gpuTimer.reset()
-	 * gpuTimer.record()
-	 * "Record On CommandBuffer Things"
-	 * gpuTimer.record()
-	 * float deltaTime = gpuTimer.timerResult()
-	 */	
 	float timerResult()
 	{
 		float result = -1.f;
