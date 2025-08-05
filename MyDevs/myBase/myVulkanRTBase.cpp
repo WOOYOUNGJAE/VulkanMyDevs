@@ -397,4 +397,5 @@ void MyVulkanRTBase::prepare()
 
 	// make timer
 	gpuTimer = std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod);
+	gpuTimer->init(2);
 }

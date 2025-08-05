@@ -48,13 +48,17 @@ public:
 		VkFormat format;
 	} storageImage;
 
-	struct GPUTimer
+	class GPUTimer
 	{
+	private:
 		VkQueryPool timeStampQueryPool = VK_NULL_HANDLE;
 		std::array<uint64_t, 2> resultPrevCur{};
 		uint32_t queryFlagCount = 2;
 		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
 
+		VkDevice device = VK_NULL_HANDLE;
+		float timestampPeriodDeviceLimit = 0.f;
+	public:
 		GPUTimer() = delete;
 		GPUTimer(VkDevice inDevice, float inTimestampPeriodDeviceLimit) : device(inDevice), timestampPeriodDeviceLimit(inTimestampPeriodDeviceLimit) {}
 		void init(const uint32_t queryFlagCount)
@@ -94,9 +98,6 @@ public:
 
 			return result;
 		}
-	private:
-		VkDevice device = VK_NULL_HANDLE;
-		float timestampPeriodDeviceLimit = 0.f;
 	};
 	std::unique_ptr<GPUTimer> gpuTimer;
 
