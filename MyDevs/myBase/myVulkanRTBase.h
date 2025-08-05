@@ -48,31 +48,37 @@ public:
 		VkFormat format;
 	} storageImage;
 
+
+	/**
+	 * @example
+	 * gpuTimer.reset()
+	 * gpuTimer.record()
+	 * "Record On CommandBuffer Things"
+	 * gpuTimer.record()
+	 * float deltaTime = gpuTimer.timerResult()
+	 */
 	class GPUTimer
 	{
 	private:
-		VkQueryPool timeStampQueryPool = VK_NULL_HANDLE;
-		std::array<uint64_t, 2> resultPrevCur{};
-		uint32_t queryFlagCount = 2;
-		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
-
 		VkDevice device = VK_NULL_HANDLE;
+		VkQueryPool timeStampQueryPool = VK_NULL_HANDLE;
+		uint32_t queryCount = 2; // before after
+		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
 		float timestampPeriodDeviceLimit = 0.f;
 	public:
 		GPUTimer() = delete;
 		GPUTimer(VkDevice inDevice, float inTimestampPeriodDeviceLimit) : device(inDevice), timestampPeriodDeviceLimit(inTimestampPeriodDeviceLimit) {}
-		void init(const uint32_t queryFlagCount)
+		void init()
 		{
 			VkQueryPoolCreateInfo queryPoolInfo{};
-			this->queryFlagCount = queryFlagCount;
 			queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 			queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-			queryPoolInfo.queryCount = queryFlagCount;
+			queryPoolInfo.queryCount = queryCount; // before-after
 			VK_CHECK_RESULT(vkCreateQueryPool(device, &queryPoolInfo, nullptr, &timeStampQueryPool));
 		}
 		void reset(VkCommandBuffer cmdBuffer)
 		{
-			vkCmdResetQueryPool(cmdBuffer, timeStampQueryPool, 0, queryFlagCount);
+			vkCmdResetQueryPool(cmdBuffer, timeStampQueryPool, 0, queryCount);
 		}
 		void record(VkCommandBuffer cmdBuffer, VkPipelineStageFlagBits pipelineStageFlag, uint32_t queryIndex = 0)
 		{
@@ -85,15 +91,13 @@ public:
 		float timerResult()
 		{
 			float result = -1.f;
-			uint64_t timeStampResult[2]{};
-			vkGetQueryPoolResults(device, timeStampQueryPool, 0, 1, sizeof(timeStampResult),
-				timeStampResult, sizeof(timeStampResult), queryFlag);
+			uint64_t timeStampResult[4]{}; // query0(result, availability), query1(result, availability)
+			vkGetQueryPoolResults(device, timeStampQueryPool, 0, queryCount, sizeof(timeStampResult),
+				timeStampResult, sizeof(uint64_t) * 2, queryFlag);
 
-			if (timeStampResult[1]) // availability
+			if (timeStampResult[1] && timeStampResult[3]) // availability
 			{
-				resultPrevCur[1] = timeStampResult[0];
-				result = float(resultPrevCur[1] - resultPrevCur[0]) * timestampPeriodDeviceLimit / (1000000.0f);
-				resultPrevCur[0] = resultPrevCur[1];
+				result = float(timeStampResult[2] - timeStampResult[0]) * timestampPeriodDeviceLimit / (1000000.0f);
 			}
 
 			return result;

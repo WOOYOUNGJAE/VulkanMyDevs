@@ -1,10 +1,10 @@
 # My Raytracing Little Advanced
 ---
 ## Table of Contents
-+ [Multi BLAS](#1.-Multi-BLAS)
-+ [Dynamic Acceleration Structure](#2.-My-Dynamic-Acceleration-Structure)
-+ [Build Acceleration Structure Indirect](#2.-My-Dynamic-Acceleration-Structure)
-
++ [Multi BLAS](#1.-multi-blas-link)
++ [Dynamic Acceleration Structure](#2-dynamic-acceleration-structure-link)
++ [Build Acceleration Structure Indirect](#3-build-acceleration-structure-indirect-link)
++ [Others](#others)
 
 
 # 1. Multi BLAS [(link)](./myMultiBLAS.cpp)
@@ -81,7 +81,6 @@ Keyword : dynamic acceleration structure
 	- first build일 경우 vkCreateAccelerationStructureKHR와 vkCmdBuildAccelerationStructuresKHR 모두.
 	- update일 경우 vkCmdBuildAccelerationStructuresKHR만
 
-- 
 
 # 3. Build Acceleration Structure Indirect [(link)](./myBuildASIndirect.cpp)
 [MyDynamicAccelerationStructure](#2.-My-Dynamic-Acceleration-Structure) 베이스에서 확장
@@ -102,4 +101,35 @@ void vkCmdBuildAccelerationStructuresIndirectKHR(
     const uint32_t*                             pIndirectStrides,
     const uint32_t* const*                      ppMaxPrimitiveCounts);
 // 
+```
+
+
+# Others
+## 1. GPU Timer [(code)](../myBase/myVulkanRTBase.h)
+```c++
+class GPUTimer // in MyVulkanRTBase.h
+{
+	/**
+	 * @example
+	 * gpuTimer.reset()
+	 * gpuTimer.record()
+	 * "Record On CommandBuffer Things"
+	 * gpuTimer.record()
+	 * float deltaTime = gpuTimer.timerResult()
+	 */	
+	float timerResult()
+	{
+		float result = -1.f;
+		uint64_t timeStampResult[4]{}; // query0(result, availability), query1(result, availability)
+		vkGetQueryPoolResults(device, timeStampQueryPool, 0, queryCount, sizeof(timeStampResult),
+			timeStampResult, sizeof(uint64_t) * 2, queryFlag);
+
+		if (timeStampResult[1] && timeStampResult[3]) // availability
+		{
+			result = float(timeStampResult[2] - timeStampResult[0]) * timestampPeriodDeviceLimit / (1000000.0f);
+		}
+
+		return result;
+	}
+};
 ```

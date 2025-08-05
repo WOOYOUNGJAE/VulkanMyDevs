@@ -299,6 +299,8 @@ void MyDynamicAccelerationStructure::buildTLAS()
 		0.0f, -1.0f, 0.0f, 0.0f,
 		0.0f, 0.0f, 1.0f, 0.0f };
 	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	gpuTimer->reset(commandBuffer);
+	gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
 	if (isFirstBuild)
 	{
 		for (auto& blas : staticBLASes)
@@ -401,8 +403,10 @@ void MyDynamicAccelerationStructure::buildTLAS()
 			1,
 			&tlasBuildGeometryInfo,
 			accelerationBuildStructureRangeInfos.data());
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue);
 
+		gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
+		vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+		float delta = gpuTimer->timerResult();
 
 		VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 		accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
