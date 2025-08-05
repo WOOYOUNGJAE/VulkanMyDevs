@@ -66,6 +66,10 @@ public:
 		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
 		float timestampPeriodDeviceLimit = 0.f;
 	public:
+		~GPUTimer()
+		{
+			vkDestroyQueryPool(device, timeStampQueryPool, nullptr);
+		}
 		GPUTimer() = delete;
 		GPUTimer(VkDevice inDevice, float inTimestampPeriodDeviceLimit) : device(inDevice), timestampPeriodDeviceLimit(inTimestampPeriodDeviceLimit) {}
 		void init()

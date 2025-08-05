@@ -14,17 +14,17 @@ You can view the original README [here](https://github.com/SaschaWillems/Vulkan#
 
 - [My Mesh Shader](MyDevs/myMeshShader/)
 
-    <img src="screenshots/myDevs/MyMeshShader_Meshlets.jpg" height="256px">
+    <img src="MyDevs/images/MyMeshShader_Meshlets.jpg" height="256px">
 
 
 ### Ray Tracing
 
 - [Ray Tracing Basic](MyDevs/myRaytracingBasic/) - Basic Ray Tracing similar to Sascha's implementation
 
-    <img src="screenshots/myDevs/RayTracingBasic_KHR.jpg" height="256px">
+    <img src="MyDevs/images/RayTracingBasic_KHR.jpg" height="256px">
 - [My Raytracing Little Advanced](MyDevs/myRayTracingLittleAdvanced//) - Multi BLAS, Dynamic AS, Indirect Build,,,
 
-    <img src="screenshots/myDevs/MultiBLAS.jpg" height="256px">
+    <img src="MyDevs/images/MultiBLAS.jpg" height="256px">
     
 - [NV Cluster Acceleration Structuer](MyDevs/myClusterAccelerationStructureNV/)
 
