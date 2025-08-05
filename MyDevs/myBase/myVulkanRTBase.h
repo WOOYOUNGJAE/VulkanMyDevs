@@ -48,6 +48,59 @@ public:
 		VkFormat format;
 	} storageImage;
 
+	class GPUTimer
+	{
+	private:
+		VkQueryPool timeStampQueryPool = VK_NULL_HANDLE;
+		std::array<uint64_t, 2> resultPrevCur{};
+		uint32_t queryFlagCount = 2;
+		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+
+		VkDevice device = VK_NULL_HANDLE;
+		float timestampPeriodDeviceLimit = 0.f;
+	public:
+		GPUTimer() = delete;
+		GPUTimer(VkDevice inDevice, float inTimestampPeriodDeviceLimit) : device(inDevice), timestampPeriodDeviceLimit(inTimestampPeriodDeviceLimit) {}
+		void init(const uint32_t queryFlagCount)
+		{
+			VkQueryPoolCreateInfo queryPoolInfo{};
+			this->queryFlagCount = queryFlagCount;
+			queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+			queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+			queryPoolInfo.queryCount = queryFlagCount;
+			VK_CHECK_RESULT(vkCreateQueryPool(device, &queryPoolInfo, nullptr, &timeStampQueryPool));
+		}
+		void reset(VkCommandBuffer cmdBuffer)
+		{
+			vkCmdResetQueryPool(cmdBuffer, timeStampQueryPool, 0, queryFlagCount);
+		}
+		void record(VkCommandBuffer cmdBuffer, VkPipelineStageFlagBits pipelineStageFlag, uint32_t queryIndex = 0)
+		{
+			vkCmdWriteTimestamp(cmdBuffer, pipelineStageFlag, timeStampQueryPool, queryIndex);
+		}
+
+		/**
+		 * @return -1 if timer not ready
+		 */
+		float timerResult()
+		{
+			float result = -1.f;
+			uint64_t timeStampResult[2]{};
+			vkGetQueryPoolResults(device, timeStampQueryPool, 0, 1, sizeof(timeStampResult),
+				timeStampResult, sizeof(timeStampResult), queryFlag);
+
+			if (timeStampResult[1]) // availability
+			{
+				resultPrevCur[1] = timeStampResult[0];
+				result = float(resultPrevCur[1] - resultPrevCur[0]) * timestampPeriodDeviceLimit / (1000000.0f);
+				resultPrevCur[0] = resultPrevCur[1];
+			}
+
+			return result;
+		}
+	};
+	std::unique_ptr<GPUTimer> gpuTimer;
+
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = VK_NULL_HANDLE;
 	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = VK_NULL_HANDLE;
 	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = VK_NULL_HANDLE;
