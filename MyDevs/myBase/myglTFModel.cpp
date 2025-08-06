@@ -1903,8 +1903,8 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 
 		if (m_numClusters)
 		{
-			tempClustersCPU.resize(m_numClusters);
-			tempClustersCPU.shrink_to_fit();
+			clustersCPU.resize(m_numClusters);
+			clustersCPU.shrink_to_fit();
 			clusterTriangleHistogram.resize(clusterTrianglesMax + 1, 0);
 			clusterVertexHistogram.resize(clusterVerticesMax + 1, 0);
 
@@ -1913,7 +1913,7 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 			for (; clusterIdx < numClusters; ++clusterIdx)
 			{
 				meshopt_Meshlet& meshlet = meshlets[clusterIdx];
-				ClusterRT& cluster = tempClustersCPU[clusterIdx];
+				ClusterRT& cluster = clustersCPU[clusterIdx];
 				cluster = {};
 				cluster.numTriangles = static_cast<uint16_t>(meshlet.triangle_count);
 				cluster.numVertices = static_cast<uint16_t>(meshlet.vertex_count);
@@ -1925,7 +1925,7 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 				++clusterVertexHistogram[cluster.numVertices];
 			}
 
-			ClusterRT& lastCluster = tempClustersCPU[clusterIdx - 1];
+			ClusterRT& lastCluster = clustersCPU[clusterIdx - 1];
 			tempCusterLocalIndicesCPU.resize(lastCluster.firstLocalTriangle + lastCluster.numTriangles * 3);
 			tempClusterLocalVerticesCPU.resize(lastCluster.firstLocalVertex + lastCluster.numVertices);
 			tempCusterLocalIndicesCPU.shrink_to_fit();
@@ -1937,9 +1937,9 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 	// Fill Cluster BBoxes Data
 	{
 		tempClusterBBoxesCPU.resize(m_numClusters);
-		for (uint64_t clusterIdx = 0; clusterIdx < tempClustersCPU.size(); ++clusterIdx)
+		for (uint64_t clusterIdx = 0; clusterIdx < clustersCPU.size(); ++clusterIdx)
 		{
-			ClusterRT& cluster = tempClustersCPU[clusterIdx];
+			ClusterRT& cluster = clustersCPU[clusterIdx];
 			BBox bbox = { {FLT_MAX, FLT_MAX, FLT_MAX}, {-FLT_MAX, -FLT_MAX, -FLT_MAX} };
 			for (uint32_t vertexLocalIdx = 0; vertexLocalIdx < cluster.numVertices; ++vertexLocalIdx)
 			{
@@ -1954,9 +1954,9 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 	}
 	// Re-order Global(Model's) Index Array in order of Clusters
 	{
-		for (uint64_t clusterIdx = 0; clusterIdx < tempClustersCPU.size(); ++clusterIdx)
+		for (uint64_t clusterIdx = 0; clusterIdx < clustersCPU.size(); ++clusterIdx)
 		{
-			ClusterRT& cluster = tempClustersCPU[clusterIdx];
+			ClusterRT& cluster = clustersCPU[clusterIdx];
 			for (uint32_t t = 0; t < cluster.numTriangles; ++t) // per triangle in Cluster
 			{
 				// cur triangle in clusrter
@@ -2629,49 +2629,17 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		VkDeviceMemory memory;
 	} vertexStaging{}, indexStaging{}, clusterVertexStaging{}, clusterIndexStaging{}, clusterBBoxStaging{}, clusterStaging{}, geometryNodeStaging{}, primitiveStaging{};
 
-	// Create Vertex/Index buffer First
-	// Vertex data
-	VK_CHECK_RESULT(device->createBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		vertexBufferSize,
-		&vertexStaging.buffer,
-		&vertexStaging.memory,
-		vertexBufferByte.data()));
-	// Index data
-	VK_CHECK_RESULT(device->createBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		indexBufferSize,
-		&indexStaging.buffer,
-		&indexStaging.memory,
-		tempIndicesCPU.data()));
-	// Vertex buffer
-	VK_CHECK_RESULT(device->createBuffer2(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-		| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		vertexBufferSize,
-		&vertices.buffer,
-		&vertices.memory));
-	// Index buffer
-	VK_CHECK_RESULT(device->createBuffer2(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-		| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		indexBufferSize,
-		&indices.buffer,
-		&indices.memory));
 	// Copy from staging buffers
 	VkCommandBuffer copyCmd = device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-
 	VkBufferCopy copyRegion = {};
 
-	copyRegion.size = vertexBufferSize;
-	vkCmdCopyBuffer(copyCmd, vertexStaging.buffer, vertices.buffer, 1, &copyRegion);
-	copyRegion.size = indexBufferSize;
-	vkCmdCopyBuffer(copyCmd, indexStaging.buffer, indices.buffer, 1, &copyRegion);
-	device->flushCommandBuffer(copyCmd, transferQueue, false);
-
-
+	device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+		| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		vertexBufferSize, &vertices.buffer,	&vertices.memory, transferQueue, vertexBufferByte.data());
+	
+	device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+		| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		indexBufferSize, &indices.buffer,	&indices.memory, transferQueue, tempIndicesCPU.data());
 
 	// Process Raytracing Geometrynode per primitive or mesh
 	uint32_t primitiveStartOffset = 0;
@@ -2790,32 +2758,33 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			clusterBufferSize,
 			&clusterStaging.buffer,
 			&clusterStaging.memory,
-			tempClustersCPU.data()));
+			clustersCPU.data()));
 
 		// Cluster Vertex buffer
-		VK_CHECK_RESULT(device->createBuffer2(
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			clusterVertexBufferSize,
 			&clusterVerticesGPU.buffer,
 			&clusterVerticesGPU.memory));
 		// Cluster Index buffer
-		VK_CHECK_RESULT(device->createBuffer2(
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			clusterIndexBufferSize,
+
 			&clusterIndicesGPU.buffer,
 			&clusterIndicesGPU.memory));
 		// Cluster BBox buffer
-		VK_CHECK_RESULT(device->createBuffer2(
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			clusterBBoxBufferSize,
 			&clusterBBoxesGPU.buffer,
 			&clusterBBoxesGPU.memory));
 		// Cluster buffer
-		VK_CHECK_RESULT(device->createBuffer2(
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+		VK_CHECK_RESULT(device->createBuffer(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			clusterBufferSize,
 			&clustersGPU.buffer,
@@ -2857,28 +2826,9 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		geometryNodesData = static_cast<void*>(clusteredGeometryNodes.data());
 	}
 
-	VK_CHECK_RESULT(device->createBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		geometryNodeBufferSize,
-		&geometryNodeStaging.buffer,
-		&geometryNodeStaging.memory,
-		geometryNodesData));
+	device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		geometryNodeBufferSize, &geometryNodes.buffer, &geometryNodes.memory, transferQueue, geometryNodesData);
 
-
-	// Create device local buffers
-	// GeometryNode buffer
-	VK_CHECK_RESULT(device->createBuffer2(
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		geometryNodeBufferSize,
-		&geometryNodes.buffer,
-		&geometryNodes.memory));
-
-	VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
-	VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
-	copyRegion.size = geometryNodeBufferSize;
-	vkCmdCopyBuffer(copyCmd, geometryNodeStaging.buffer, geometryNodes.buffer, 1, &copyRegion);
 
 	// Create Descriptor Info for Raytracing
 	{
@@ -2887,52 +2837,15 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	}
 
 	// For Primitives
-	if (isGeometryNodePerMesh)
+	if (isGeometryNodePerMesh || bMakeClusters)
 	{
 		size_t primitiveBufferSize = tempPrimitives.size() * sizeof(MeshPrimitive);
-		// Staging Buffer - Primitives
-		VK_CHECK_RESULT(device->createBuffer(
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			primitiveBufferSize,
-			&primitiveStaging.buffer,
-			&primitiveStaging.memory,
-			tempPrimitives.data()));
-		// Primitive buffer
-		VK_CHECK_RESULT(device->createBuffer2(
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-			primitiveBufferSize,
-			&primitives.buffer,
-			&primitives.memory));
-		copyRegion.size = primitiveBufferSize;
-		vkCmdCopyBuffer(copyCmd, primitiveStaging.buffer, primitives.buffer, 1, &copyRegion);
+
+		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			primitiveBufferSize, &primitives.buffer, &primitives.memory, transferQueue, tempPrimitives.data());
 
 		primitives.descriptor = { primitives.buffer, 0, primitiveBufferSize };
 	}
-
-	device->flushCommandBuffer(copyCmd, transferQueue, false);
-	vkDestroyBuffer(device->logicalDevice, vertexStaging.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, vertexStaging.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, indexStaging.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, indexStaging.memory, nullptr);
-
-	vkDestroyBuffer(device->logicalDevice, clusterVertexStaging.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, clusterVertexStaging.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, clusterIndexStaging.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, clusterIndexStaging.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, clusterBBoxStaging.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, clusterBBoxStaging.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, clusterStaging.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, clusterStaging.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, geometryNodeStaging.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, geometryNodeStaging.memory, nullptr);
-	if (primitiveStaging.buffer || primitiveStaging.memory)
-	{
-		vkDestroyBuffer(device->logicalDevice, primitiveStaging.buffer, nullptr);
-		vkFreeMemory(device->logicalDevice, primitiveStaging.memory, nullptr);
-	}
-
 
 	// Setup descriptors
 	uint32_t uboCount{ 0 };

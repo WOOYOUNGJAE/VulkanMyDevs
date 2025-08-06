@@ -433,7 +433,7 @@ namespace myglTF
 		std::vector<uint32_t> tempClusterLocalVerticesCPU;
 		std::vector<uint8_t> tempCusterLocalIndicesCPU;
 		std::vector<BBox> tempClusterBBoxesCPU;
-		std::vector<ClusterRT> tempClustersCPU;
+		std::vector<ClusterRT> clustersCPU;
 		ClusterVertices clusterVerticesGPU{};
 		ClusterIndices clusterIndicesGPU{};
 		ClusterBBoxes clusterBBoxesGPU{};

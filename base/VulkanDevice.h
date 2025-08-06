@@ -58,6 +58,9 @@ struct VulkanDevice
 	VkResult        createBuffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkDeviceSize size, VkBuffer *buffer, VkDeviceMemory *memory, void *data = nullptr);
 	VkResult        createBuffer2(VkBufferUsageFlags2 usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkDeviceSize size, VkBuffer *buffer, VkDeviceMemory *memory, void *data = nullptr);
 	VkResult        createBuffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, vks::Buffer *buffer, VkDeviceSize size, void *data = nullptr);
+	void			CreateBuffer_HostVisible(VkBufferUsageFlags usageFlags, VkDeviceSize size, VkBuffer* buffer, VkDeviceMemory* memory, bool isHostCoherent = true, void* data = nullptr);
+	void			CreateBuffer_DeviceLocal(VkBufferUsageFlags usageFlags, VkDeviceSize size, VkBuffer* buffer, VkDeviceMemory* memory, VkQueue
+				                             transferQueue = VK_NULL_HANDLE, void* data = nullptr);
 	void            copyBuffer(vks::Buffer *src, vks::Buffer *dst, VkQueue queue, VkBufferCopy *copyRegion = nullptr);
 	VkCommandPool   createCommandPool(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags createFlags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 	VkCommandBuffer createCommandBuffer(VkCommandBufferLevel level, VkCommandPool pool, bool begin = false);
