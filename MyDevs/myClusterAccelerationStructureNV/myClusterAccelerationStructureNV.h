@@ -20,32 +20,37 @@ class MyClusterAccelerationStructureNV : public MyVulkanRTBase
 private: // NV Cluster Acceleration Structure extensions
 	VkPhysicalDeviceClusterAccelerationStructureFeaturesNV clustersNV = {
 	  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV };
-	PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2 = VK_NULL_HANDLE;
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
-public:
-	struct ASBuildInfo
+	// pfns
+	//PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2 = VK_NULL_HANDLE;
+	PFN_vkGetClusterAccelerationStructureBuildSizesNV vkGetClusterAccelerationStructureBuildSizesNV = VK_NULL_HANDLE;
+public:	// BLAS
+	struct PerBLASBuildInfo // per blas
 	{
+		VkDeviceSize blasScratchSizeMax = 0;
 		VkDeviceSize asSize;
-		std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
-		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
-
+		ScratchBuffer blasScratchBuffer{};
 		std::vector<VkAccelerationStructureGeometryKHR> asGeometries{};
-		VkAccelerationStructureBuildGeometryInfoKHR asBuildGeometryInfo{};
 
-		VkAccelerationStructureBuildSizesInfoKHR asBuildSizesInfo{};
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{}; // copy this ptr to ASBuildSets
+		VkAccelerationStructureBuildGeometryInfoKHR asBuildGeometryInfo{}; // copy to ASBuildSets
 	};
-	AccelerationStructure TLAS{};
-	VkDeviceSize tlasScratchSize = 0;
-	ScratchBuffer tlasScratchBuffer{};
-	vks::Buffer blasInstancesBuffer;
+	std::vector<PerBLASBuildInfo> staticPerBlasBuildInfos, dynamicPerBlasBuildInfos;
+	struct ASBuildSets // SOA
+	{
+		std::vector<VkAccelerationStructureBuildGeometryInfoKHR> buildGeometryInfos; // per blas
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> buildRangeInfosArray; // double ptr.
+	}staticBlasBuildingSets{}, dynamicBlasBuildingSets{};
+public: // TLAS
+	vks::Buffer blasInstancesBuffer; // for tlas
 	VkAccelerationStructureBuildGeometryInfoKHR tlasBuildGeometryInfo{};
 	VkAccelerationStructureGeometryKHR tlasGeometry{};
+	VkDeviceSize tlasScratchSize = 0;
+	ScratchBuffer tlasScratchBuffer{};
+	AccelerationStructure TLAS{};
 	std::vector<VkAccelerationStructureInstanceKHR> blasInstances{};
-
-	std::vector<AccelerationStructure> BLASes;
-	VkDeviceSize blasScratchSizeMax = 0;
-	ScratchBuffer blasesScratchBuffer{};
-	std::vector<ASBuildInfo> asBuildInfos;
+	//ScratchBuffer blasesScratchBuffer{};
+	std::vector<AccelerationStructure> staticBLASes, dynamicBLASes;
 
 #pragma region CLAS
 	VkDeviceSize clasScratchSizeMax = 0;

@@ -30,6 +30,7 @@ class MyVulkanRTBase : public VulkanExampleBase
 private:
 	class MyDeviceFuncTable* deviceFuncTable = nullptr;
 protected:
+	MyVulkanRTBase() { enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME); }
 	~MyVulkanRTBase() override;
 protected:
 	// Update the default render pass with different color attachment load ops

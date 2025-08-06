@@ -14,8 +14,7 @@ class MyDynamicAccelerationStructure : public MyVulkanRTBase
 {
 private:
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
-public:
-	// BLAS
+public:	// BLAS
 	struct PerBLASBuildInfo // per blas
 	{
 		VkDeviceSize blasScratchSizeMax = 0;
@@ -32,7 +31,7 @@ public:
 		std::vector<VkAccelerationStructureBuildGeometryInfoKHR> buildGeometryInfos; // per blas
 		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> buildRangeInfosArray; // double ptr.
 	}staticBlasBuildingSets{}, dynamicBlasBuildingSets{};
-	// TLAS
+public: // TLAS
 	vks::Buffer blasInstancesBuffer; // for tlas
 	VkAccelerationStructureBuildGeometryInfoKHR tlasBuildGeometryInfo{};
 	VkAccelerationStructureGeometryKHR tlasGeometry{};
