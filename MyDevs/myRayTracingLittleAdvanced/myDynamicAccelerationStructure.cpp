@@ -208,7 +208,8 @@ void MyDynamicAccelerationStructure::buildBLASes()
 			AccelerationStructure& blas = blases[blasIdx];
 			PerBLASBuildInfo& refBuildInfo = buildInfos[blasIdx];
 
-			if (isFirstBuild) {
+			if (isFirstBuild) 
+			{
 				if (refBuildInfo.blasScratchBuffer.handle == VK_NULL_HANDLE)
 					refBuildInfo.blasScratchBuffer = createScratchBuffer(refBuildInfo.blasScratchSizeMax);
 
@@ -226,7 +227,8 @@ void MyDynamicAccelerationStructure::buildBLASes()
 				buildingSets.buildRangeInfosArray.push_back(refBuildInfo.buildRangeInfos.data());
 				buildingSets.buildGeometryInfos.push_back(refBuildInfo.asBuildGeometryInfo);
 			}
-			else { // Update
+			else // Update
+			{
 #if FORCE_STATIC_SCENE
 				return;
 #endif

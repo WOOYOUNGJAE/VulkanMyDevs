@@ -13,31 +13,58 @@
 class MyBuildASIndirect : public MyVulkanRTBase
 {
 private:
-	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 	PFN_vkCmdBuildAccelerationStructuresIndirectKHR vkCmdBuildAccelerationStructuresIndirectKHR = VK_NULL_HANDLE;
-public:
-	struct ASBuildInfo
+	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
+	VkPhysicalDeviceClusterAccelerationStructureFeaturesNV physicalDeviceClusterASFeaturesNV = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV };
+public: // BLAS
+	struct PerBLASBuildInfo // per blas
 	{
+		VkDeviceSize blasScratchSizeMax = 0;
 		VkDeviceSize asSize;
-		std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{};
-		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
-
+		ScratchBuffer blasScratchBuffer{};
 		std::vector<VkAccelerationStructureGeometryKHR> asGeometries{};
-		VkAccelerationStructureBuildGeometryInfoKHR asBuildGeometryInfo{};
 
-		VkAccelerationStructureBuildSizesInfoKHR asBuildSizesInfo{};
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfos{}; // copy this ptr to ASBuildSets
+		VkAccelerationStructureBuildGeometryInfoKHR asBuildGeometryInfo{}; // copy to ASBuildSets
+
+		// for Indirect
+		struct IndirectBuildArg
+		{
+			vks::Buffer indirectBuffer; // VkAccelerationStructureBuildRangeInfoKHR buffer
+			uint64_t deviceAddress;
+		}indirectBuildArg{};
+		std::vector<uint32_t> geometryCounts;// copy this ptr to ASBuildSets, for Indirect Build
 	};
-	VkDeviceSize blasScratchSizeMax = 0;
-	AccelerationStructure TLAS{};
-	VkDeviceSize tlasScratchSize = 0;
-	ScratchBuffer tlasScratchBuffer{};
-	vks::Buffer blasInstancesBuffer;
+	std::vector<PerBLASBuildInfo> staticPerBlasBuildInfos, dynamicPerBlasBuildInfos;
+	struct ASBuildSets // SOA
+	{
+		std::vector<VkAccelerationStructureBuildGeometryInfoKHR> buildGeometryInfos; // per blas
+		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> buildRangeInfosArray; // double ptr.
+
+		// for Indirect build
+		std::vector<uint32_t> blasIndirectStrides;
+		std::vector<uint64_t> indirectArgDeviceAddresses;
+		std::vector<uint32_t*> geometryCountsArray;// double ptr, for Indirect Build
+	}staticBlasBuildingSets{}, dynamicBlasBuildingSets{};
+public: // TLAS
+	vks::Buffer blasInstancesBuffer; // for tlas
 	VkAccelerationStructureBuildGeometryInfoKHR tlasBuildGeometryInfo{};
 	VkAccelerationStructureGeometryKHR tlasGeometry{};
+	VkDeviceSize tlasScratchSize = 0;
+	ScratchBuffer tlasScratchBuffer{};
+	AccelerationStructure TLAS{};
 	std::vector<VkAccelerationStructureInstanceKHR> blasInstances{};
-	ScratchBuffer blasesScratchBuffer{};
-	std::vector<AccelerationStructure> BLASes;
-	std::vector<ASBuildInfo> blasBuildInfos;
+	//ScratchBuffer blasesScratchBuffer{};
+	std::vector<AccelerationStructure> staticBLASes, dynamicBLASes;
+public: // Indirect
+	//struct IndirectBuildArg
+	//{
+	//	vks::Buffer indirectBuffer; // ALL of VkAccelerationStructureBuildRangeInfoKHR buffer
+	//	uint64_t deviceAddress;
+	//}staticBlasIndirectBuildArg{}, dynamicBlasIndirectBuildArg{};
+	//std::vector<VkAccelerationStructureBuildRangeInfoKHR> fullDynamicBlasBuildRangeInfos;
+	//std::vector<uint32_t> staticBlasIndirectStrides;
+	//std::vector<uint32_t> dynamicBlasIndirectStrides;
 
 	vks::Buffer vertexBuffer;
 	vks::Buffer indexBuffer;
@@ -80,12 +107,11 @@ public:
 	~MyBuildASIndirect() override;
 
 	/*
-		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
+		prepare ASGeometries, buildSize,,,
+		Only Called once after model loaded
 	*/
-
-	// Only Called once after model loaded
-	void initBLASes();
-	void buildBLASes(); // Bvuil or Update
+	void initBLASes(bool buildIndirect = false);
+	void buildBLASesIndirect();
 
 	/*
 		The top level acceleration structure contains the scene's object instances

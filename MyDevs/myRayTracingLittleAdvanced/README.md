@@ -3,7 +3,7 @@
 ## Table of Contents
 + [Multi BLAS](#1.-multi-blas-link)
 + [Dynamic Acceleration Structure](#2-dynamic-acceleration-structure-link)
-+ [Build Acceleration Structure Indirect](#3-build-acceleration-structure-indirect-link)
++ [Build Acceleration Structure Indirect(deprecated)](#3-build-acceleration-structure-indirectdeprecated)
 + [Others](#others)
 
 
@@ -82,26 +82,14 @@ Keyword : dynamic acceleration structure
 	- update일 경우 vkCmdBuildAccelerationStructuresKHR만
 
 
-# 3. Build Acceleration Structure Indirect [(link)](./myBuildASIndirect.cpp)
+# 3. Build Acceleration Structure Indirect(deprecated)
 [MyDynamicAccelerationStructure](#2.-My-Dynamic-Acceleration-Structure) 베이스에서 확장
 
 keyword : vkCmdBuildAccelerationStructuresIndirectKHR
 
 ## Description
-nvidia extension의 "VK_NV_cluster_acceleration_structure"은 CLAS의 indirect-build만을 지원하므로 indirect 빌드 명령 구현이 선행되어야 한다.
-
-본 예제에서는 vkCmdBuildAccelerationStructuresIndirectKHR로 BLAS를 빌드한다.
-
-```c++
-void vkCmdBuildAccelerationStructuresIndirectKHR(
-    VkCommandBuffer                             commandBuffer,
-    uint32_t                                    infoCount,
-    const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
-    const VkDeviceAddress*                      pIndirectDeviceAddresses,
-    const uint32_t*                             pIndirectStrides,
-    const uint32_t* const*                      ppMaxPrimitiveCounts);
-// 
-```
+nvidia gpu는 asIndirectBuild를 지원하지 않는다는 것을 알게 되어 중단하였다.\
+Legacy code - [myBuildASIndirect.cpp](myBuildASIndirect.cpp)
 
 
 # Others
