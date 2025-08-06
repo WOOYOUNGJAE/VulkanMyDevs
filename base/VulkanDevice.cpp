@@ -533,6 +533,7 @@ namespace vks
 	void VulkanDevice::CreateBuffer_DeviceLocal(VkBufferUsageFlags usageFlags, VkDeviceSize size,
 	                                            VkBuffer* buffer, VkDeviceMemory* memory, VkQueue transferQueue, void* data)
 	{
+		usageFlags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		if (data)
 			usageFlags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 		VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -551,11 +552,10 @@ namespace vks
 		memAlloc.memoryTypeIndex = getMemoryType(memReqs.memoryTypeBits, memoryPropertyFlags);
 		// If the buffer has VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT set we also need to enable the appropriate flag during allocation
 		VkMemoryAllocateFlagsInfoKHR allocFlagsInfo{};
-		if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
-			allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR;
-			allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
-			memAlloc.pNext = &allocFlagsInfo;
-		}
+		allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR;
+		allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+		memAlloc.pNext = &allocFlagsInfo;
+
 		VK_CHECK_RESULT(vkAllocateMemory(logicalDevice, &memAlloc, nullptr, memory));
 
 		// Attach the memory to the buffer object
