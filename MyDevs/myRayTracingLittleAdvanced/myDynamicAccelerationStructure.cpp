@@ -16,17 +16,6 @@
 
 MyDynamicAccelerationStructure::MyDynamicAccelerationStructure()
 {
-	apiVersion = VK_API_VERSION_1_4;
-
-	// Extensions required
-	enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-
-	// Required by VK_KHR_spirv_1_4
-	enabledDeviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
 
 	title = "MyDynamicAccelerationStructure";
 	camera.type = Camera::CameraType::firstperson;
@@ -201,6 +190,8 @@ void MyDynamicAccelerationStructure::buildBLASes()
 	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 	const bool isFirstBuild = (numStaticBlases && staticBLASes[0].handle == VK_NULL_HANDLE)
 		|| (numDynamicBlases && dynamicBLASes[0].handle == VK_NULL_HANDLE);
+	//gpuTimer->reset(commandBuffer);
+	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
 
 	// ramda func
 	auto processBLASes = [&](auto& blases, auto& buildInfos, auto& buildingSets) {
@@ -260,6 +251,7 @@ void MyDynamicAccelerationStructure::buildBLASes()
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &cmdBufInfo));
 		}
 	}
+	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 
 	// static blas
 	if (numStaticBlases)
@@ -299,8 +291,6 @@ void MyDynamicAccelerationStructure::buildTLAS()
 		0.0f, -1.0f, 0.0f, 0.0f,
 		0.0f, 0.0f, 1.0f, 0.0f };
 	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-	gpuTimer->reset(commandBuffer);
-	gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
 	if (isFirstBuild)
 	{
 		for (auto& blas : staticBLASes)
@@ -414,9 +404,7 @@ void MyDynamicAccelerationStructure::buildTLAS()
 		&tlasBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
 
-	gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
-	float tlasBuildingTime = gpuTimer->timerResult();
 
 	// after first build complete
 	if (isFirstBuild)
@@ -801,8 +789,6 @@ void MyDynamicAccelerationStructure::loadAssets()
 void MyDynamicAccelerationStructure::enableExtensions()
 {
 	MyVulkanRTBase::enableExtensions();
-
-	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 }
 
 void MyDynamicAccelerationStructure::prepare()

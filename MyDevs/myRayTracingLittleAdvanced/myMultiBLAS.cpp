@@ -14,18 +14,6 @@
 #include "myMultiBLAS.h"
 MyMultiBLAS::MyMultiBLAS()
 {
-	apiVersion = VK_API_VERSION_1_4;
-
-	// Extensions required
-	enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-
-	// Required by VK_KHR_spirv_1_4
-	enabledDeviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
-
 	title = "MyMultiBLAS";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
@@ -673,8 +661,6 @@ void MyMultiBLAS::loadAssets()
 void MyMultiBLAS::enableExtensions()
 {
 	MyVulkanRTBase::enableExtensions();
-
-	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 }
 
 void MyMultiBLAS::prepare()

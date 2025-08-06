@@ -5,7 +5,7 @@
  * 1==dynamicAS
  * 2==buildIndirect
  */
-#define RT_PROJECT_VERSION 2
+#define RT_PROJECT_VERSION 1
 
 #if (RT_PROJECT_VERSION == 0)
 #include "myMultiBLAS.h"
