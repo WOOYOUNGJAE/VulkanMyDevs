@@ -430,16 +430,25 @@ namespace myglTF
 		} dimensions;
 #pragma region Cluster
 		std::vector<ClusteredGeometryNodeRT> clusteredGeometryNodes; // per mesh
-		std::vector<uint32_t> tempClusterLocalVerticesCPU;
-		std::vector<uint8_t> tempCusterLocalIndicesCPU;
-		std::vector<BBox> tempClusterBBoxesCPU;
-		std::vector<ClusterRT> clustersCPU;
-		ClusterVertices clusterVerticesGPU{};
-		ClusterIndices clusterIndicesGPU{};
-		ClusterBBoxes clusterBBoxesGPU{};
-		Clusters clustersGPU{};
-		uint32_t m_numClusters = 0u;
-		uint32_t m_numClusterVertices = 0u;
+		// per mesh
+		struct PerMeshClustersBuildData // for genetrate clusters
+		{
+			uint32_t vertexStartOffset = 0;
+			uint32_t indexStartOffset = 0;
+			std::vector<uint32_t> clusterVerticesCPU;
+			std::vector<uint8_t> clusterIndicesCPU;
+			std::vector<BBox> clusterBBoxesCPU;
+			std::vector<ClusterRT> clustersCPU;
+
+			// Buffer & Memory
+			ClusterVertices clusterVerticesGPU{};
+			ClusterIndices clusterIndicesGPU{};
+			ClusterBBoxes clusterBBoxesGPU{};
+			Clusters clustersGPU{};
+		};
+		std::vector<PerMeshClustersBuildData> perMeshClustersBuildDatas;
+
+		uint32_t m_numTotalClusters = 0u;
 		//uint32_t clusterTrianglesMax = 64;
 		/* count array per triangle-counts */
 		std::vector<uint32_t> clusterTriangleHistogram;
@@ -449,7 +458,8 @@ namespace myglTF
 		uint32_t mostFrequentNumOfClusterVertices = 0u;
 		uint32_t m_clusterTriangleMax = 0u;
 		uint32_t m_clusterVertexMax = 0u;
-		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions);
+		uint32_t m_perMeshClusterMax = 0u; // max num of clusters per mesh
+		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData);
 #pragma endregion Cluster
 
 		bool metallicRoughnessWorkflow = true;

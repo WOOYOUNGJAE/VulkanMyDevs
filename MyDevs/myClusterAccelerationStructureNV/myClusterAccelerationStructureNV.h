@@ -24,6 +24,7 @@ private: // NV Cluster Acceleration Structure extensions
 	// pfns
 	//PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2 = VK_NULL_HANDLE;
 	PFN_vkGetClusterAccelerationStructureBuildSizesNV vkGetClusterAccelerationStructureBuildSizesNV = VK_NULL_HANDLE;
+	PFN_vkCmdBuildClusterAccelerationStructureIndirectNV vkCmdBuildClusterAccelerationStructureIndirectNV = VK_NULL_HANDLE;
 public:	// BLAS
 	struct PerBLASBuildInfo // per blas
 	{
@@ -53,15 +54,24 @@ public: // TLAS
 	std::vector<AccelerationStructure> staticBLASes, dynamicBLASes;
 
 #pragma region CLAS
+	uint32_t positionTruncateBits = 0;
 	VkDeviceSize clasScratchSizeMax = 0;
-	AccelerationStructure clas{};
+	AccelerationStructure CLAS{};
 	// for indirectly building clas argment
 	struct ArgumentBuffer
 	{
 		VkBuffer buffer = VK_NULL_HANDLE;
 		VkDeviceMemory memory = VK_NULL_HANDLE;
-	}clusterBuildInfoBuffer{}, clusterDstAddressBuffer{}, clusterSizeBuffer{};
-	VkClusterAccelerationStructureTriangleClusterInputNV clasTriangleClusterInput{};
+		VkDeviceAddress deviceAddress = 0u;
+		VkDeviceSize bufferSize = 0;
+	}clusterBuildInfoBuffer{}, clusterDstAddressBuffer{}, clusterSizeBuffer{},
+	clusteredBlasBuildInfoBuffer{}, clusteredBlasDstAddressBuffer{}, clusteredBlasSizeBuffer{};
+	VkClusterAccelerationStructureTriangleClusterInputNV clasInput{};
+	ScratchBuffer clasScratchBuffer{};
+	VkClusterAccelerationStructureClustersBottomLevelInputNV clusteredBlasInput{};
+	VkDeviceSize clusteredBlasScratchSizeMax = 0;
+	AccelerationStructure ClusteredBLASes{};
+	ScratchBuffer clusteredBlasScratchBuffer{};
 #pragma endregion CLAS
 
 	vks::Buffer vertexBuffer;
@@ -114,7 +124,10 @@ public:
 	*/
 	// Only Called once after model loaded
 	void initBLASes();
+	void initClusteredBLASes();
+	void buildCLASes();
 	void buildBLASes(); // Build or Update
+	void buildClusteredBLASes(); // Build or Update
 
 	/*
 		The top level acceleration structure contains the scene's object instances
