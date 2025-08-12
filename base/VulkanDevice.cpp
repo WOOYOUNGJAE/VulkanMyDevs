@@ -478,8 +478,12 @@ namespace vks
 		return buffer->bind();
 	}
 
+	/**
+	 * @param data src data
+	 * @param ppMappedPtr if this is not null, do not unmap and use this mapped pointer outside
+	 */
 	void VulkanDevice::CreateBuffer_HostVisible(VkBufferUsageFlags usageFlags, VkDeviceSize size,
-	                                            VkBuffer* buffer, VkDeviceMemory* memory, bool isHostCoherent, void* data)
+	                                            VkBuffer* buffer, VkDeviceMemory* memory, bool isHostCoherent, void* data, void** ppMappedPtr)
 	{
 		VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 		if (isHostCoherent)
@@ -508,9 +512,17 @@ namespace vks
 		// If a pointer to the buffer data has been passed, map the buffer and copy over the data
 		if (data != nullptr)
 		{
-			void* mapped;
-			VK_CHECK_RESULT(vkMapMemory(logicalDevice, *memory, 0, size, 0, &mapped));
-			memcpy(mapped, data, size);
+			if (ppMappedPtr)
+			{
+				VK_CHECK_RESULT(vkMapMemory(logicalDevice, *memory, 0, size, 0, ppMappedPtr));
+				memcpy(*ppMappedPtr, data, size);
+			}
+			else
+			{
+				void* mapped;
+				VK_CHECK_RESULT(vkMapMemory(logicalDevice, *memory, 0, size, 0, &mapped));
+				memcpy(mapped, data, size);
+			}
 			// If host coherency hasn't been requested, do a manual flush to make writes visible
 			if (isHostCoherent == false)
 			{
@@ -520,7 +532,8 @@ namespace vks
 				mappedRange.size = size;
 				vkFlushMappedMemoryRanges(logicalDevice, 1, &mappedRange);
 			}
-			vkUnmapMemory(logicalDevice, *memory);
+			if (ppMappedPtr == nullptr)
+				vkUnmapMemory(logicalDevice, *memory);
 		}
 
 		// Attach the memory to the buffer object

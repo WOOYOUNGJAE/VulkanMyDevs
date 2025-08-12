@@ -216,10 +216,6 @@ void MyMeshShader::preparePipelines()
 	meshShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
 	meshShaderStages[2] = loadShader(getShadersPath() + "myMeshShader/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	///*TODO no task shader yet*/
-	//meshShaderStages[0] = loadShader(getShadersPath() + "myMeshShader/meshshader.mesh.spv", VK_SHADER_STAGE_MESH_BIT_EXT);
-	//meshShaderStages[1] = loadShader(getShadersPath() + "myMeshShader/meshshader.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-
 	// POI: Instead if using a few fixed pipelines, we create one traditionalPipeline for each material using the properties of that material
 	for (auto &material : model.materials) {
 

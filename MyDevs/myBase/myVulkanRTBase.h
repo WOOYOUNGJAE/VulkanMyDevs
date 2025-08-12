@@ -49,6 +49,13 @@ public:
 		VkFormat format;
 	} storageImage;
 
+	typedef struct BufferWithDeviceAddress
+	{
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceMemory memory = VK_NULL_HANDLE;
+		VkDeviceAddress deviceAddress = 0u;
+		VkDeviceSize bufferSize = 0;
+	}BufferWithDeviceAddress, ArgumentBuffer;
 
 	/**
 	 * @example

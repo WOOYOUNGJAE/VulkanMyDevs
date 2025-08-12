@@ -14,6 +14,7 @@
 */
 
 #include "myClusterAccelerationStructureNV.h"
+#include "myIncludesCPUGPU.h"
 #define FORCE_STATIC_SCENE 0
 myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::MakeClusters);
 
@@ -64,18 +65,20 @@ MyClusterAccelerationStructureNV::~MyClusterAccelerationStructureNV()
 			vkDestroyBuffer(vulkanDevice->logicalDevice, clusteredBlasSizeBuffer.buffer, nullptr);
 			vkFreeMemory(vulkanDevice->logicalDevice, clusteredBlasSizeBuffer.memory, nullptr);
 
-			blasInstancesBuffer.destroy();
+
+			vkDestroyBuffer(vulkanDevice->logicalDevice, blasInstancesBuffer.buffer, nullptr);
+			vkFreeMemory(vulkanDevice->logicalDevice, blasInstancesBuffer.memory, nullptr);
 		}
 
 
-		vkDestroyPipeline(device, pipeline, nullptr);
-		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+		vkDestroyPipeline(device, rtPipeline, nullptr);
+		vkDestroyPipelineLayout(device, rtPipelineLayout, nullptr);
+		vkDestroyDescriptorSetLayout(device, rtDescriptorSetLayout, nullptr);
 		deleteStorageImage();
 		// Delete Acceleration Structures
 		{
 			deleteAccelerationStructure(CLAS);
-			deleteAccelerationStructure(ClusteredBLASes);
+			deleteAccelerationStructure(clusteredBLASes);
 			for (auto& blas : staticBLASes)
 				deleteAccelerationStructure(blas);
 			for (auto& blas : dynamicBLASes)
@@ -117,11 +120,19 @@ void MyClusterAccelerationStructureNV::createAccelerationStructureBuffer(Acceler
 void MyClusterAccelerationStructureNV::initCLASes()
 {
 	const uint32_t numTotalClusters = model.m_numTotalClusters;
-	clasInput = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV };
-	clasInput.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-	clasInput.maxClusterTriangleCount = model.m_clusterTriangleMax;
-	clasInput.maxClusterVertexCount = model.m_clusterVertexMax;
-	clasInput.minPositionTruncateBitCount = 0;
+	// update VkClusterAccelerationStructureTriangleClusterInputNV
+	{
+		clasInput = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV };
+		clasInput.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+		clasInput.maxClusterTriangleCount = model.m_clusterTriangleMax;
+		clasInput.maxClusterVertexCount = model.m_clusterVertexMax;
+		clasInput.minPositionTruncateBitCount = 0;
+		for (auto& input : model.clusteredGeometryNodes)
+		{
+			clasInput.maxTotalVertexCount += input.numVertices;
+			clasInput.maxTotalTriangleCount += input.numTriangles;
+		}
+	}
 
 	VkClusterAccelerationStructureInputInfoNV clasInputInfo = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV };
 	clasInputInfo.maxAccelerationStructureCount = numTotalClusters;
@@ -153,7 +164,7 @@ void MyClusterAccelerationStructureNV::initCLASes()
 			refBuildInfo.triangleCount = cluster.numTriangles;
 			refBuildInfo.baseGeometryIndexAndGeometryFlags.geometryFlags = VK_CLUSTER_ACCELERATION_STRUCTURE_GEOMETRY_OPAQUE_BIT_NV;
 
-			refBuildInfo.vertexBuffer = geometryNode.vertexBufferDeviceAddress;
+			refBuildInfo.vertexBuffer = geometryNode.vertexBufferDeviceAddress; // mesh's
 			refBuildInfo.vertexBufferStride = sizeof(myglTF::VertexSimple); // TODO : if animated, vertexSkining type
 
 			refBuildInfo.indexBuffer = geometryNode.indexBufferDeviceAddress + cluster.firstLocalTriangle * 3 * sizeof(uint32_t);
@@ -320,18 +331,20 @@ void MyClusterAccelerationStructureNV::initClusteredBLASes()
 	uint32_t numBlases = numGeometryNodes;
 	std::vector<VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV> blasBuildInfos(numGeometryNodes, {});
 
+	uint64_t clusterOffset = 0u;
 	for (uint32_t geometryNodeIdx = 0; geometryNodeIdx < numGeometryNodes; ++geometryNodeIdx)
 	{
-		const ClusteredGeometryNodeRT geometryNode = model.clusteredGeometryNodes[geometryNodeIdx];
+		const ClusteredGeometryNodeRT& geometryNode = model.clusteredGeometryNodes[geometryNodeIdx];
 
-		blasBuildInfos[geometryNodeIdx].clusterReferences = clusterDstAddressBuffer.deviceAddress;
+		blasBuildInfos[geometryNodeIdx].clusterReferences = clusterDstAddressBuffer.deviceAddress + clusterOffset * sizeof(VkDeviceAddress);
 		blasBuildInfos[geometryNodeIdx].clusterReferencesCount = geometryNode.numClusters;
 		blasBuildInfos[geometryNodeIdx].clusterReferencesStride = sizeof(uint64_t);
+		clusterOffset += geometryNode.numClusters;
 	}
 
 	vulkanDevice->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 		sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV) * numBlases,
-		&clusteredBlasBuildInfoBuffer.buffer, &clusteredBlasBuildInfoBuffer.memory);
+		&clusteredBlasBuildInfoBuffer.buffer, &clusteredBlasBuildInfoBuffer.memory, queue, blasBuildInfos.data());
 	clusteredBlasBuildInfoBuffer.deviceAddress = getBufferDeviceAddress(clusteredBlasBuildInfoBuffer.buffer);
 	clusteredBlasBuildInfoBuffer.bufferSize = sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV) * numBlases;
 
@@ -366,11 +379,116 @@ void MyClusterAccelerationStructureNV::initClusteredBLASes()
 
 
 	// create ClusteredBLASes buffer
-	createAccelerationStructureBuffer(ClusteredBLASes, buildSizeInfo, static_cast<VkBufferUsageFlagBits>(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR));
-	ClusteredBLASes.deviceAddress = getBufferDeviceAddress(ClusteredBLASes.buffer);
+	createAccelerationStructureBuffer(clusteredBLASes, buildSizeInfo, static_cast<VkBufferUsageFlagBits>(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR));
+	clusteredBLASes.deviceAddress = getBufferDeviceAddress(clusteredBLASes.buffer);
 
 	// create scratch buffer
 	clusteredBlasScratchBuffer = createScratchBuffer(clusteredBlasScratchSizeMax);
+}
+
+void MyClusterAccelerationStructureNV::initTLAS()
+{
+	VkTransformMatrixKHR transformMatrix = {
+		   1.0f, 0.0f, 0.0f, 0.0f,
+		   0.0f, -1.0f, 0.0f, 0.0f,
+		   0.0f, 0.0f, 1.0f, 0.0f };
+
+	for (auto& blas : staticBLASes)
+	{
+		VkAccelerationStructureInstanceKHR blasInstance{};
+		blasInstance.transform = transformMatrix;
+		blasInstance.instanceCustomIndex = 0;
+		blasInstance.mask = 0xFF;
+		blasInstance.instanceShaderBindingTableRecordOffset = 0;
+		blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+		blasInstance.accelerationStructureReference = blas.deviceAddress;
+		blasInstances.push_back(blasInstance);
+	}
+	for (auto& blas : dynamicBLASes)
+	{
+		VkAccelerationStructureInstanceKHR blasInstance{};
+		blasInstance.transform = transformMatrix;
+		blasInstance.instanceCustomIndex = 0;
+		blasInstance.mask = 0xFF;
+		blasInstance.instanceShaderBindingTableRecordOffset = 0;
+		blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+		blasInstance.accelerationStructureReference = blas.deviceAddress;
+		blasInstances.push_back(blasInstance);
+	}
+	// for clustered BLAS
+	{
+		VkAccelerationStructureInstanceKHR blasInstance{};
+		blasInstance.transform = transformMatrix;
+		blasInstance.instanceCustomIndex = 0;
+		blasInstance.mask = 0xFF;
+		blasInstance.instanceShaderBindingTableRecordOffset = 0;
+		blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+		blasInstance.flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+
+		VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
+		accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+		accelerationDeviceAddressInfo.accelerationStructure = clusteredBLASes.handle;
+		blasInstance.accelerationStructureReference = 0;// Upadated during compute shader 
+		for (uint32_t i = 0; i < model.clusteredGeometryNodes.size(); ++i)
+			blasInstances.push_back(blasInstance);
+	}
+	blasInstances.shrink_to_fit();
+
+	uint32_t numBlasInstances = blasInstances.size();
+
+	// Buffer for instance data
+	vulkanDevice->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
+		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, queue,
+		blasInstances.data());
+
+	vulkanDevice->CreateBuffer_DeviceLocal(
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
+		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, queue,
+		blasInstances.data());
+	blasInstancesBuffer.deviceAddress = getBufferDeviceAddress(blasInstancesBuffer.buffer);
+
+	VkDeviceOrHostAddressConstKHR instanceDataDeviceAddress{};
+	instanceDataDeviceAddress.deviceAddress = getBufferDeviceAddress(blasInstancesBuffer.buffer);
+
+	tlasGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+	tlasGeometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+	tlasGeometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+	tlasGeometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+	tlasGeometry.geometry.instances.arrayOfPointers = VK_FALSE;
+	tlasGeometry.geometry.instances.data = instanceDataDeviceAddress;
+
+	// Get size info
+	/*
+		The pSrcAccelerationStructure, dstAccelerationStructure, and mode members of pBuildInfo are ignored. Any VkDeviceOrHostAddressKHR members of pBuildInfo are ignored by this command, except that the hostAddress member of VkAccelerationStructureGeometryTrianglesDataKHR::transformData will be examined to check if it is NULL.*
+	*/
+	tlasBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+	tlasBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+#if FORCE_STATIC_SCENE
+	tlasBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+#else
+	tlasBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+#endif
+	tlasBuildGeometryInfo.geometryCount = 1; // num TLAS
+	tlasBuildGeometryInfo.pGeometries = &tlasGeometry;
+
+
+	VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
+	accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+	vkGetAccelerationStructureBuildSizesKHR(
+		device,
+		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+		&tlasBuildGeometryInfo,
+		&numBlasInstances,
+		&accelerationStructureBuildSizesInfo);
+	tlasScratchSize = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
+	tlasSize = accelerationStructureBuildSizesInfo.accelerationStructureSize;
+	MyVulkanRTBase::createAccelerationStructureBuffer(TLAS, accelerationStructureBuildSizesInfo);
+
+
+	// Create a small scratch buffer used during build of the top level acceleration structure
+	tlasScratchBuffer = createScratchBuffer(tlasScratchSize);
 }
 
 void MyClusterAccelerationStructureNV::buildCLASes()
@@ -503,10 +621,7 @@ void MyClusterAccelerationStructureNV::buildBLASes()
 			{
 				for (auto& blas : blasArray)
 				{
-					VkAccelerationStructureDeviceAddressInfoKHR info{};
-					info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-					info.accelerationStructure = blas.handle;
-					blas.deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &info);
+					blas.deviceAddress = getBufferDeviceAddress(blas.buffer);
 				}
 			};
 		updateDeviceAddresses(staticBLASes);
@@ -542,7 +657,7 @@ void MyClusterAccelerationStructureNV::buildClusteredBLASes()
 	cmdInfo.srcInfosArray.stride = sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV);
 
 	// in implicit mode we provide one big chunk from which outputs are sub-allocated
-	cmdInfo.dstImplicitData = ClusteredBLASes.deviceAddress;
+	cmdInfo.dstImplicitData = clusteredBLASes.deviceAddress;
 
 	cmdInfo.scratchData = clusteredBlasScratchBuffer.deviceAddress;
 	cmdInfo.input = inputInfo;
@@ -554,104 +669,17 @@ void MyClusterAccelerationStructureNV::buildClusteredBLASes()
 void MyClusterAccelerationStructureNV::buildTLAS()
 {
 	const bool isFirstBuild = (TLAS.handle == VK_NULL_HANDLE);
-	// We flip the matrix [1][1] = -1.0f to accomodate for the glTF up vector
-	VkTransformMatrixKHR transformMatrix = {
-		1.0f, 0.0f, 0.0f, 0.0f,
-		0.0f, -1.0f, 0.0f, 0.0f,
-		0.0f, 0.0f, 1.0f, 0.0f };
 	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
 	if (isFirstBuild)
 	{
-		for (auto& blas : staticBLASes)
-		{
-			VkAccelerationStructureInstanceKHR blasInstance{};
-			blasInstance.transform = transformMatrix;
-			blasInstance.instanceCustomIndex = 0;
-			blasInstance.mask = 0xFF;
-			blasInstance.instanceShaderBindingTableRecordOffset = 0;
-			blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-			blasInstance.accelerationStructureReference = blas.deviceAddress;
-			blasInstances.push_back(blasInstance);
-		}
-		for (auto& blas : dynamicBLASes)
-		{
-			VkAccelerationStructureInstanceKHR blasInstance{};
-			blasInstance.transform = transformMatrix;
-			blasInstance.instanceCustomIndex = 0;
-			blasInstance.mask = 0xFF;
-			blasInstance.instanceShaderBindingTableRecordOffset = 0;
-			blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-			blasInstance.accelerationStructureReference = blas.deviceAddress;
-			blasInstances.push_back(blasInstance);
-		}
-		// for clustered BLAS
-		{
-			VkAccelerationStructureInstanceKHR blasInstance{};
-			blasInstance.transform = transformMatrix;
-			blasInstance.instanceCustomIndex = 0;
-			blasInstance.mask = 0xFF;
-			blasInstance.instanceShaderBindingTableRecordOffset = 0;
-			blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-			blasInstance.accelerationStructureReference = ClusteredBLASes.deviceAddress;
-			blasInstances.push_back(blasInstance);
-		}
-		blasInstances.shrink_to_fit();
-
-		uint32_t numBlasInstances = blasInstances.size();
-
-		// Buffer for instance data
-		VK_CHECK_RESULT(vulkanDevice->createBuffer(
-			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			&blasInstancesBuffer,
-			sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
-			blasInstances.data()));
-
-		VkDeviceOrHostAddressConstKHR instanceDataDeviceAddress{};
-		instanceDataDeviceAddress.deviceAddress = getBufferDeviceAddress(blasInstancesBuffer.buffer);
-
-		tlasGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-		tlasGeometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-		tlasGeometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
-		tlasGeometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-		tlasGeometry.geometry.instances.arrayOfPointers = VK_FALSE;
-		tlasGeometry.geometry.instances.data = instanceDataDeviceAddress;
-
-		// Get size info
-		/*
-			The pSrcAccelerationStructure, dstAccelerationStructure, and mode members of pBuildInfo are ignored. Any VkDeviceOrHostAddressKHR members of pBuildInfo are ignored by this command, except that the hostAddress member of VkAccelerationStructureGeometryTrianglesDataKHR::transformData will be examined to check if it is NULL.*
-		*/
-		tlasBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-		tlasBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-#if FORCE_STATIC_SCENE
-		tlasBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-#else
-		tlasBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
-#endif
-		tlasBuildGeometryInfo.geometryCount = 1; // num TLAS
-		tlasBuildGeometryInfo.pGeometries = &tlasGeometry;
-
-
-		VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
-		accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-		vkGetAccelerationStructureBuildSizesKHR(
-			device,
-			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-			&tlasBuildGeometryInfo,
-			&numBlasInstances,
-			&accelerationStructureBuildSizesInfo);
-		tlasScratchSize = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
-		MyVulkanRTBase::createAccelerationStructureBuffer(TLAS, accelerationStructureBuildSizesInfo);
-
 		VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
 		accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		accelerationStructureCreateInfo.buffer = TLAS.buffer;
-		accelerationStructureCreateInfo.size = accelerationStructureBuildSizesInfo.accelerationStructureSize;
+		accelerationStructureCreateInfo.size = tlasSize;
 		accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 		vkCreateAccelerationStructureKHR(device, &accelerationStructureCreateInfo, nullptr, &TLAS.handle);
 
-		// Create a small scratch buffer used during build of the top level acceleration structure
-		tlasScratchBuffer = createScratchBuffer(tlasScratchSize);
 
 		tlasBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
 		tlasBuildGeometryInfo.dstAccelerationStructure = TLAS.handle;
@@ -704,7 +732,7 @@ void MyClusterAccelerationStructureNV::createShaderBindingTables()
 	const uint32_t sbtSize = groupCount * handleSizeAligned;
 
 	std::vector<uint8_t> shaderHandleStorage(sbtSize);
-	VK_CHECK_RESULT(vkGetRayTracingShaderGroupHandlesKHR(device, pipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
+	VK_CHECK_RESULT(vkGetRayTracingShaderGroupHandlesKHR(device, rtPipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
 
 	createShaderBindingTable(shaderBindingTables.raygen, 1);
 	createShaderBindingTable(shaderBindingTables.miss, 2);
@@ -715,6 +743,54 @@ void MyClusterAccelerationStructureNV::createShaderBindingTables()
 	// We are using two miss shaders, so we need to get two handles for the miss shader binding table
 	memcpy(shaderBindingTables.miss.mapped, shaderHandleStorage.data() + handleSizeAligned, handleSize * 2);
 	memcpy(shaderBindingTables.hit.mapped, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize);
+}
+
+void MyClusterAccelerationStructureNV::createComputePipeline()
+{
+	// Push constant - 
+	VkPushConstantRange pushConstantRange{};
+	pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	pushConstantRange.offset = 0;
+	pushConstantRange.size = sizeof(ClusteredBlasPushConstantData);
+
+	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(nullptr, 0);
+	pipelineLayoutCI.pushConstantRangeCount = 1;
+	pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
+	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &computePipelineLayout));
+
+	VkComputePipelineCreateInfo computePipelineCreateInfo = vks::initializers::computePipelineCreateInfo(computePipelineLayout, 0);
+	computePipelineCreateInfo.stage = loadShader(getShadersPath() + "MyClusterAccelerationStructureNV/clusteredBlasUpdate.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
+	
+	VK_CHECK_RESULT(vkCreateComputePipelines(device, pipelineCache, 1, &computePipelineCreateInfo, nullptr, &computePipeline));
+}
+
+void MyClusterAccelerationStructureNV::dispatchClusteredBlasUpdate()
+{
+	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+
+	ClusteredBlasPushConstantData clusteredBlasPushConstants{};
+
+	uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
+	clusteredBlasPushConstants.sumCount = numClusteredBlases;
+
+	clusteredBlasPushConstants.instanceCount = numClusteredBlases * 1; // not instancing yet
+	clusteredBlasPushConstants.animated = 0;
+	clusteredBlasPushConstants.blasAddresses = clusteredBlasDstAddressBuffer.deviceAddress;
+	clusteredBlasPushConstants.clusteredGeometryDatas = model.geometryNodes.deviceAddress;
+	clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
+	
+
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+
+	vkCmdPushConstants(commandBuffer, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+		sizeof(ClusteredBlasPushConstantData), &clusteredBlasPushConstants);
+	vkCmdDispatch(commandBuffer, (std::max(clusteredBlasPushConstants.instanceCount, clusteredBlasPushConstants.sumCount) + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE,
+		1, 1);
+
+
+
+	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
 }
 
 void MyClusterAccelerationStructureNV::createRayTracingPipeline()
@@ -756,7 +832,7 @@ void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 
 	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	descriptorSetLayoutCI.pNext = &setLayoutBindingFlags;
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayout));
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &rtDescriptorSetLayout));
 
 	// Push constant - bind scene vertex/index buffer device address
 	VkPushConstantRange pushConstantRange{};
@@ -764,10 +840,10 @@ void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 	pushConstantRange.offset = 0;
 	pushConstantRange.size = sizeof(PushConstantData);
 
-	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayout, 1);
+	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(&rtDescriptorSetLayout, 1);
 	pipelineLayoutCI.pushConstantRangeCount = 1;
 	pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
+	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &rtPipelineLayout));
 
 	/*
 		Setup ray tracing shader groups
@@ -829,8 +905,15 @@ void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 	rayTracingPipelineCI.groupCount = static_cast<uint32_t>(shaderGroups.size());
 	rayTracingPipelineCI.pGroups = shaderGroups.data();
 	rayTracingPipelineCI.maxPipelineRayRecursionDepth = 1;
-	rayTracingPipelineCI.layout = pipelineLayout;
-	VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &pipeline));
+	rayTracingPipelineCI.layout = rtPipelineLayout;
+
+	// for Cluster Acceleration Structure
+	VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV pipelineCLAS = {
+	VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CLUSTER_ACCELERATION_STRUCTURE_CREATE_INFO_NV };
+	pipelineCLAS.allowClusterAccelerationStructure = true;
+	pipelineCLAS.pNext = &rayTracingPipelineCI;
+
+	VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &rtPipeline));
 }
 
 void MyClusterAccelerationStructureNV::createDescriptorSets()
@@ -855,9 +938,9 @@ void MyClusterAccelerationStructureNV::createDescriptorSets()
 	variableDescriptorCountAllocInfo.descriptorSetCount = 1;
 	variableDescriptorCountAllocInfo.pDescriptorCounts = variableDescCounts;
 
-	VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayout, 1);
+	VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &rtDescriptorSetLayout, 1);
 	descriptorSetAllocateInfo.pNext = &variableDescriptorCountAllocInfo;
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet));
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &rtDescriptorSet));
 
 	VkWriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo = vks::initializers::writeDescriptorSetAccelerationStructureKHR();
 	descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
@@ -867,7 +950,7 @@ void MyClusterAccelerationStructureNV::createDescriptorSets()
 	accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	// The specialized acceleration structure descriptor has to be chained
 	accelerationStructureWrite.pNext = &descriptorAccelerationStructureInfo;
-	accelerationStructureWrite.dstSet = descriptorSet;
+	accelerationStructureWrite.dstSet = rtDescriptorSet;
 	accelerationStructureWrite.dstBinding = 0;
 	accelerationStructureWrite.descriptorCount = 1;
 	accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
@@ -878,13 +961,13 @@ void MyClusterAccelerationStructureNV::createDescriptorSets()
 		// Binding 0: Top level acceleration structure
 		accelerationStructureWrite,
 		// Binding 1: Ray tracing result image
-		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, &storageImageDescriptor),
+		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, &storageImageDescriptor),
 		// Binding 2: Uniform data
-		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2, &uniformBuffer.descriptor),
+		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2, &uniformBuffer.descriptor),
 		// Binding 4: Geometry node information SSBO
-		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &model.geometryNodes.descriptor),
+		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &model.geometryNodes.descriptor),
 		// Binding 5 : All Mesh Primitives
-		vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &model.primitives.descriptor)
+		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &model.primitives.descriptor)
 	};
 
 	// Image descriptors for the image array
@@ -902,7 +985,7 @@ void MyClusterAccelerationStructureNV::createDescriptorSets()
 	writeDescriptorImgArray.dstBinding = 6;
 	writeDescriptorImgArray.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	writeDescriptorImgArray.descriptorCount = imageCount;
-	writeDescriptorImgArray.dstSet = descriptorSet;
+	writeDescriptorImgArray.dstSet = rtDescriptorSet;
 	writeDescriptorImgArray.pImageInfo = textureDescriptors.data();
 	writeDescriptorSets.push_back(writeDescriptorImgArray);
 
@@ -928,7 +1011,7 @@ void MyClusterAccelerationStructureNV::handleResize()
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
 	// Update descriptor
 	VkDescriptorImageInfo storageImageDescriptor{ VK_NULL_HANDLE, storageImage.view, VK_IMAGE_LAYOUT_GENERAL };
-	VkWriteDescriptorSet resultImageWrite = vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, &storageImageDescriptor);
+	VkWriteDescriptorSet resultImageWrite = vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, &storageImageDescriptor);
 	vkUpdateDescriptorSets(device, 1, &resultImageWrite, 0, VK_NULL_HANDLE);
 	resized = false;
 }
@@ -951,15 +1034,15 @@ void MyClusterAccelerationStructureNV::buildCommandBuffers()
 		/*
 			Dispatch the ray tracing commands
 		*/
-		vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+		vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
 
 		// push constant - vertex/index device addressvkCmdPushConstants(
-		vkCmdPushConstants(drawCmdBuffers[i], pipelineLayout,
+		vkCmdPushConstants(drawCmdBuffers[i], rtPipelineLayout,
 			VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
 			0, sizeof(PushConstantData), &pushConstantData
 		);
 
-		vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineLayout, 0, 1, &descriptorSet, 0, 0);
+		vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
 
 		VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
 		vkCmdTraceRaysKHR(
@@ -1054,7 +1137,10 @@ void MyClusterAccelerationStructureNV::getEnabledFeatures()
 	physicalDeviceDescriptorIndexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
 	physicalDeviceDescriptorIndexingFeatures.pNext = &enabledAccelerationStructureFeatures;
 
-	clustersNV.pNext = &physicalDeviceDescriptorIndexingFeatures;
+	physicalDeviceShaderImageAtomicInt64Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT;
+	physicalDeviceShaderImageAtomicInt64Features.shaderImageInt64Atomics = VK_TRUE;
+	physicalDeviceShaderImageAtomicInt64Features.pNext = &physicalDeviceDescriptorIndexingFeatures;
+	clustersNV.pNext = &physicalDeviceShaderImageAtomicInt64Features;
 	deviceCreatepNextChain = &clustersNV;
 
 	enabledFeatures.samplerAnisotropy = VK_TRUE;
@@ -1089,14 +1175,22 @@ void MyClusterAccelerationStructureNV::prepare()
 	loadAssets();
 	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
 	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
+
+	createComputePipeline();
+
 	// Create the acceleration structures used to render the ray traced scene
 	initCLASes();
 	initClusteredBLASes();
+	initTLAS();
+
 	buildCLASes();
+	vkDeviceWaitIdle(device);
 	buildClusteredBLASes();
-	//initBLASes();
-	//buildBLASes();
+	vkDeviceWaitIdle(device);
+	dispatchClusteredBlasUpdate();
+	vkDeviceWaitIdle(device);
 	buildTLAS();
+	vkDeviceWaitIdle(device);
 
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
 	createUniformBuffer();
@@ -1126,8 +1220,14 @@ void MyClusterAccelerationStructureNV::render()
 		uniformData.frame = -1;
 	}
 
-	buildBLASes();
-	buildTLAS();
+	// build AS
+	{
+		//buildCLASes();
+		//buildClusteredBLASes();
+		//dispatchClusteredBlasUpdate();
+		//buildTLAS();
+	}
+	//buildBLASes();
 	draw();
 }
 

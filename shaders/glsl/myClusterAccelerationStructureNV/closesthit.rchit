@@ -13,6 +13,9 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 
+#extension GL_EXT_spirv_intrinsics : require
+spirv_decorate(extensions = ["SPV_NV_cluster_acceleration_structure"], capabilities = [5437], 11, 5436) in int gl_ClusterIDNV_;
+
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 layout(location = 2) rayPayloadEXT bool shadowed;
 hitAttributeEXT vec2 attribs;
@@ -44,6 +47,9 @@ layout(binding = 6, set = 0) uniform sampler2D textures[];
 
 void main()
 {
+//	uint clusterId = gl_ClusterIDNV_;
+	hitValue = vec3(gl_PrimitiveID & 1, (gl_PrimitiveID & 3) / 4, (gl_PrimitiveID & 7) / 8);  return;
+//	hitValue = vec3(gl_PrimitiveID & 1, (gl_PrimitiveID & 3) / 4, (gl_PrimitiveID & 7) / 8);  return;
 	Triangle tri = unpackTriangle(gl_PrimitiveID, 64);
 	hitValue = vec3(tri.normal);
 

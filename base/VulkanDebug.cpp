@@ -79,6 +79,15 @@ namespace vks
 				LOGD("%s", debugMessage.str().c_str());
 			}
 #else
+
+#if defined(_WIN32)
+			std::string out = debugMessage.str();
+			std::string decorated = "\n\n==================== VULKAN VALIDATION ====================\n"
+				+ out +
+				"\n======================================\n\n";
+			OutputDebugStringA(decorated.c_str());
+#endif
+
 			if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
 				std::cerr << debugMessage.str() << "\n\n";
 			} else {

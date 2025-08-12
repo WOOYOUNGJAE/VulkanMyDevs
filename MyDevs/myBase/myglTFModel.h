@@ -398,6 +398,7 @@ namespace myglTF
 			uint32_t count = 0;
 			VkBuffer buffer = VK_NULL_HANDLE;
 			VkDeviceMemory memory = VK_NULL_HANDLE;
+			uint64_t deviceAddress = 0;
 			VkDescriptorBufferInfo descriptor{};
 		}Vertices, Indices, ClusterVertices, ClusterIndices, ClusterBBoxes, Clusters, GeometryNodes, Primitives;
 		void CleanBufferMemory(BUFFER_TAG& bufferAndMemory);
@@ -433,12 +434,14 @@ namespace myglTF
 		// per mesh
 		struct PerMeshClustersBuildData // for genetrate clusters
 		{
+			uint32_t numMeshIndices; // indices count of original mesh
 			uint32_t vertexStartOffset = 0;
 			uint32_t indexStartOffset = 0;
-			std::vector<uint32_t> clusterVerticesCPU;
-			std::vector<uint8_t> clusterIndicesCPU;
+			std::vector<uint32_t> clusterVerticesCPU; // indices of original vertex array
+			std::vector<uint8_t> clusterIndicesCPU; // indexing clusterVerticesCPU
 			std::vector<BBox> clusterBBoxesCPU;
 			std::vector<ClusterRT> clustersCPU;
+			/*std::vector*/
 
 			// Buffer & Memory
 			ClusterVertices clusterVerticesGPU{};

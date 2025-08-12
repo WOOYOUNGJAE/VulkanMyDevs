@@ -18,9 +18,10 @@
 class MyClusterAccelerationStructureNV : public MyVulkanRTBase
 {
 private: // NV Cluster Acceleration Structure extensions
+	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
+	VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT physicalDeviceShaderImageAtomicInt64Features{};
 	VkPhysicalDeviceClusterAccelerationStructureFeaturesNV clustersNV = {
 	  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV };
-	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
 	// pfns
 	//PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2 = VK_NULL_HANDLE;
 	PFN_vkGetClusterAccelerationStructureBuildSizesNV vkGetClusterAccelerationStructureBuildSizesNV = VK_NULL_HANDLE;
@@ -43,8 +44,9 @@ public:	// BLAS
 		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> buildRangeInfosArray; // double ptr.
 	}staticBlasBuildingSets{}, dynamicBlasBuildingSets{};
 public: // TLAS
-	vks::Buffer blasInstancesBuffer; // for tlas
+	BufferWithDeviceAddress blasInstancesBuffer; // for tlas
 	VkAccelerationStructureBuildGeometryInfoKHR tlasBuildGeometryInfo{};
+	VkDeviceSize tlasSize;
 	VkAccelerationStructureGeometryKHR tlasGeometry{};
 	VkDeviceSize tlasScratchSize = 0;
 	ScratchBuffer tlasScratchBuffer{};
@@ -52,35 +54,26 @@ public: // TLAS
 	std::vector<VkAccelerationStructureInstanceKHR> blasInstances{};
 	//ScratchBuffer blasesScratchBuffer{};
 	std::vector<AccelerationStructure> staticBLASes, dynamicBLASes;
-
-#pragma region CLAS
+public: // CLAS
 	uint32_t positionTruncateBits = 0;
 	VkDeviceSize clasScratchSizeMax = 0;
 	AccelerationStructure CLAS{};
 	// for indirectly building clas argment
-	struct ArgumentBuffer
-	{
-		VkBuffer buffer = VK_NULL_HANDLE;
-		VkDeviceMemory memory = VK_NULL_HANDLE;
-		VkDeviceAddress deviceAddress = 0u;
-		VkDeviceSize bufferSize = 0;
-	}clusterBuildInfoBuffer{}, clusterDstAddressBuffer{}, clusterSizeBuffer{},
+
+	ArgumentBuffer clusterBuildInfoBuffer{}, clusterDstAddressBuffer{}, clusterSizeBuffer{},
 	clusteredBlasBuildInfoBuffer{}, clusteredBlasDstAddressBuffer{}, clusteredBlasSizeBuffer{};
 	VkClusterAccelerationStructureTriangleClusterInputNV clasInput{};
 	ScratchBuffer clasScratchBuffer{};
-	VkClusterAccelerationStructureClustersBottomLevelInputNV clusteredBlasInput{};
+	VkClusterAccelerationStructureClustersBottomLevelInputNV clusteredBlasInput	{};
 	VkDeviceSize clusteredBlasScratchSizeMax = 0;
-	AccelerationStructure ClusteredBLASes{};
+	AccelerationStructure clusteredBLASes{};
 	ScratchBuffer clusteredBlasScratchBuffer{};
-#pragma endregion CLAS
+
 
 	vks::Buffer vertexBuffer;
 	vks::Buffer indexBuffer;
 	uint32_t indexCount{ 0 };
 	vks::Buffer transformBuffer;
-
-
-	vks::Buffer primitivesBuffer;
 
 	std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups{};
 	struct ShaderBindingTables {
@@ -104,10 +97,17 @@ public: // TLAS
 		uint64_t sceneIndexBufferDeviceAddress = 0;
 	}pushConstantData;
 
-	VkPipeline pipeline{ VK_NULL_HANDLE };
-	VkPipelineLayout pipelineLayout{ VK_NULL_HANDLE };
-	VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
-	VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };
+	// RT Pipeline
+	VkPipeline rtPipeline{ VK_NULL_HANDLE };
+	VkPipelineLayout rtPipelineLayout{ VK_NULL_HANDLE };
+	VkDescriptorSet rtDescriptorSet{ VK_NULL_HANDLE };
+	VkDescriptorSetLayout rtDescriptorSetLayout{ VK_NULL_HANDLE };
+
+	// Compute Pipeline
+	VkPipeline computePipeline{ VK_NULL_HANDLE };
+	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
+	VkDescriptorSet computeDescriptorSet{ VK_NULL_HANDLE };
+	VkDescriptorSetLayout computeDescriptorSetLayout{ VK_NULL_HANDLE };
 
 	myglTF::ModelRT model;
 
@@ -125,49 +125,22 @@ public:
 	// Only Called once after model loaded
 	void initBLASes();
 	void initClusteredBLASes();
+	void initTLAS();
+
 	void buildCLASes();
 	void buildBLASes(); // Build or Update
 	void buildClusteredBLASes(); // Build or Update
-
-	/*
-		The top level acceleration structure contains the scene's object instances
-	*/
 	void buildTLAS();
 
-	/*
-		Create the Shader Binding Tables that binds the programs and top-level acceleration structure
-
-		SBT Layout used in this sample:
-
-			/-----------\
-			| raygen    |
-			|-----------|
-			| miss + shadow     |
-			|-----------|
-			| hit + any |
-			\-----------/
-
-	*/
 	void createShaderBindingTables();
-
-	/*
-		Create our ray tracing pipeline
-	*/
 	void createRayTracingPipeline();
-
-	/*
-		Create the descriptor sets used for the ray tracing dispatch
-	*/
 	void createDescriptorSets();
-
-	/*
-		Create the uniform buffer used to pass matrices to the ray tracing ray generation shader
-	*/
 	void createUniformBuffer();
 
-	/*
-		If the window has been resized, we need to recreate the storage image and it's descriptor
-	*/
+	void prepareCompute();
+	void createComputePipeline();
+	void dispatchClusteredBlasUpdate();
+
 	void handleResize();
 
 	/*

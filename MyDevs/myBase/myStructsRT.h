@@ -1,10 +1,7 @@
 #pragma once
 
-#ifdef __cplusplus
-#include <glm/glm.hpp>
-#endif
+#include "myIncludesCPUGPU.h"
 
-namespace RT_INOUT{}
 
 // Original Sashca Style
 struct GeometryNodePerPrimitiveRT
@@ -34,25 +31,7 @@ struct MeshPrimitive
 };
 
 // Extended version of GeometryNodeRT for CLAS
-struct ClusteredGeometryNodeRT
-{
-	glm::mat4 worldMatrix;
-
-	uint64_t vertexBufferDeviceAddress;
-	uint64_t indexBufferDeviceAddress;
-	uint64_t clusters; // index of cluster array
-	uint64_t clusterLocalVertices;
-	uint64_t clusterLocalTriangles;
-	uint64_t clusterBboxes;
-
-	uint32_t numTriangles;
-	uint32_t numVertices;
-	uint32_t numClusters;
-	uint32_t geometryID;
-
-	// TODO: testing
-	uint32_t primitiveStartOffset;
-};
+typedef ClusteredGeometryData ClusteredGeometryNodeRT;
 
 struct ClusterRT
 {
