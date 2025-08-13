@@ -617,7 +617,7 @@ void MyRayTracingBasic::buildCommandBuffers()
 void MyRayTracingBasic::updateUniformBuffers()
 {
 	uniformData.projInverse = glm::inverse(camera.matrices.perspective);
-	uniformData.viewInverse = glm::inverse(camera.matrices.view);
+	uniformData.viewInverse = glm::inverse(camera.matrices.view); std::cout << uniformData.viewInverse[3].y << std::endl;
 	// This value is used to accumulate multiple frames into the finale picture
 	// It's required as ray tracing needs to do multiple passes for transparency
 	// In this sample we use noise offset by this frame index to shoot rays for transparency into different directions

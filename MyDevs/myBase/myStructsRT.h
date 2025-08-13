@@ -35,9 +35,17 @@ typedef ClusteredGeometryData ClusteredGeometryNodeRT;
 
 struct ClusterRT
 {
-	uint16_t numVertices;
-	uint16_t numTriangles;
-	uint32_t firstTriangle;
+	uint16_t numVertices; // num of cluster's vertices
+	uint16_t numTriangles; // num of cluster's vertices
+	uint32_t firstTriangle; // first triangle offset from global(mesh's) triangels
+
+	/**
+	* Offset of first vertex/triangle from total local vertices/triangles
+	* example:
+	*|  cluster0           |  cluster1           |  cluster2           |
+	*| localVertices(uint) | localVertices(uint) | localVertices(uint) |
+	* 
+	*/
 	uint32_t firstLocalVertex;
 	uint32_t firstLocalTriangle;
 };

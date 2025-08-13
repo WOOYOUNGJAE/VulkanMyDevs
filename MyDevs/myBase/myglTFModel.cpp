@@ -1868,7 +1868,7 @@ void myglTF::Model::generateMeshlets(const std::vector<VertexType*>& originalVer
 
 //-----------------------------
 
-void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData)
+void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData, const uint32_t firstIndexGlobalOffset)
 {
 	// Do Cluster things - Strongly influenced by https://github.com/nvpro-samples/vk_animated_clusters
 	uint32_t clusterTrianglesMax = 64;
@@ -1882,6 +1882,11 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 	std::vector<uint8_t>& refCusterLocalIndices = perMeshClustersBuildData.clusterIndicesCPU;
 	std::vector<BBox>& refClusterBBoxes = perMeshClustersBuildData.clusterBBoxesCPU;
 	std::vector<ClusterRT>& refClusters = perMeshClustersBuildData.clustersCPU;
+	std::vector<uint32_t> copiedIndices = originalIndices;
+
+
+	//meshopt_optimizeVertexCache(originalIndices.data(), originalIndices.data(), originalIndices.size(),
+	//	vertexPositions.size());
 
 	size_t numClusters = 0;
 	// build geometry clusters - Use MeshOptimizer(https://github.com/zeux/meshoptimizer)
@@ -1908,8 +1913,6 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 		{
 			refClusters.resize(numClusters);
 			refClusters.shrink_to_fit();
-			clusterTriangleHistogram.resize(clusterTrianglesMax + 1, 0); // TODO out
-			clusterVertexHistogram.resize(clusterVerticesMax + 1, 0);
 
 			// Fill Cluster Data
 			uint64_t clusterIdx = 0;
@@ -1921,14 +1924,14 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 				cluster.numTriangles = static_cast<uint16_t>(meshlet.triangle_count);
 				cluster.numVertices = static_cast<uint16_t>(meshlet.vertex_count);
 				cluster.firstLocalTriangle = meshlet.triangle_offset;
-				cluster.firstLocalVertex = meshlet.vertex_offset;
+				cluster.firstLocalVertex   = meshlet.vertex_offset;
 
 				// fill histogram thing
 				++clusterTriangleHistogram[cluster.numTriangles];
 				++clusterVertexHistogram[cluster.numVertices];
 			}
 
-			ClusterRT& lastCluster = refClusters[clusterIdx - 1];
+			ClusterRT& lastCluster = refClusters[numClusters - 1];
 			refCusterLocalIndices.resize(lastCluster.firstLocalTriangle + lastCluster.numTriangles * 3);
 			refCusterLocalIndices.shrink_to_fit();
 			refClusterLocalVertices.resize(lastCluster.firstLocalVertex + lastCluster.numVertices);
@@ -1956,37 +1959,48 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 	}
 	// Re-order Global(Model's) Index Array in order of Clusters
 	{
+		uint32_t triangleOffsetInMesh = 0u;
 		for (uint64_t clusterIdx = 0; clusterIdx < refClusters.size(); ++clusterIdx)
 		{
 			ClusterRT& cluster = refClusters[clusterIdx];
+			cluster.firstTriangle = triangleOffsetInMesh;
+			triangleOffsetInMesh += cluster.numTriangles;
 			for (uint32_t t = 0; t < cluster.numTriangles; ++t) // per triangle in Cluster
 			{
-				// cur triangle in clusrter
-				glm::uvec3 localVertices = { refCusterLocalIndices[cluster.firstLocalTriangle + t * 3 + 0],
-											refCusterLocalIndices[cluster.firstLocalTriangle + t * 3 + 1],
-											refCusterLocalIndices[cluster.firstLocalTriangle + t * 3 + 2] };
+				// cur 3 local vertices of triangle in clusrter
+				glm::uvec3 curLocalVerticesInAllLocals = {
+					refCusterLocalIndices[cluster.firstLocalTriangle + t * 3 + 0],
+					refCusterLocalIndices[cluster.firstLocalTriangle + t * 3 + 1],
+					refCusterLocalIndices[cluster.firstLocalTriangle + t * 3 + 2] };
 
-				assert(localVertices.x < cluster.numVertices);
-				assert(localVertices.y < cluster.numVertices);
-				assert(localVertices.z < cluster.numVertices);
+				assert(curLocalVerticesInAllLocals.x < cluster.numVertices);
+				assert(curLocalVerticesInAllLocals.y < cluster.numVertices);
+				assert(curLocalVerticesInAllLocals.z < cluster.numVertices);
 
-				glm::uvec3 globalVertices = { localVertices.x + cluster.firstLocalVertex, localVertices.y + cluster.firstLocalVertex, localVertices.z + cluster.firstLocalVertex};
+				glm::uvec3 globalVertices = {};
+
+				glm::uvec3 globalTriangle = {
+					cluster.firstLocalVertex + curLocalVerticesInAllLocals.x,
+					cluster.firstLocalVertex + curLocalVerticesInAllLocals.y,
+					cluster.firstLocalVertex + curLocalVerticesInAllLocals.z };
 
 				if (true) // !m_config.clusterDedicatedVertices from scene.cpp(https://github.com/nvpro-samples/vk_animated_clusters/blob/main/src/scene.cpp)
 				{
 					// need one more indirection
-					globalVertices = { refClusterLocalVertices[globalVertices.x], refClusterLocalVertices[globalVertices.y],
-									  refClusterLocalVertices[globalVertices.z] };
+					globalVertices = { refClusterLocalVertices[globalTriangle.x], refClusterLocalVertices[globalTriangle.y],
+									  refClusterLocalVertices[globalTriangle.z] };
 				}
 				else
 				{
-					globalVertices = { localVertices.x + cluster.firstLocalVertex, localVertices.y + cluster.firstLocalVertex,
-											  localVertices.z + cluster.firstLocalVertex };
+					globalVertices = {
+					   +cluster.firstLocalVertex + curLocalVerticesInAllLocals.x,
+					   +cluster.firstLocalVertex + curLocalVerticesInAllLocals.y,
+					   +cluster.firstLocalVertex + curLocalVerticesInAllLocals.z };
 				}
 
-				originalIndices[cluster.firstTriangle + t + 0] = globalVertices.x;
-				originalIndices[cluster.firstTriangle + t + 1] = globalVertices.y;
-				originalIndices[cluster.firstTriangle + t + 2] = globalVertices.z;
+				originalIndices[(cluster.firstTriangle + t) * 3 + 0] = globalVertices.x;
+				originalIndices[(cluster.firstTriangle + t) * 3 + 1] = globalVertices.y;
+				originalIndices[(cluster.firstTriangle + t) * 3 + 2] = globalVertices.z;
 			}
 		}
 	}
@@ -2587,9 +2601,10 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	}
 
 	// reorder index array for better cache hit
-	meshopt_optimizeVertexCache(tempIndicesCPU.data(), tempIndicesCPU.data(), tempIndicesCPU.size(), tempVerticesCPU.size());
+	//meshopt_optimizeVertexCache(tempIndicesCPU.data(), tempIndicesCPU.data(), tempIndicesCPU.size(), tempVerticesCPU.size());
 
 
+	// build cluster preapre data
 	if (bMakeClusters)
 	{
 		for (auto& node : linearNodes)
@@ -2622,19 +2637,27 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		{
 			vertexPositions.push_back(pVertex->pos);
 		}
+		std::vector<uint32_t> copiedIndicesCPU = tempIndicesCPU;
+		tempIndicesCPU.clear();
+		tempIndicesCPU.shrink_to_fit();
 
+		clusterTriangleHistogram.resize(64 + 1, 0);
+		clusterVertexHistogram.resize(64 + 1, 0);
+
+		//tempIndicesCPU.resize(copiedIndicesCPU.size(), 0);
 		for (uint32_t geometryIdx = 0; geometryIdx < numGeometries; ++geometryIdx)
 		{
 			PerMeshClustersBuildData& refPerMeshClustersData = perMeshClustersBuildDatas[geometryIdx];
 
 			uint32_t numIndices = refPerMeshClustersData.numMeshIndices; //indices count of original mesh
 			std::vector<uint32_t> meshIndices(numIndices, 0);
-			auto iterIndices = tempIndicesCPU.begin() + refPerMeshClustersData.indexStartOffset;
+			auto iterIndices = copiedIndicesCPU.begin() + refPerMeshClustersData.indexStartOffset;
 			meshIndices.assign(iterIndices, iterIndices + numIndices);
 
-			initClusters(meshIndices, vertexPositions, refPerMeshClustersData);
+			initClusters(meshIndices, vertexPositions, refPerMeshClustersData, tempIndicesCPU.size());
 			// update part of original all indices to mesh's updated indices
-			std::copy(meshIndices.begin(), meshIndices.end(), tempIndicesCPU.begin() + refPerMeshClustersData.indexStartOffset);
+			std::move(meshIndices.begin(), meshIndices.end(), std::back_inserter(tempIndicesCPU));
+			//std::copy(meshIndices.begin(), meshIndices.end(), tempIndicesCPU.begin() + refPerMeshClustersData.indexStartOffset);
 
 			uint32_t numClusters = refPerMeshClustersData.clustersCPU.size();
 

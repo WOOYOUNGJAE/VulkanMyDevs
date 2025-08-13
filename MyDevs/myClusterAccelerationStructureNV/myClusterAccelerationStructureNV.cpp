@@ -120,6 +120,7 @@ void MyClusterAccelerationStructureNV::createAccelerationStructureBuffer(Acceler
 void MyClusterAccelerationStructureNV::initCLASes()
 {
 	const uint32_t numTotalClusters = model.m_numTotalClusters;
+	//const uint32_t numTotalClusters = model.m_numTotalClusters;
 	// update VkClusterAccelerationStructureTriangleClusterInputNV
 	{
 		clasInput = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV };
@@ -164,15 +165,16 @@ void MyClusterAccelerationStructureNV::initCLASes()
 			refBuildInfo.triangleCount = cluster.numTriangles;
 			refBuildInfo.baseGeometryIndexAndGeometryFlags.geometryFlags = VK_CLUSTER_ACCELERATION_STRUCTURE_GEOMETRY_OPAQUE_BIT_NV;
 
-			refBuildInfo.vertexBuffer = geometryNode.vertexBufferDeviceAddress; // mesh's
+			refBuildInfo.vertexBuffer = geometryNode.vertexBufferDeviceAddress;
 			refBuildInfo.vertexBufferStride = sizeof(myglTF::VertexSimple); // TODO : if animated, vertexSkining type
 
-			refBuildInfo.indexBuffer = geometryNode.indexBufferDeviceAddress + cluster.firstLocalTriangle * 3 * sizeof(uint32_t);
+			//refBuildInfo.indexBuffer = geometryNode.indexBufferDeviceAddress + cluster.firstLocalTriangle * sizeof(uint32_t) * 3;
+			refBuildInfo.indexBuffer = geometryNode.indexBufferDeviceAddress + (perMeshClusterData.indexStartOffset + cluster.firstTriangle * 3) * sizeof(uint32_t);
 			refBuildInfo.indexBufferStride = sizeof(uint32_t);
 			refBuildInfo.indexType = VK_CLUSTER_ACCELERATION_STRUCTURE_INDEX_FORMAT_32BIT_NV;
 
 			refBuildInfo.positionTruncateBitCount = positionTruncateBits;
-		}		
+		}
 	}
 
 

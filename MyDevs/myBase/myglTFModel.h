@@ -462,7 +462,7 @@ namespace myglTF
 		uint32_t m_clusterTriangleMax = 0u;
 		uint32_t m_clusterVertexMax = 0u;
 		uint32_t m_perMeshClusterMax = 0u; // max num of clusters per mesh
-		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData);
+		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData, const uint32_t firstIndexGlobalOffset);
 #pragma endregion Cluster
 
 		bool metallicRoughnessWorkflow = true;
