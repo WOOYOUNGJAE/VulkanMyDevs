@@ -52,23 +52,21 @@ public: // TLAS
 	ScratchBuffer tlasScratchBuffer{};
 	AccelerationStructure TLAS{};
 	std::vector<VkAccelerationStructureInstanceKHR> blasInstances{};
-	//ScratchBuffer blasesScratchBuffer{};
-	std::vector<AccelerationStructure> staticBLASes, dynamicBLASes;
 public: // CLAS
 	uint32_t positionTruncateBits = 0;
 	VkDeviceSize clasScratchSizeMax = 0;
-	AccelerationStructure CLAS{};
 	// for indirectly building clas argment
-
 	ArgumentBuffer clusterBuildInfoBuffer{}, clusterDstAddressBuffer{}, clusterSizeBuffer{},
 	clusteredBlasBuildInfoBuffer{}, clusteredBlasDstAddressBuffer{}, clusteredBlasSizeBuffer{};
 	VkClusterAccelerationStructureTriangleClusterInputNV clasInput{};
 	ScratchBuffer clasScratchBuffer{};
 	VkClusterAccelerationStructureClustersBottomLevelInputNV clusteredBlasInput	{};
 	VkDeviceSize clusteredBlasScratchSizeMax = 0;
-	AccelerationStructure clusteredBLASes{};
 	ScratchBuffer clusteredBlasScratchBuffer{};
-
+	// AS
+	std::vector<AccelerationStructure> staticBLASes, dynamicBLASes;
+	AccelerationStructure CLAS{};
+	AccelerationStructure clusteredBLASes{};
 
 	vks::Buffer vertexBuffer;
 	vks::Buffer indexBuffer;
@@ -106,8 +104,6 @@ public: // CLAS
 	// Compute Pipeline
 	VkPipeline computePipeline{ VK_NULL_HANDLE };
 	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
-	VkDescriptorSet computeDescriptorSet{ VK_NULL_HANDLE };
-	VkDescriptorSetLayout computeDescriptorSetLayout{ VK_NULL_HANDLE };
 
 	myglTF::ModelRT model;
 

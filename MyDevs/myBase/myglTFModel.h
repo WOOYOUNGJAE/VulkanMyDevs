@@ -430,6 +430,7 @@ namespace myglTF
 			float radius;
 		} dimensions;
 #pragma region Cluster
+		// struct for geometry node used for both cpu and shader
 		std::vector<ClusteredGeometryNodeRT> clusteredGeometryNodes; // per mesh
 		// per mesh
 		struct PerMeshClustersBuildData // for genetrate clusters
@@ -441,7 +442,6 @@ namespace myglTF
 			std::vector<uint8_t> clusterIndicesCPU; // indexing clusterVerticesCPU
 			std::vector<BBox> clusterBBoxesCPU;
 			std::vector<ClusterRT> clustersCPU;
-			/*std::vector*/
 
 			// Buffer & Memory
 			ClusterVertices clusterVerticesGPU{};
