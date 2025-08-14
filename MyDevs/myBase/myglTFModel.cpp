@@ -2486,6 +2486,14 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	const bool isGeometryNodePerPrimitive = fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerPrimitive;
 	const bool isGeometryNodePerMesh = fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerMesh;
 	const bool bMakeClusters = fileLoadingFlags & myglTF::FileLoadingFlags::MakeClusters;
+
+	/**
+	 * if clustered blas, make vertex position pre-transformed, because clas cannot have transform matrix itself
+	 */
+	if (bMakeClusters)
+	{
+		fileLoadingFlags |= myglTF::FileLoadingFlags::PreTransformVertices;
+	}
 	auto getBufferDeviceAddress = [&](VkBuffer buffer)
 	{
 		VkBufferDeviceAddressInfoKHR bufferDeviceAI{};

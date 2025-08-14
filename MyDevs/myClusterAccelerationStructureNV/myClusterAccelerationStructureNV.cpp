@@ -16,7 +16,7 @@
 #include "myClusterAccelerationStructureNV.h"
 #include "myIncludesCPUGPU.h"
 #define FORCE_STATIC_SCENE 0
-myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::MakeClusters);
+myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::MakeClusters | myglTF::FileLoadingFlags::PreTransformVertices);
 
 
 MyClusterAccelerationStructureNV::MyClusterAccelerationStructureNV()
@@ -897,6 +897,12 @@ void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 		shaderGroups.push_back(shaderGroup);
 	}
 
+
+	// for Cluster Acceleration Structure
+	VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV pipelineCLAS = {
+	VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CLUSTER_ACCELERATION_STRUCTURE_CREATE_INFO_NV };
+	pipelineCLAS.allowClusterAccelerationStructure = VK_TRUE;
+
 	/*
 		Create the ray tracing pipeline
 	*/
@@ -908,12 +914,7 @@ void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 	rayTracingPipelineCI.pGroups = shaderGroups.data();
 	rayTracingPipelineCI.maxPipelineRayRecursionDepth = 1;
 	rayTracingPipelineCI.layout = rtPipelineLayout;
-
-	// for Cluster Acceleration Structure
-	VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV pipelineCLAS = {
-	VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CLUSTER_ACCELERATION_STRUCTURE_CREATE_INFO_NV };
-	pipelineCLAS.allowClusterAccelerationStructure = true;
-	pipelineCLAS.pNext = &rayTracingPipelineCI;
+	rayTracingPipelineCI.pNext = &pipelineCLAS;
 
 	VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &rtPipeline));
 }
@@ -1186,13 +1187,9 @@ void MyClusterAccelerationStructureNV::prepare()
 	initTLAS();
 
 	buildCLASes();
-	vkDeviceWaitIdle(device);
 	buildClusteredBLASes();
-	vkDeviceWaitIdle(device);
 	dispatchClusteredBlasUpdate();
-	vkDeviceWaitIdle(device);
 	buildTLAS();
-	vkDeviceWaitIdle(device);
 
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
 	createUniformBuffer();

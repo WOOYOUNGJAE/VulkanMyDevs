@@ -290,6 +290,7 @@ void VulkanExampleBase::nextFrame()
 #endif
 	frameTimer = (float)tDiff / 1000.0f;
 	camera.update(frameTimer);
+	// std::cout << camera.position.x << "  " << camera.position.y << "  " << camera.position.z << "  " << std::endl;
 	if (camera.moving())
 	{
 		viewUpdated = true;
