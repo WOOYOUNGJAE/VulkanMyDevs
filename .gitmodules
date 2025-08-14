@@ -7,3 +7,6 @@
 [submodule "external/nv_cluster_builder"]
 	path = external/nv_cluster_builder
 	url = https://github.com/nvpro-samples/nv_cluster_builder.git
+[submodule "assets"]
+	path = assets
+	url = https://github.com/WOOYOUNGJAE/Vulkan-Assets-Sascha.git
