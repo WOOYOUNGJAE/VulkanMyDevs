@@ -36,6 +36,11 @@ MyClusterAccelerationStructureNV::MyClusterAccelerationStructureNV()
 MyClusterAccelerationStructureNV::~MyClusterAccelerationStructureNV()
 {
 	if (device) {
+		// release compute pipeline
+		{
+			vkDestroyPipeline(device, computePipeline, nullptr);
+			vkDestroyPipelineLayout(device, computePipelineLayout, nullptr);
+		}
 		// delete scratches
 		{
 			deleteScratchBuffer(clasScratchBuffer);
@@ -439,11 +444,6 @@ void MyClusterAccelerationStructureNV::initTLAS()
 	uint32_t numBlasInstances = blasInstances.size();
 
 	// Buffer for instance data
-	vulkanDevice->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
-		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, queue,
-		blasInstances.data());
-
 	vulkanDevice->CreateBuffer_DeviceLocal(
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,

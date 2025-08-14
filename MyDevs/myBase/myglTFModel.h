@@ -430,6 +430,7 @@ namespace myglTF
 			float radius;
 		} dimensions;
 #pragma region Cluster
+		// struct for geometry node used for both cpu and shader
 		std::vector<ClusteredGeometryNodeRT> clusteredGeometryNodes; // per mesh
 		// per mesh
 		struct PerMeshClustersBuildData // for genetrate clusters
@@ -441,7 +442,6 @@ namespace myglTF
 			std::vector<uint8_t> clusterIndicesCPU; // indexing clusterVerticesCPU
 			std::vector<BBox> clusterBBoxesCPU;
 			std::vector<ClusterRT> clustersCPU;
-			/*std::vector*/
 
 			// Buffer & Memory
 			ClusterVertices clusterVerticesGPU{};
@@ -451,7 +451,6 @@ namespace myglTF
 		};
 		std::vector<PerMeshClustersBuildData> perMeshClustersBuildDatas;
 
-		uint32_t m_numTotalClusters = 0u;
 		//uint32_t clusterTrianglesMax = 64;
 		/* count array per triangle-counts */
 		std::vector<uint32_t> clusterTriangleHistogram;
@@ -462,6 +461,7 @@ namespace myglTF
 		uint32_t m_clusterTriangleMax = 0u;
 		uint32_t m_clusterVertexMax = 0u;
 		uint32_t m_perMeshClusterMax = 0u; // max num of clusters per mesh
+		uint32_t m_numTotalClusters = 0u;
 		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData, const uint32_t firstIndexGlobalOffset);
 #pragma endregion Cluster
 
