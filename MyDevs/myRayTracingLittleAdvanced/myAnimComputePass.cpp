@@ -23,8 +23,6 @@ void MyAnimComputePass::createDescriptorSets(myglTF::ModelRT& model)
 		
 	}
 
-	// Descriptor Pool
-	VkDescriptorPool descriptorPool = nullptr;
 
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}, // Deformed Vertices (Out)
@@ -61,6 +59,7 @@ void MyAnimComputePass::createDescriptorSets(myglTF::ModelRT& model)
 
 	// Initialize Descriptor Set (Update)
 	//animationDescriptorBufferInfo = { animSsboBuffer, 0, VK_WHOLE_SIZE };
+	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
 	writeDescriptorSets.resize(1);
 	{
 		// Binding [dstBinding]: Deformed Vertices (Out)
@@ -69,6 +68,7 @@ void MyAnimComputePass::createDescriptorSets(myglTF::ModelRT& model)
 
 	// Update
 	vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
+
 }
 
 void MyAnimComputePass::createPipeline(const std::string& shaderFileName)

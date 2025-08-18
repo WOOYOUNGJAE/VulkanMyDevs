@@ -16,11 +16,10 @@ public:
 	VkCommandPool commandPool{ VK_NULL_HANDLE };
 	VkCommandBuffer commandBuffer{ VK_NULL_HANDLE };
 	VkSemaphore semaphore{ VK_NULL_HANDLE };
+	VkDescriptorPool descriptorPool{ VK_NULL_HANDLE };
 	VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };
 	VkDescriptorSet computeDescriptorSet{};
 
-	VkDescriptorBufferInfo animationDescriptorBufferInfo{};
-	std::vector<VkWriteDescriptorSet> writeDescriptorSets; // for vkUpdateDescriptorSets
 
 	VkPipelineLayout pipelineLayout{ VK_NULL_HANDLE };
 	std::vector<VkShaderModule> shaderModules;

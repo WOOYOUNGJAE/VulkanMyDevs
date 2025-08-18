@@ -16,7 +16,6 @@
 #include "mySkeletalAnimationRT.h"
 #include "myIncludesCPUGPU.h"
 #define FORCE_STATIC_SCENE 0
-myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::GeometryNodePerMesh);
 
 
 MySkeletalAnimationRT::MySkeletalAnimationRT()
@@ -954,28 +953,4 @@ void MySkeletalAnimationRT::render()
 	}
 	//buildBLASes();
 	draw();
-}
-
-MySkeletalAnimationRT* mySkeletalAnimationRT;
-LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	if (mySkeletalAnimationRT != NULL)
-	{
-		mySkeletalAnimationRT->handleMessages(hWnd, uMsg, wParam, lParam);
-	}
-	return (DefWindowProc(hWnd, uMsg, wParam, lParam));
-}
-int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, _In_ LPSTR, _In_ int)
-{
-#ifdef _DEBUG
-	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-#endif
-	for (int32_t i = 0; i < __argc; i++) { MySkeletalAnimationRT::args.push_back(__argv[i]); };
-	mySkeletalAnimationRT = new MySkeletalAnimationRT();
-	mySkeletalAnimationRT->initVulkan();
-	mySkeletalAnimationRT->setupWindow(hInstance, WndProc);
-	mySkeletalAnimationRT->prepare();
-	mySkeletalAnimationRT->renderLoop();
-	delete(mySkeletalAnimationRT);
-	return 0;
 }

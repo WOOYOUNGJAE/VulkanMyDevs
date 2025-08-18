@@ -20,14 +20,8 @@ public:
 		uint64_t jointDataBufferDeviceAddress = 0; // joint data (matrices, num joints,,,)
 	}pushConstantData;
 
-	/*VkDescriptorBufferInfo vertexDescriptorBufferInfo{};
-	VkDescriptorBufferInfo tPoseDescriptorBufferInfo{};
-	VkDescriptorBufferInfo animationDescriptorBufferInfo{};*/
-
 	VkDescriptorSetLayout modelDescriptorSetLayoutUbo{ VK_NULL_HANDLE };
 	std::vector<VkDescriptorSet> modelDescriptorSets;
-
-	VkBuffer animSsboBuffer{ VK_NULL_HANDLE };
 
 	uint32_t numTotalVertices{ 0 };
 
