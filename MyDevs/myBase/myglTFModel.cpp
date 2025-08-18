@@ -2039,6 +2039,7 @@ myglTF::ModelRT::~ModelRT()
 		CleanBufferMemory(perMeshClusterData.clustersGPU);
 	}
 	CleanBufferMemory(vertices);
+	CleanBufferMemory(deformingVertices); // if skinned mesh
 	CleanBufferMemory(indices);
 
 
@@ -2113,6 +2114,7 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 		const tinygltf::Mesh mesh = model.meshes[node.mesh];
 		bool hasSkin = false;
 		Mesh* newMesh = new Mesh(device, newNode->matrix);
+		//Mesh* newMesh = new Mesh(device, newNode->matrix, !preTransform, newNode->skin);
 		newMesh->name = mesh.name;
 		for (size_t j = 0; j < mesh.primitives.size(); j++) {
 			const tinygltf::Primitive& primitive = mesh.primitives[j];
@@ -2187,9 +2189,7 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 					bufferWeights = reinterpret_cast<const float*>(&(model.buffers[uvView.buffer].data[uvAccessor.byteOffset + uvView.byteOffset]));
 				}
 
-				/*If has Skin, can decide wheater to create uniform buffer*/
-				hasSkin = (bufferJoints && bufferWeights);
-				newMesh->createUniformBuffer(hasSkin);
+				hasSkin |= (bufferJoints && bufferWeights);
 
 				vertexCount = static_cast<uint32_t>(posAccessor.count);
 
@@ -2278,6 +2278,8 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 			newPrimitive->setDimensions(posMin, posMax);
 			newMesh->primitives.push_back(newPrimitive);
 		}
+		/*If has Skin, can decide wheater to create uniform buffer*/
+		newMesh->createUniformBuffer(hasSkin);
 		newNode->mesh = newMesh;
 	}
 	if (parent) {
@@ -2725,7 +2727,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		}
 	}
 
-	// Create Vertex/Index Buffer After Cluster created
+	// Create Vertex/Index Buffer (After Cluster created)
 	{
 		size_t vertexBufferSize = tempVerticesCPU.size() * vertexSize;
 		size_t indexBufferSize = tempIndicesCPU.size() * sizeof(uint32_t);
@@ -2733,14 +2735,22 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		vertices.count = static_cast<uint32_t>(tempVerticesCPU.size());
 		//uint32_t numTriangles = indices.count / 3;
 
+		//VkBufferUsageFlagBits additionalFlag = VkBufferUsageFlagBits(isSkinningModel ? VK_BUFFER_USAGE_STORAGE_BUFFER_BIT : 0);
 
-		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-			| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+
+		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			vertexBufferSize, &vertices.buffer, &vertices.memory, transferQueue, vertexBufferByte.data());
+		vertices.deviceAddress = getBufferDeviceAddress(vertices.buffer);
 
-		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-			| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			indexBufferSize, &indices.buffer, &indices.memory, transferQueue, tempIndicesCPU.data());
+
+		if (isSkinningModel)
+		{
+			device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+				vertexBufferSize, &deformingVertices.buffer, &deformingVertices.memory, transferQueue, vertexBufferByte.data());
+			deformingVertices.descriptor = { deformingVertices.buffer, 0, vertexBufferSize };
+		}
 	}
 
 	// Process Raytracing Geometrynode per primitive or mesh
@@ -2928,9 +2938,10 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	{
 		// Layout is global, so only create if it hasn't already been created before
 		if (descriptorSetLayoutUbo == VK_NULL_HANDLE) {
+			uint32_t additionalFlag = isSkinningModel ? VK_SHADER_STAGE_COMPUTE_BIT : 0;
 			std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
 				// [model matrix] or [modelMat + Skinning info]
-				vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, 0),
+				vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | additionalFlag, uboBinding),
 			};
 			VkDescriptorSetLayoutCreateInfo descriptorLayoutCI{};
 			descriptorLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -2938,6 +2949,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			descriptorLayoutCI.pBindings = setLayoutBindings.data();
 			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayoutCI, nullptr, &descriptorSetLayoutUbo));
 		}
+
 		if (preTransform)
 		{
 			// Create bufffer

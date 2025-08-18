@@ -1,4 +1,5 @@
 #pragma once
+#include "myAnimComputePass.h"
 #include "myRayTracingLittleAdvanced.h"
 
 
@@ -69,6 +70,7 @@ public: // TLAS
 	VkDescriptorSetLayout rtDescriptorSetLayout{ VK_NULL_HANDLE };
 
 	// Compute Pipeline
+	std::unique_ptr<MyAnimComputePass> animComputePass;
 	VkPipeline computePipeline{ VK_NULL_HANDLE };
 	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
 
@@ -81,7 +83,6 @@ public:
 	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo, VkBufferUsageFlagBits usageFlag);
 
 	// Create class buffer and initialize indirect build info, but don't build on GPU yet.
-	void initCLASes();
 	/*
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/
@@ -98,7 +99,6 @@ public:
 	void createUniformBuffer();
 
 	void createComputePipeline();
-	void dispatchClusteredBlasUpdate();
 
 	void handleResize();
 

@@ -7,8 +7,7 @@
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 *
 * Summary:
-* Ray tracing Cluster Acceleration Sturcture basic, without using CLAS templates
-* - clas template (x) , implicit build(o)
+* Raytracing skeletal mesh, with compute skinning
 * This work continues from the "MySkeletalAnimationRT" implementation.
 *
 * This sample comes with a tutorial, see the README.md in this folder
@@ -17,7 +16,7 @@
 #include "mySkeletalAnimationRT.h"
 #include "myIncludesCPUGPU.h"
 #define FORCE_STATIC_SCENE 0
-myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::MakeClusters | myglTF::FileLoadingFlags::PreTransformVertices);
+myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::GeometryNodePerMesh);
 
 
 MySkeletalAnimationRT::MySkeletalAnimationRT()
@@ -137,13 +136,21 @@ void MySkeletalAnimationRT::initBLASes()
 		if (node->mesh)
 		{
 			const bool isDeformable = node->skin; // isDynamicBlas?
+			VkBuffer vertexBuffer = VK_NULL_HANDLE;
 			if (isDeformable)
+			{
+				vertexBuffer = model.deformingVertices.buffer;
 				dynamicPerBlasBuildInfos.push_back(PerBLASBuildInfo{});
+			}
 			else
+			{
+				vertexBuffer = model.vertices.buffer;
 				staticPerBlasBuildInfos.push_back(PerBLASBuildInfo{});
+			}
 
 			// avoid dangling pointer due to moving array;
 			PerBLASBuildInfo& refPerBlasBuildInfo = isDeformable ? dynamicPerBlasBuildInfos.back() : staticPerBlasBuildInfos.back();
+			VkDeviceSize vertexStride = isDeformable ? sizeof(myglTF::VertexSkinning) : sizeof(myglTF::VertexSimple);
 
 			const myglTF::Mesh* mesh = node->mesh;
 			// Build
@@ -157,7 +164,7 @@ void MySkeletalAnimationRT::initBLASes()
 					VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
 					VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
 
-					vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.vertices.buffer);// +primitive->firstVertex * sizeof(vkglTF::Vertex);
+					vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(vertexBuffer);// +primitive->firstVertex * sizeof(vkglTF::Vertex);
 					indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.indices.buffer) + primitive->firstIndex * sizeof(uint32_t);
 					transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + nodeIdx * sizeof(VkTransformMatrixKHR);
 
@@ -168,7 +175,7 @@ void MySkeletalAnimationRT::initBLASes()
 					asGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
 					asGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
 					asGeometry.geometry.triangles.maxVertex = primitive->vertexCount + 1;
-					asGeometry.geometry.triangles.vertexStride = sizeof(myglTF::VertexSimple);
+					asGeometry.geometry.triangles.vertexStride = vertexStride;
 					asGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
 					asGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
 					asGeometry.geometry.triangles.transformData = transformBufferDeviceAddress;
@@ -502,21 +509,9 @@ void MySkeletalAnimationRT::createShaderBindingTables()
 
 void MySkeletalAnimationRT::createComputePipeline()
 {
-	// Push constant - 
-	VkPushConstantRange pushConstantRange{};
-	pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-	pushConstantRange.offset = 0;
-	pushConstantRange.size = sizeof(ClusteredBlasPushConstantData);
-
-	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(nullptr, 0);
-	pipelineLayoutCI.pushConstantRangeCount = 1;
-	pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &computePipelineLayout));
-
-	VkComputePipelineCreateInfo computePipelineCreateInfo = vks::initializers::computePipelineCreateInfo(computePipelineLayout, 0);
-	computePipelineCreateInfo.stage = loadShader(getShadersPath() + "MySkeletalAnimationRT/clusteredBlasUpdate.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
-
-	VK_CHECK_RESULT(vkCreateComputePipelines(device, pipelineCache, 1, &computePipelineCreateInfo, nullptr, &computePipeline));
+	animComputePass = std::make_unique<MyAnimComputePass>(device);
+	animComputePass->createDescriptorSets(model);
+	animComputePass->createPipeline(getShadersPath() + "myRayTracingLittleAdvanced/anim.comp.spv");
 }
 
 void MySkeletalAnimationRT::createRayTracingPipeline()
@@ -578,7 +573,7 @@ void MySkeletalAnimationRT::createRayTracingPipeline()
 
 	// Ray generation group
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "MySkeletalAnimationRT/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
@@ -591,7 +586,7 @@ void MySkeletalAnimationRT::createRayTracingPipeline()
 
 	// Miss group
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "MySkeletalAnimationRT/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
@@ -601,14 +596,14 @@ void MySkeletalAnimationRT::createRayTracingPipeline()
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		shaderGroups.push_back(shaderGroup);
 		// Second shader for shadows
-		shaderStages.push_back(loadShader(getShadersPath() + "MySkeletalAnimationRT/shadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/shadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroups.push_back(shaderGroup);
 	}
 
 	// Closest hit group for doing texture lookups
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "MySkeletalAnimationRT/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
@@ -616,7 +611,7 @@ void MySkeletalAnimationRT::createRayTracingPipeline()
 		shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		// This group also uses an anyhit shader for doing transparency (see anyhit.rahit for details)
-		shaderStages.push_back(loadShader(getShadersPath() + "MySkeletalAnimationRT/anyhit.rahit.spv", VK_SHADER_STAGE_ANY_HIT_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/anyhit.rahit.spv", VK_SHADER_STAGE_ANY_HIT_BIT_KHR));
 		shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroups.push_back(shaderGroup);
 	}
@@ -872,8 +867,8 @@ void MySkeletalAnimationRT::getEnabledFeatures()
 void MySkeletalAnimationRT::loadAssets()
 {
 	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
+	//model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 
 void MySkeletalAnimationRT::enableExtensions()
@@ -897,15 +892,16 @@ void MySkeletalAnimationRT::prepare()
 	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
 	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 
-	createComputePipeline();
+	//createComputePipeline();
 
 	// Create the acceleration structures used to render the ray traced scene
-	initCLASes();
-	initTLAS();
+	initBLASes();
+	buildBLASes();
 
-	dispatchClusteredBlasUpdate();
+	initTLAS();
 	buildTLAS();
 
+	createComputePipeline();
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
 	createUniformBuffer();
 	createRayTracingPipeline();
@@ -928,18 +924,33 @@ void MySkeletalAnimationRT::render()
 {
 	if (!prepared)
 		return;
-	updateUniformBuffers();
-	if (camera.updated) {
-		// If the camera's view has been updated we reset the frame accumulation
-		uniformData.frame = -1;
+
+	if (!paused)
+	{
+		// Update Animation
+		static float accTime = 0.f; // accumulated Time
+		static float animationSpeed = 1.f;
+		accTime += frameTimer;
+		if (accTime > model.animations[0].end) // run only first animation
+		{
+			accTime = 0.f;
+		}
+		model.updateAnimation(0, animationSpeed * accTime);
+		
 	}
+
+	updateUniformBuffers();
+	uniformData.frame = -1;
 
 	// build AS
 	{
-		//buildCLASes();
-		//buildClusteredBLASes();
-		//dispatchClusteredBlasUpdate();
-		//buildTLAS();
+		// TODO TEMP
+		VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		animComputePass->buildCommandBuffer(commandBuffer);
+		vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+
+		buildBLASes();
+		buildTLAS();
 	}
 	//buildBLASes();
 	draw();

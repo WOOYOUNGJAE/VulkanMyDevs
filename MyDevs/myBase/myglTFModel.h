@@ -388,6 +388,7 @@ namespace myglTF
 	{
 	public:
 		VkDescriptorSetLayout descriptorSetLayoutImage{ VK_NULL_HANDLE };
+		uint32_t uboBinding = 0;
 		VkDescriptorSetLayout descriptorSetLayoutUbo{ VK_NULL_HANDLE };
 		static VkMemoryPropertyFlags memoryPropertyFlags;
 		static uint32_t descriptorBindingFlags;
@@ -408,6 +409,7 @@ namespace myglTF
 		}Vertices, Indices, ClusterVertices, ClusterIndices, ClusterBBoxes, Clusters, GeometryNodes, Primitives;
 		void CleanBufferMemory(BUFFER_TAG& bufferAndMemory);
 		Vertices vertices{};
+		Vertices deformingVertices{}; // for deforming vertex buffer. If skeletal mesh, "vertices" is t-pose
 		Indices indices{};
 		GeometryNodes geometryNodes{}; // GeometryNode type and the buffer size are already determined at creation.
 		Primitives primitives; // for multi blas
