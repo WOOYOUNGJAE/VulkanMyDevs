@@ -1599,6 +1599,12 @@ myglTF::Mesh::Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool createUnifo
 
 }
 
+myglTF::Mesh::Mesh(vks::VulkanDevice* device, glm::mat4 matrix)
+{
+	this->device = device;
+	this->uniformBlock.matrix = matrix;
+}
+
 myglTF::Mesh::~Mesh()
 {
 	if (uniformBuffer.buffer)
@@ -1610,6 +1616,20 @@ myglTF::Mesh::~Mesh()
 	{
 		delete primitive;
 	}
+}
+
+void myglTF::Mesh::createUniformBuffer(bool hasSkin)
+{
+	VkDeviceSize blockSize = hasSkin ? sizeof(UniformBlock) : sizeof(glm::mat4);
+	VK_CHECK_RESULT(device->createBuffer(
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		blockSize,
+		&uniformBuffer.buffer,
+		&uniformBuffer.memory,
+		&uniformBlock));
+	VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, uniformBuffer.memory, 0, blockSize, 0, &uniformBuffer.mapped));
+	uniformBuffer.descriptor = { uniformBuffer.buffer, 0, blockSize };
 }
 
 glm::mat4 myglTF::Node::localMatrix()
@@ -2091,7 +2111,8 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 	// Node contains mesh data
 	if (node.mesh > -1) {
 		const tinygltf::Mesh mesh = model.meshes[node.mesh];
-		Mesh* newMesh = new Mesh(device, newNode->matrix, !preTransform, newNode->skin);
+		bool hasSkin = false;
+		Mesh* newMesh = new Mesh(device, newNode->matrix);
 		newMesh->name = mesh.name;
 		for (size_t j = 0; j < mesh.primitives.size(); j++) {
 			const tinygltf::Primitive& primitive = mesh.primitives[j];
@@ -2104,7 +2125,6 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 			uint32_t vertexCount = 0;
 			glm::vec3 posMin{};
 			glm::vec3 posMax{};
-			bool hasSkin = false;
 			// Vertices
 			{
 				const float* bufferPos = nullptr;
@@ -2167,7 +2187,9 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 					bufferWeights = reinterpret_cast<const float*>(&(model.buffers[uvView.buffer].data[uvAccessor.byteOffset + uvView.byteOffset]));
 				}
 
+				/*If has Skin, can decide wheater to create uniform buffer*/
 				hasSkin = (bufferJoints && bufferWeights);
+				newMesh->createUniformBuffer(hasSkin);
 
 				vertexCount = static_cast<uint32_t>(posAccessor.count);
 

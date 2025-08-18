@@ -177,8 +177,13 @@ namespace myglTF
 			float jointcount{ 0 };
 		} uniformBlock;
 
-		Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool createUniformBuffer = true, bool hasSkin = false);
+		/**
+		 * "createUniformBuffer" combined
+		 */
+		Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool createUniformBuffer, bool hasSkin);
+		Mesh(vks::VulkanDevice* device, glm::mat4 matrix);
 		~Mesh();
+		void createUniformBuffer(bool hasSkin);
 	};
 
 	/*
