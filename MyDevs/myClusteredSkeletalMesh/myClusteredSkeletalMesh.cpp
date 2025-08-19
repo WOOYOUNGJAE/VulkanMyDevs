@@ -36,11 +36,6 @@ MyClusteredSkeletalMesh::MyClusteredSkeletalMesh()
 MyClusteredSkeletalMesh::~MyClusteredSkeletalMesh()
 {
 	if (device) {
-		// release compute pipeline
-		{
-			vkDestroyPipeline(device, computePipeline, nullptr);
-			vkDestroyPipelineLayout(device, computePipelineLayout, nullptr);
-		}
 		// delete scratches
 		{
 			deleteScratchBuffer(clasScratchBuffer);
@@ -162,6 +157,15 @@ void MyClusteredSkeletalMesh::initCLASes()
 		for (uint32_t i = 0; i < perMeshClusterData.clustersCPU.size(); ++i)
 		{
 			const ClusterRT& cluster = perMeshClusterData.clustersCPU[i];
+			uint16_t vertexStride = 0;
+			if (perMeshClusterData.hasSkin)
+			{
+				vertexStride = sizeof(myglTF::VertexSkinning);
+			}
+			else
+			{
+				vertexStride = sizeof(myglTF::VertexSimple);
+			}
 
 			VkClusterAccelerationStructureBuildTriangleClusterInfoNV& refBuildInfo = clusterBuildInfos[infoIdx++];
 
@@ -171,7 +175,7 @@ void MyClusteredSkeletalMesh::initCLASes()
 			refBuildInfo.baseGeometryIndexAndGeometryFlags.geometryFlags = VK_CLUSTER_ACCELERATION_STRUCTURE_GEOMETRY_OPAQUE_BIT_NV;
 
 			refBuildInfo.vertexBuffer = geometryNode.vertexBufferDeviceAddress;
-			refBuildInfo.vertexBufferStride = sizeof(myglTF::VertexSimple); // TODO : if animated, vertexSkining type
+			refBuildInfo.vertexBufferStride = vertexStride;
 
 			//refBuildInfo.indexBuffer = geometryNode.indexBufferDeviceAddress + cluster.firstLocalTriangle * sizeof(uint32_t) * 3;
 			refBuildInfo.indexBuffer = geometryNode.indexBufferDeviceAddress + (perMeshClusterData.indexStartOffset + cluster.firstTriangle * 3) * sizeof(uint32_t);
@@ -246,10 +250,17 @@ void MyClusteredSkeletalMesh::initBLASes()
 		if (node->mesh)
 		{
 			const bool isDeformable = node->skin; // isDynamicBlas?
+			VkBuffer vertexBuffer = VK_NULL_HANDLE;
 			if (isDeformable)
+			{
+				vertexBuffer = model.deformingVertices.buffer;
 				dynamicPerBlasBuildInfos.push_back(PerBLASBuildInfo{});
+			}
 			else
+			{
+				vertexBuffer = model.vertices.buffer;
 				staticPerBlasBuildInfos.push_back(PerBLASBuildInfo{});
+			}
 
 			// avoid dangling pointer due to moving array;
 			PerBLASBuildInfo& refPerBlasBuildInfo = isDeformable ? dynamicPerBlasBuildInfos.back() : staticPerBlasBuildInfos.back();
@@ -266,7 +277,7 @@ void MyClusteredSkeletalMesh::initBLASes()
 					VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
 					VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
 
-					vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.vertices.buffer);// +primitive->firstVertex * sizeof(vkglTF::Vertex);
+					vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(vertexBuffer);// +primitive->firstVertex * sizeof(vkglTF::Vertex);
 					indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.indices.buffer) + primitive->firstIndex * sizeof(uint32_t);
 					transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + nodeIdx * sizeof(VkTransformMatrixKHR);
 
@@ -738,46 +749,6 @@ void MyClusteredSkeletalMesh::createShaderBindingTables()
 	memcpy(shaderBindingTables.hit.mapped, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize);
 }
 
-void MyClusteredSkeletalMesh::createComputePipeline()
-{
-	// Push constant - 
-	VkPushConstantRange pushConstantRange{};
-	pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-	pushConstantRange.offset = 0;
-	pushConstantRange.size = sizeof(ClusteredBlasPushConstantData);
-
-	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(nullptr, 0);
-	pipelineLayoutCI.pushConstantRangeCount = 1;
-	pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &computePipelineLayout));
-
-	VkComputePipelineCreateInfo computePipelineCreateInfo = vks::initializers::computePipelineCreateInfo(computePipelineLayout, 0);
-	computePipelineCreateInfo.stage = loadShader(getShadersPath() + "MyClusteredSkeletalMesh/clusteredBlasUpdate.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
-
-	VK_CHECK_RESULT(vkCreateComputePipelines(device, pipelineCache, 1, &computePipelineCreateInfo, nullptr, &computePipeline));
-}
-
-void MyClusteredSkeletalMesh::dispatchClusteredBlasUpdate(VkCommandBuffer cmdBuffer)
-{
-	ClusteredBlasPushConstantData clusteredBlasPushConstants{};
-
-	uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
-	clusteredBlasPushConstants.sumCount = numClusteredBlases;
-
-	clusteredBlasPushConstants.instanceCount = numClusteredBlases * 1; // not instancing yet
-	clusteredBlasPushConstants.animated = 0;
-	clusteredBlasPushConstants.blasAddresses = clusteredBlasDstAddressBuffer.deviceAddress;
-	clusteredBlasPushConstants.clusteredGeometryDatas = model.geometryNodes.deviceAddress;
-	clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
-
-
-	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
-
-	vkCmdPushConstants(cmdBuffer, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
-		sizeof(ClusteredBlasPushConstantData), &clusteredBlasPushConstants);
-	vkCmdDispatch(cmdBuffer, (std::max(clusteredBlasPushConstants.instanceCount, clusteredBlasPushConstants.sumCount) + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE,
-		1, 1);
-}
 
 void MyClusteredSkeletalMesh::createRayTracingPipeline()
 {
@@ -1016,24 +987,84 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 
 	for (int32_t i = 0; i < drawCmdBuffers.size(); ++i)
 	{
-		VK_CHECK_RESULT(vkBeginCommandBuffer(drawCmdBuffers[i], &cmdBufInfo));
+		VkCommandBuffer cmdBuffer = drawCmdBuffers[i];
+		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
+
+		animComputePass->buildCommandBuffer(cmdBuffer);
+		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
+		vkCmdPipelineBarrier(
+			cmdBuffer,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			VK_FLAGS_NONE,
+			1, &memBarrier,
+			0, nullptr,
+			0, nullptr);
+
+		// build or update AS
+		{
+			buildCLASes(cmdBuffer);
+
+			accelBuildPipelineBarrier(cmdBuffer);
+
+			buildClusteredBLASes(cmdBuffer);
+
+
+			VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+				VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+				VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
+			vkCmdPipelineBarrier(
+				cmdBuffer,
+				VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				VK_FLAGS_NONE,
+				1, &memBarrier,
+				0, nullptr,
+				0, nullptr);
+
+			// blas udpate dispatch commands
+			{
+				ClusteredBlasPushConstantData clusteredBlasPushConstants{};
+				uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
+				clusteredBlasPushConstants.sumCount = numClusteredBlases;
+				clusteredBlasPushConstants.instanceCount = numClusteredBlases * 1; // not instancing yet
+				clusteredBlasPushConstants.animated = 0;
+				clusteredBlasPushConstants.blasAddresses = clusteredBlasDstAddressBuffer.deviceAddress;
+				clusteredBlasPushConstants.clusteredGeometryDatas = model.geometryNodes.deviceAddress;
+				clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
+				blasUpdateComputePass->buildCommandBuffer(cmdBuffer, clusteredBlasPushConstants);
+			}
+
+			memBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+			memBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+			vkCmdPipelineBarrier(
+				cmdBuffer,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+				VK_FLAGS_NONE,
+				1, &memBarrier,
+				0, nullptr,
+				0, nullptr);
+
+			buildTLAS(cmdBuffer);
+		}
 
 		/*
 			Dispatch the ray tracing commands
 		*/
-		vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
+		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
 
 		// push constant - vertex/index device addressvkCmdPushConstants(
-		vkCmdPushConstants(drawCmdBuffers[i], rtPipelineLayout,
+		vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
 			VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
 			0, sizeof(PushConstantData), &pushConstantData
 		);
 
-		vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
+		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
 
 		VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
 		vkCmdTraceRaysKHR(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			&shaderBindingTables.raygen.stridedDeviceAddressRegion,
 			&shaderBindingTables.miss.stridedDeviceAddressRegion,
 			&shaderBindingTables.hit.stridedDeviceAddressRegion,
@@ -1048,7 +1079,7 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 
 		// Prepare current swap chain image as transfer destination
 		vks::tools::setImageLayout(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			swapChain.images[i],
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -1056,7 +1087,7 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 
 		// Prepare ray tracing output image as transfer source
 		vks::tools::setImageLayout(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			storageImage.image,
 			VK_IMAGE_LAYOUT_GENERAL,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -1068,11 +1099,11 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 		copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
 		copyRegion.dstOffset = { 0, 0, 0 };
 		copyRegion.extent = { width, height, 1 };
-		vkCmdCopyImage(drawCmdBuffers[i], storageImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapChain.images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+		vkCmdCopyImage(cmdBuffer, storageImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapChain.images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
 		// Transition swap chain image back for presentation
 		vks::tools::setImageLayout(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			swapChain.images[i],
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -1080,15 +1111,15 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 
 		// Transition ray tracing output image back to general layout
 		vks::tools::setImageLayout(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			storageImage.image,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			VK_IMAGE_LAYOUT_GENERAL,
 			subresourceRange);
 
-		drawUI(drawCmdBuffers[i], frameBuffers[i]);
+		drawUI(cmdBuffer, frameBuffers[i]);
 
-		VK_CHECK_RESULT(vkEndCommandBuffer(drawCmdBuffers[i]));
+		VK_CHECK_RESULT(vkEndCommandBuffer(cmdBuffer));
 	}
 }
 
@@ -1137,7 +1168,9 @@ void MyClusteredSkeletalMesh::getEnabledFeatures()
 void MyClusteredSkeletalMesh::loadAssets()
 {
 	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
+
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }
 
@@ -1164,48 +1197,78 @@ void MyClusteredSkeletalMesh::prepare()
 	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
 	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 
-	createComputePipeline();
+	// create compute pipieline
+	blasUpdateComputePass = std::make_unique<MyBLASUpdateCompute>(device);
+	blasUpdateComputePass->createPipeline(getShadersPath() + "MyClusteredSkeletalMesh/clusteredBlasUpdate.comp.spv");
+	animComputePass = std::make_unique<MyAnimComputePass>(device);
+	animComputePass->createDescriptorSets(model);
+	animComputePass->createPipeline(getShadersPath() + "myRayTracingLittleAdvanced/anim.comp.spv");
 
+	
 	// Create the acceleration structures used to render the ray traced scene
 	initCLASes();
 	initClusteredBLASes();
 	initTLAS();
 
-	VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-	buildCLASes(cmdBuffer);
+	// commands - first AS build, update animations
+	{
+		VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		animComputePass->buildCommandBuffer(cmdBuffer);
 
-	accelBuildPipelineBarrier(cmdBuffer);
+		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
+		vkCmdPipelineBarrier(
+			cmdBuffer,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			VK_FLAGS_NONE,
+			1, &memBarrier,
+			0, nullptr,
+			0, nullptr);
 
-	buildClusteredBLASes(cmdBuffer);
 
+		buildCLASes(cmdBuffer);
+		accelBuildPipelineBarrier(cmdBuffer);
 
-	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
-		VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-		VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
-	vkCmdPipelineBarrier(
-		cmdBuffer,
-		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		VK_FLAGS_NONE,
-		1, &memBarrier,
-		0, nullptr,
-		0, nullptr);
+		buildClusteredBLASes(cmdBuffer);
 
-	dispatchClusteredBlasUpdate(cmdBuffer);
+		memBarrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+		memBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+		vkCmdPipelineBarrier(
+			cmdBuffer,
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_FLAGS_NONE,
+			1, &memBarrier,
+			0, nullptr,
+			0, nullptr);
 
-	memBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-	memBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-	vkCmdPipelineBarrier(
-		cmdBuffer,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-		VK_FLAGS_NONE,
-		1, &memBarrier,
-		0, nullptr,
-		0, nullptr);
+		// blas udpate dispatch commands
+		{
+			ClusteredBlasPushConstantData clusteredBlasPushConstants{};
+			uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
+			clusteredBlasPushConstants.sumCount = numClusteredBlases;
+			clusteredBlasPushConstants.instanceCount = numClusteredBlases * 1; // not instancing yet
+			clusteredBlasPushConstants.animated = 0;
+			clusteredBlasPushConstants.blasAddresses = clusteredBlasDstAddressBuffer.deviceAddress;
+			clusteredBlasPushConstants.clusteredGeometryDatas = model.geometryNodes.deviceAddress;
+			clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
+			blasUpdateComputePass->buildCommandBuffer(cmdBuffer, clusteredBlasPushConstants);
+		}
 
-	buildTLAS(cmdBuffer);
-	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
+		memBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+		memBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+		vkCmdPipelineBarrier(
+			cmdBuffer,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			VK_FLAGS_NONE,
+			1, &memBarrier,
+			0, nullptr,
+			0, nullptr);
+
+		buildTLAS(cmdBuffer);
+		vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
+	}
 
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
 	createUniformBuffer();
@@ -1229,11 +1292,22 @@ void MyClusteredSkeletalMesh::render()
 {
 	if (!prepared)
 		return;
-	updateUniformBuffers();
-	if (camera.updated) {
-		// If the camera's view has been updated we reset the frame accumulation
-		uniformData.frame = -1;
+
+	if (!paused)
+	{
+		// Update Animation
+		static float accTime = 0.f; // accumulated Time
+		static float animationSpeed = 1.f;
+		accTime += frameTimer;
+		if (accTime > model.animations[0].end) // run only first animation
+		{
+			accTime = 0.f;
+		}
+		model.updateAnimation(0, animationSpeed * accTime);
 	}
+	updateUniformBuffers();
+
+	uniformData.frame = -1;
 
 	draw();
 }

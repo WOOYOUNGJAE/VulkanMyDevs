@@ -2644,6 +2644,8 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			if (node->mesh)
 			{
 				PerMeshClustersBuildData perMeshClustersBuildData{};
+				if (node->skin)
+					perMeshClustersBuildData.hasSkin = true;
 				for (const auto& primitive : node->mesh->primitives)
 				{
 					perMeshClustersBuildData.numMeshIndices += primitive->indexCount;
@@ -2759,13 +2761,15 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	uint32_t indexStartOffset = 0;
 	std::vector<MeshPrimitive> tempPrimitives; // for GeometryNodePerMesh
 
-	VkDeviceAddress vertexBaseDeviceAddress = getBufferDeviceAddress(vertices.buffer);
+	VkDeviceAddress vertexBaseDeviceAddress = 0;  
 	VkDeviceAddress indexBaseDeviceAddress = getBufferDeviceAddress(indices.buffer);
 	uint32_t meshIdx = 0u;
 	for (auto& node : linearNodes)
 	{
 		if (node->mesh)
 		{
+			vertexBaseDeviceAddress = node->skin ? getBufferDeviceAddress(deformingVertices.buffer) : getBufferDeviceAddress(vertices.buffer);
+
 			uint32_t vertexStartOffsetInMesh = 0u; // for Primitive
 			uint32_t indexStartOffsetInMesh = 0u;
 			if (isGeometryNodePerPrimitive)
@@ -2950,7 +2954,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayoutCI, nullptr, &descriptorSetLayoutUbo));
 		}
 
-		if (preTransform)
+		if (preTransform && !isSkinningModel)
 		{
 			// Create bufffer
 			VK_CHECK_RESULT(device->createBuffer(

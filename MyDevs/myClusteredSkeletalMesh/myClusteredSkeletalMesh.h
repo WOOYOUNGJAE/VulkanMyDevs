@@ -13,6 +13,8 @@
 #include "myglTFModel.h"
 
 #define VK_GLTF_MATERIAL_IDS
+#include "myAnimComputePass.h"
+#include "myBlasUpdateCompute.h"
 #include "myglTFModel.h"
 
 class MyClusteredSkeletalMesh : public MyVulkanRTBase
@@ -57,10 +59,10 @@ public: // CLAS
 	VkDeviceSize clasScratchSizeMax = 0;
 	// for indirectly building clas argment
 	ArgumentBuffer clusterBuildInfoBuffer{}, clusterDstAddressBuffer{}, clusterSizeBuffer{},
-	clusteredBlasBuildInfoBuffer{}, clusteredBlasDstAddressBuffer{}, clusteredBlasSizeBuffer{};
+		clusteredBlasBuildInfoBuffer{}, clusteredBlasDstAddressBuffer{}, clusteredBlasSizeBuffer{};
 	VkClusterAccelerationStructureTriangleClusterInputNV clasInput{};
 	ScratchBuffer clasScratchBuffer{};
-	VkClusterAccelerationStructureClustersBottomLevelInputNV clusteredBlasInput	{};
+	VkClusterAccelerationStructureClustersBottomLevelInputNV clusteredBlasInput{};
 	VkDeviceSize clusteredBlasScratchSizeMax = 0;
 	ScratchBuffer clusteredBlasScratchBuffer{};
 	// AS
@@ -101,9 +103,10 @@ public: // CLAS
 	VkDescriptorSet rtDescriptorSet{ VK_NULL_HANDLE };
 	VkDescriptorSetLayout rtDescriptorSetLayout{ VK_NULL_HANDLE };
 
-	// Compute Pipeline
-	VkPipeline computePipeline{ VK_NULL_HANDLE };
-	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
+	// Compute Pipelines
+	std::unique_ptr<MyBLASUpdateCompute> blasUpdateComputePass{};
+	std::unique_ptr<MyAnimComputePass> animComputePass;
+
 
 	myglTF::ModelRT model;
 
@@ -132,9 +135,6 @@ public:
 	void createRayTracingPipeline();
 	void createDescriptorSets();
 	void createUniformBuffer();
-
-	void createComputePipeline();
-	void dispatchClusteredBlasUpdate(VkCommandBuffer cmdBuffer);
 
 	void handleResize();
 

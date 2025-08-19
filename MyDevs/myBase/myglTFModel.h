@@ -442,6 +442,7 @@ namespace myglTF
 		// per mesh
 		struct PerMeshClustersBuildData // for genetrate clusters
 		{
+			bool hasSkin = false;
 			uint32_t numMeshIndices; // indices count of original mesh
 			uint32_t vertexStartOffset = 0;
 			uint32_t indexStartOffset = 0;
