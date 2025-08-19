@@ -13,6 +13,7 @@
 #include "myglTFModel.h"
 
 #define VK_GLTF_MATERIAL_IDS
+#include "myBlasUpdateCompute.h"
 #include "myglTFModel.h"
 
 class MyClusterAccelerationStructureNV : public MyVulkanRTBase
@@ -102,8 +103,7 @@ public: // CLAS
 	VkDescriptorSetLayout rtDescriptorSetLayout{ VK_NULL_HANDLE };
 
 	// Compute Pipeline
-	VkPipeline computePipeline{ VK_NULL_HANDLE };
-	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
+	std::unique_ptr<MyBLASUpdateCompute> blasUpdateComputePass{};
 
 	myglTF::ModelRT model;
 
@@ -132,9 +132,6 @@ public:
 	void createRayTracingPipeline();
 	void createDescriptorSets();
 	void createUniformBuffer();
-
-	void createComputePipeline();
-	void dispatchClusteredBlasUpdate(VkCommandBuffer cmdBuffer);
 
 	void handleResize();
 

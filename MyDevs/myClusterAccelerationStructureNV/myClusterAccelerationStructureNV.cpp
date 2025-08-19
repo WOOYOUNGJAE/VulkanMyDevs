@@ -36,11 +36,6 @@ MyClusterAccelerationStructureNV::MyClusterAccelerationStructureNV()
 MyClusterAccelerationStructureNV::~MyClusterAccelerationStructureNV()
 {
 	if (device) {
-		// release compute pipeline
-		{
-			vkDestroyPipeline(device, computePipeline, nullptr);
-			vkDestroyPipelineLayout(device, computePipelineLayout, nullptr);
-		}
 		// delete scratches
 		{
 			deleteScratchBuffer(clasScratchBuffer);
@@ -738,46 +733,6 @@ void MyClusterAccelerationStructureNV::createShaderBindingTables()
 	memcpy(shaderBindingTables.hit.mapped, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize);
 }
 
-void MyClusterAccelerationStructureNV::createComputePipeline()
-{
-	// Push constant - 
-	VkPushConstantRange pushConstantRange{};
-	pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-	pushConstantRange.offset = 0;
-	pushConstantRange.size = sizeof(ClusteredBlasPushConstantData);
-
-	VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(nullptr, 0);
-	pipelineLayoutCI.pushConstantRangeCount = 1;
-	pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &computePipelineLayout));
-
-	VkComputePipelineCreateInfo computePipelineCreateInfo = vks::initializers::computePipelineCreateInfo(computePipelineLayout, 0);
-	computePipelineCreateInfo.stage = loadShader(getShadersPath() + "MyClusterAccelerationStructureNV/clusteredBlasUpdate.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
-	
-	VK_CHECK_RESULT(vkCreateComputePipelines(device, pipelineCache, 1, &computePipelineCreateInfo, nullptr, &computePipeline));
-}
-
-void MyClusterAccelerationStructureNV::dispatchClusteredBlasUpdate(VkCommandBuffer cmdBuffer)
-{
-	ClusteredBlasPushConstantData clusteredBlasPushConstants{};
-
-	uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
-	clusteredBlasPushConstants.sumCount = numClusteredBlases;
-
-	clusteredBlasPushConstants.instanceCount = numClusteredBlases * 1; // not instancing yet
-	clusteredBlasPushConstants.animated = 0;
-	clusteredBlasPushConstants.blasAddresses = clusteredBlasDstAddressBuffer.deviceAddress;
-	clusteredBlasPushConstants.clusteredGeometryDatas = model.geometryNodes.deviceAddress;
-	clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
-	
-
-	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
-
-	vkCmdPushConstants(cmdBuffer, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
-		sizeof(ClusteredBlasPushConstantData), &clusteredBlasPushConstants);
-	vkCmdDispatch(cmdBuffer, (std::max(clusteredBlasPushConstants.instanceCount, clusteredBlasPushConstants.sumCount) + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE,
-		1, 1);
-}
 
 void MyClusterAccelerationStructureNV::createRayTracingPipeline()
 {
@@ -1164,7 +1119,9 @@ void MyClusterAccelerationStructureNV::prepare()
 	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
 	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 
-	createComputePipeline();
+	// create compute pipieline
+	blasUpdateComputePass = std::make_unique<MyBLASUpdateCompute>(device);
+	blasUpdateComputePass->createPipeline(getShadersPath() + "MyClusterAccelerationStructureNV/clusteredBlasUpdate.comp.spv");
 
 	// Create the acceleration structures used to render the ray traced scene
 	initCLASes();
@@ -1191,7 +1148,18 @@ void MyClusterAccelerationStructureNV::prepare()
 		0, nullptr,
 		0, nullptr);
 
-	dispatchClusteredBlasUpdate(cmdBuffer);
+	// blas udpate dispatch commands
+	{
+		ClusteredBlasPushConstantData clusteredBlasPushConstants{};
+		uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
+		clusteredBlasPushConstants.sumCount = numClusteredBlases;
+		clusteredBlasPushConstants.instanceCount = numClusteredBlases * 1; // not instancing yet
+		clusteredBlasPushConstants.animated = 0;
+		clusteredBlasPushConstants.blasAddresses = clusteredBlasDstAddressBuffer.deviceAddress;
+		clusteredBlasPushConstants.clusteredGeometryDatas = model.geometryNodes.deviceAddress;
+		clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
+		blasUpdateComputePass->buildCommandBuffer(cmdBuffer, clusteredBlasPushConstants);
+	}
 
 	memBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
 	memBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
