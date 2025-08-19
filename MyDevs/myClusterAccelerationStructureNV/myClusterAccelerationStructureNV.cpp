@@ -774,7 +774,7 @@ void MyClusterAccelerationStructureNV::dispatchClusteredBlasUpdate(VkCommandBuff
 	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
 
 	vkCmdPushConstants(cmdBuffer, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
-		sizeof(cmdBuffer), &clusteredBlasPushConstants);
+		sizeof(ClusteredBlasPushConstantData), &clusteredBlasPushConstants);
 	vkCmdDispatch(cmdBuffer, (std::max(clusteredBlasPushConstants.instanceCount, clusteredBlasPushConstants.sumCount) + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE,
 		1, 1);
 }
@@ -1128,6 +1128,7 @@ void MyClusterAccelerationStructureNV::getEnabledFeatures()
 	physicalDeviceShaderImageAtomicInt64Features.shaderImageInt64Atomics = VK_TRUE;
 	physicalDeviceShaderImageAtomicInt64Features.pNext = &physicalDeviceDescriptorIndexingFeatures;
 	clustersNV.pNext = &physicalDeviceShaderImageAtomicInt64Features;
+	clustersNV.clusterAccelerationStructure = VK_TRUE;
 	deviceCreatepNextChain = &clustersNV;
 
 	enabledFeatures.samplerAnisotropy = VK_TRUE;
@@ -1177,17 +1178,31 @@ void MyClusterAccelerationStructureNV::prepare()
 
 	buildClusteredBLASes(cmdBuffer);
 
-	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
-		vkCmdPipelineBarrier(
-			cmdBuffer,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			VK_FLAGS_NONE,
-			1, &memBarrier,
-			0, nullptr,
-			0, nullptr);
+
+	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+		VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+		VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT};
+	vkCmdPipelineBarrier(
+		cmdBuffer,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_FLAGS_NONE,
+		1, &memBarrier,
+		0, nullptr,
+		0, nullptr);
 
 	dispatchClusteredBlasUpdate(cmdBuffer);
+
+	memBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+	memBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+	vkCmdPipelineBarrier(
+		cmdBuffer,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+		VK_FLAGS_NONE,
+		1, &memBarrier,
+		0, nullptr,
+		0, nullptr);
 
 	buildTLAS(cmdBuffer);
 	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
@@ -1220,14 +1235,6 @@ void MyClusterAccelerationStructureNV::render()
 		uniformData.frame = -1;
 	}
 
-	// build AS
-	{
-		//buildCLASes();
-		//buildClusteredBLASes();
-		//dispatchClusteredBlasUpdate();
-		//buildTLAS();
-	}
-	//buildBLASes();
 	draw();
 }
 
