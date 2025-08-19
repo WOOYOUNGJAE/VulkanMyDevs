@@ -227,6 +227,15 @@ void MySkeletalAnimationRT::initBLASes()
 			}
 		}
 	}
+	auto updateDeviceAddresses = [&](auto& blasArray)
+		{
+			for (auto& blas : blasArray)
+			{
+				blas.deviceAddress = getBufferDeviceAddress(blas.buffer);
+			}
+		};
+	updateDeviceAddresses(staticBLASes);
+	updateDeviceAddresses(dynamicBLASes);
 }
 
 void MySkeletalAnimationRT::initTLAS()
@@ -324,18 +333,17 @@ void MySkeletalAnimationRT::initTLAS()
 	tlasSize = accelerationStructureBuildSizesInfo.accelerationStructureSize;
 	MyVulkanRTBase::createAccelerationStructureBuffer(TLAS, accelerationStructureBuildSizesInfo);
 
-
 	// Create a small scratch buffer used during build of the top level acceleration structure
 	tlasScratchBuffer = createScratchBuffer(tlasScratchSize);
 }
 
-void MySkeletalAnimationRT::buildBLASes()
+void MySkeletalAnimationRT::buildBLASes(VkCommandBuffer cmdBuffer)
 {
 	// TODO build Static-Dynamic BLAS Parallelly
 	uint32_t numStaticBlases = staticBLASes.size();
 	uint32_t numDynamicBlases = dynamicBLASes.size(); // for Deformable Mesh
 
-	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	//VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 	const bool isFirstBuild = (numStaticBlases && staticBLASes[0].handle == VK_NULL_HANDLE)
 		|| (numDynamicBlases && dynamicBLASes[0].handle == VK_NULL_HANDLE);
 	//gpuTimer->reset(commandBuffer);
@@ -383,21 +391,15 @@ void MySkeletalAnimationRT::buildBLASes()
 	// dynamic blas  
 	processBLASes(dynamicBLASes, dynamicPerBlasBuildInfos, dynamicBlasBuildingSets);
 
+
 	// dynamic blas
 	if (numDynamicBlases)
 	{
 		vkCmdBuildAccelerationStructuresKHR(
-			commandBuffer,
+			cmdBuffer,
 			numDynamicBlases,
 			dynamicBlasBuildingSets.buildGeometryInfos.data(),
 			dynamicBlasBuildingSets.buildRangeInfosArray.data());
-
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue, false);
-		// TODO get rid of this if possible
-		{
-			VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
-			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &cmdBufInfo));
-		}
 	}
 	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 
@@ -405,32 +407,18 @@ void MySkeletalAnimationRT::buildBLASes()
 	if (numStaticBlases)
 	{
 		vkCmdBuildAccelerationStructuresKHR(
-			commandBuffer,
+			cmdBuffer,
 			numStaticBlases,
 			staticBlasBuildingSets.buildGeometryInfos.data(),
 			staticBlasBuildingSets.buildRangeInfosArray.data());
 
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue);
-	}
-
-	if (isFirstBuild)
-	{
-		auto updateDeviceAddresses = [&](auto& blasArray)
-			{
-				for (auto& blas : blasArray)
-				{
-					blas.deviceAddress = getBufferDeviceAddress(blas.buffer);
-				}
-			};
-		updateDeviceAddresses(staticBLASes);
-		updateDeviceAddresses(dynamicBLASes);
 	}
 }
 
-void MySkeletalAnimationRT::buildTLAS()
+void MySkeletalAnimationRT::buildTLAS(VkCommandBuffer cmdBuffer)
 {
 	const bool isFirstBuild = (TLAS.handle == VK_NULL_HANDLE);
-	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	//VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
 	if (isFirstBuild)
 	{
@@ -468,12 +456,11 @@ void MySkeletalAnimationRT::buildTLAS()
 	// Some implementations may support acceleration structure building on the host (VkPhysicalDeviceAccelerationStructureFeaturesKHR->accelerationStructureHostCommands), but we prefer device builds
 
 	vkCmdBuildAccelerationStructuresKHR(
-		commandBuffer,
+		cmdBuffer,
 		1,
 		&tlasBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
 
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
 
 	// after first build complete
 	if (isFirstBuild)
@@ -894,11 +881,15 @@ void MySkeletalAnimationRT::prepare()
 	//createComputePipeline();
 
 	// Create the acceleration structures used to render the ray traced scene
-	initBLASes();
-	buildBLASes();
+	VkCommandBuffer accelBuildCmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
+	initBLASes();
 	initTLAS();
-	buildTLAS();
+
+	buildBLASes(accelBuildCmdBuffer);
+	accelBuildPipelineBarrier(accelBuildCmdBuffer);
+	buildTLAS(accelBuildCmdBuffer);
+	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, queue);
 
 	createComputePipeline();
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -943,14 +934,16 @@ void MySkeletalAnimationRT::render()
 
 	// build AS
 	{
-		// TODO TEMP
-		VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-		animComputePass->buildCommandBuffer(commandBuffer);
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+		VkCommandBuffer updateCmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
-		buildBLASes();
-		buildTLAS();
+		animComputePass->buildCommandBuffer(updateCmdBuffer);
+
+		buildBLASes(updateCmdBuffer);
+		accelBuildPipelineBarrier(updateCmdBuffer);
+		buildTLAS(updateCmdBuffer);
+
+		buildTLAS(updateCmdBuffer);
+		vulkanDevice->flushCommandBuffer(updateCmdBuffer, queue);
 	}
-	//buildBLASes();
 	draw();
 }

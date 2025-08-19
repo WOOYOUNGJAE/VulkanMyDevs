@@ -90,8 +90,8 @@ public:
 	void initBLASes();
 	void initTLAS();
 
-	void buildBLASes(); // Build or Update
-	void buildTLAS();
+	void buildBLASes(VkCommandBuffer cmdBuffer); // Build or Update
+	void buildTLAS(VkCommandBuffer cmdBuffer);
 
 	void createShaderBindingTables();
 	void createRayTracingPipeline();

@@ -36,6 +36,18 @@ protected:
 	// Update the default render pass with different color attachment load ops
 	void setupRenderPass() override;
 	void setupFrameBuffer() override;
+	VkMemoryBarrier accelBuildBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
+	inline void accelBuildPipelineBarrier(VkCommandBuffer cmdBuffer)
+	{
+		vkCmdPipelineBarrier(
+			cmdBuffer,
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			VK_FLAGS_NONE,
+			1, &accelBuildBarrier,
+			0, nullptr,
+			0, nullptr);
+	}
 public:
 	class ShaderBindingTable : public vks::Buffer
 	{
