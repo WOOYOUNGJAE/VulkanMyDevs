@@ -40,10 +40,6 @@ void main()
 {
   uint threadIdxGlobal = gl_GlobalInvocationID.x;
 
-  // update ray tracing blas address prior tlas update
-    
-//    push.asInstances.d[threadIdxGlobal].accelerationStructureReference = push.blasAddresses.d[0];
-//        push.blasAddresses.d[push.clusteredGeometryDatas.d[threadIdxGlobal].geometryID ];
   if (threadIdxGlobal < push.instanceCount)
   {
     push.asInstances.d[threadIdxGlobal].accelerationStructureReference = push.blasAddresses.d[push.clusteredGeometryDatas.d[threadIdxGlobal].geometryID ];

@@ -493,10 +493,8 @@ void MyClusterAccelerationStructureNV::initTLAS()
 	tlasScratchBuffer = createScratchBuffer(tlasScratchSize);
 }
 
-void MyClusterAccelerationStructureNV::buildCLASes()
+void MyClusterAccelerationStructureNV::buildCLASes(VkCommandBuffer cmdBuffer)
 {
-	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-
 	VkClusterAccelerationStructureCommandsInfoNV cmdInfo{};
 	cmdInfo.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_COMMANDS_INFO_NV;
 	VkClusterAccelerationStructureInputInfoNV inputInfo{};
@@ -529,8 +527,7 @@ void MyClusterAccelerationStructureNV::buildCLASes()
 	cmdInfo.scratchData = clasScratchBuffer.deviceAddress;
 	cmdInfo.input = inputInfo;
 
-	vkCmdBuildClusterAccelerationStructureIndirectNV(commandBuffer, &cmdInfo);
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+	vkCmdBuildClusterAccelerationStructureIndirectNV(cmdBuffer, &cmdInfo);
 }
 
 void MyClusterAccelerationStructureNV::buildBLASes()
@@ -631,10 +628,8 @@ void MyClusterAccelerationStructureNV::buildBLASes()
 	}
 }
 
-void MyClusterAccelerationStructureNV::buildClusteredBLASes()
+void MyClusterAccelerationStructureNV::buildClusteredBLASes(VkCommandBuffer cmdBuffer)
 {
-	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-
 	VkClusterAccelerationStructureCommandsInfoNV cmdInfo = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_COMMANDS_INFO_NV };
 	VkClusterAccelerationStructureInputInfoNV inputInfo = { VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV };
 
@@ -663,15 +658,13 @@ void MyClusterAccelerationStructureNV::buildClusteredBLASes()
 
 	cmdInfo.scratchData = clusteredBlasScratchBuffer.deviceAddress;
 	cmdInfo.input = inputInfo;
-	vkCmdBuildClusterAccelerationStructureIndirectNV(commandBuffer, &cmdInfo);
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+	vkCmdBuildClusterAccelerationStructureIndirectNV(cmdBuffer, &cmdInfo);
 }
 
 
-void MyClusterAccelerationStructureNV::buildTLAS()
+void MyClusterAccelerationStructureNV::buildTLAS(VkCommandBuffer cmdBuffer)
 {
 	const bool isFirstBuild = (TLAS.handle == VK_NULL_HANDLE);
-	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
 	if (isFirstBuild)
 	{
@@ -709,12 +702,10 @@ void MyClusterAccelerationStructureNV::buildTLAS()
 	// Some implementations may support acceleration structure building on the host (VkPhysicalDeviceAccelerationStructureFeaturesKHR->accelerationStructureHostCommands), but we prefer device builds
 
 	vkCmdBuildAccelerationStructuresKHR(
-		commandBuffer,
+		cmdBuffer,
 		1,
 		&tlasBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
-
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
 
 	// after first build complete
 	if (isFirstBuild)
@@ -766,11 +757,8 @@ void MyClusterAccelerationStructureNV::createComputePipeline()
 	VK_CHECK_RESULT(vkCreateComputePipelines(device, pipelineCache, 1, &computePipelineCreateInfo, nullptr, &computePipeline));
 }
 
-void MyClusterAccelerationStructureNV::dispatchClusteredBlasUpdate()
+void MyClusterAccelerationStructureNV::dispatchClusteredBlasUpdate(VkCommandBuffer cmdBuffer)
 {
-	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-
-
 	ClusteredBlasPushConstantData clusteredBlasPushConstants{};
 
 	uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
@@ -783,16 +771,12 @@ void MyClusterAccelerationStructureNV::dispatchClusteredBlasUpdate()
 	clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
 	
 
-	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
 
-	vkCmdPushConstants(commandBuffer, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+	vkCmdPushConstants(cmdBuffer, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
 		sizeof(ClusteredBlasPushConstantData), &clusteredBlasPushConstants);
-	vkCmdDispatch(commandBuffer, (std::max(clusteredBlasPushConstants.instanceCount, clusteredBlasPushConstants.sumCount) + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE,
+	vkCmdDispatch(cmdBuffer, (std::max(clusteredBlasPushConstants.instanceCount, clusteredBlasPushConstants.sumCount) + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE,
 		1, 1);
-
-
-
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
 }
 
 void MyClusterAccelerationStructureNV::createRayTracingPipeline()
@@ -1144,6 +1128,7 @@ void MyClusterAccelerationStructureNV::getEnabledFeatures()
 	physicalDeviceShaderImageAtomicInt64Features.shaderImageInt64Atomics = VK_TRUE;
 	physicalDeviceShaderImageAtomicInt64Features.pNext = &physicalDeviceDescriptorIndexingFeatures;
 	clustersNV.pNext = &physicalDeviceShaderImageAtomicInt64Features;
+	clustersNV.clusterAccelerationStructure = VK_TRUE;
 	deviceCreatepNextChain = &clustersNV;
 
 	enabledFeatures.samplerAnisotropy = VK_TRUE;
@@ -1186,10 +1171,41 @@ void MyClusterAccelerationStructureNV::prepare()
 	initClusteredBLASes();
 	initTLAS();
 
-	buildCLASes();
-	buildClusteredBLASes();
-	dispatchClusteredBlasUpdate();
-	buildTLAS();
+	VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	buildCLASes(cmdBuffer);
+
+	accelBuildPipelineBarrier(cmdBuffer);
+
+	buildClusteredBLASes(cmdBuffer);
+
+
+	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+		VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+		VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT};
+	vkCmdPipelineBarrier(
+		cmdBuffer,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_FLAGS_NONE,
+		1, &memBarrier,
+		0, nullptr,
+		0, nullptr);
+
+	dispatchClusteredBlasUpdate(cmdBuffer);
+
+	memBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+	memBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+	vkCmdPipelineBarrier(
+		cmdBuffer,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+		VK_FLAGS_NONE,
+		1, &memBarrier,
+		0, nullptr,
+		0, nullptr);
+
+	buildTLAS(cmdBuffer);
+	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
 
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
 	createUniformBuffer();
@@ -1219,14 +1235,6 @@ void MyClusterAccelerationStructureNV::render()
 		uniformData.frame = -1;
 	}
 
-	// build AS
-	{
-		//buildCLASes();
-		//buildClusteredBLASes();
-		//dispatchClusteredBlasUpdate();
-		//buildTLAS();
-	}
-	//buildBLASes();
 	draw();
 }
 

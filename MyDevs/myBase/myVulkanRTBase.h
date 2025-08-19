@@ -36,7 +36,7 @@ protected:
 	// Update the default render pass with different color attachment load ops
 	void setupRenderPass() override;
 	void setupFrameBuffer() override;
-	VkMemoryBarrier accelBuildBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
+	VkMemoryBarrier accelBuildBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR, VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
 	inline void accelBuildPipelineBarrier(VkCommandBuffer cmdBuffer)
 	{
 		vkCmdPipelineBarrier(
