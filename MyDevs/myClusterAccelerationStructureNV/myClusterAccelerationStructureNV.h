@@ -123,10 +123,10 @@ public:
 	void initClusteredBLASes();
 	void initTLAS();
 
-	void buildCLASes();
+	void buildCLASes(VkCommandBuffer cmdBuffer);
 	void buildBLASes(); // Build or Update
-	void buildClusteredBLASes(); // Build or Update
-	void buildTLAS();
+	void buildClusteredBLASes(VkCommandBuffer cmdBuffer); // Build or Update
+	void buildTLAS(VkCommandBuffer cmdBuffer);
 
 	void createShaderBindingTables();
 	void createRayTracingPipeline();
@@ -134,7 +134,7 @@ public:
 	void createUniformBuffer();
 
 	void createComputePipeline();
-	void dispatchClusteredBlasUpdate();
+	void dispatchClusteredBlasUpdate(VkCommandBuffer cmdBuffer);
 
 	void handleResize();
 
