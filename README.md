@@ -21,7 +21,7 @@ You can view the original README [here](https://github.com/SaschaWillems/Vulkan#
 
 - [Ray Tracing Basic](MyDevs/myRaytracingBasic/) - Basic Ray Tracing similar to Sascha's implementation
 
-- [My Raytracing Little Advanced](MyDevs/myRayTracingLittleAdvanced//) - Multi BLAS, Dynamic AS, Indirect Build,,,
+- [My Raytracing Little Advanced](MyDevs/myRayTracingLittleAdvanced//) - Multi BLAS, Dynamic AS, AnimationRT, Indirect Build,,,
 
     <img src="MyDevs/images/MultiBLAS.jpg" height="256px">
     

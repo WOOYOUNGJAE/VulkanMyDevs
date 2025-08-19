@@ -1,9 +1,10 @@
 # My Raytracing Little Advanced
 ---
 ## Table of Contents
-+ [Multi BLAS](#1.-multi-blas-link)
++ [Multi BLAS](#1-multi-blas-link)
 + [Dynamic Acceleration Structure](#2-dynamic-acceleration-structure-link)
-+ [Build Acceleration Structure Indirect(deprecated)](#3-build-acceleration-structure-indirectdeprecated)
++ [Skeletal Mesh Animation RT](#3-Skeletal-Mesh-Animation-Raytracing-link)
++ [Build Acceleration Structure Indirect(deprecated)](#4-build-acceleration-structure-indirectdeprecated)
 + [Others](#others)
 
 
@@ -69,7 +70,7 @@ void findTriangle()
 
 # 2. Dynamic Acceleration Structure [(link)](./myDynamicAccelerationStructure.cpp)
 
-[MyMultiBLAS](#2.-My-Dynamic-Acceleration-Structure)  베이스에서 확장
+[MyMultiBLAS](#1-multi-blas-link)  베이스에서 확장
 
 Keyword : dynamic acceleration structure
 ## Description
@@ -82,7 +83,33 @@ Keyword : dynamic acceleration structure
 	- update일 경우 vkCmdBuildAccelerationStructuresKHR만
 
 
-# 3. Build Acceleration Structure Indirect(deprecated)
+# 3. Skeletal Mesh Animation Raytracing [(link)](./mySkeletalAnimationRT.cpp)
+<img src="../images/SkeletalAnimationRT.jpg" height="256px">
+
+Keyword : skeletal mesh, skinning, animation, compute shader
+## Description
+### compute skinning [(anim.comp)](../../shaders/glsl/myRayTracingLittleAdvanced/anim.comp)
+compute shader로 animation 변환을 하는 것은 실제 vertex data에 write를 하기 때문에 최초의 상태(T pose)가 유지되어야 한다.\
+따라서 다음 두 가지 vertex buffer을 사용한다.
+1. compute shader의 input으로 활용할 "T pose Vertex Buffer"
+2. compute shader의 output으로 활용할 "Deforming Vertex Buffer"
+
+이후 변환된 Deforming Vertex Buffer을 acceleration sturcture build의 input에 입력한다.
+```c++
+if (isDeformable)
+	vertexBuffer = model.deformingVertices.buffer;
+else
+	vertexBuffer = model.vertices.buffer;
+// ....
+asGeometry.geometry.triangles.vertexData = getBufferDeviceAddress(vertexBuffer);
+```
+
+
+
+
+
+
+# 4. Build Acceleration Structure Indirect(deprecated)
 [MyDynamicAccelerationStructure](#2.-My-Dynamic-Acceleration-Structure) 베이스에서 확장
 
 keyword : vkCmdBuildAccelerationStructuresIndirectKHR
