@@ -122,12 +122,10 @@ public:
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/
 	// Only Called once after model loaded
-	void initBLASes();
 	void initClusteredBLASes();
 	void initTLAS();
 
 	void buildCLASes(VkCommandBuffer cmdBuffer);
-	void buildBLASes(); // Build or Update
 	void buildClusteredBLASes(VkCommandBuffer cmdBuffer); // Build or Update
 	void buildTLAS(VkCommandBuffer cmdBuffer);
 

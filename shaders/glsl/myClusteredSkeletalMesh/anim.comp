@@ -56,10 +56,10 @@ void main()
 
 	JointData jointData = uniformData.jointData;
 	mat4 skinMat = 
-		vertexWeight0.x * jointData.jointMatrices[int(vertexJoint0.x)] +
+		 jointData.matrix * (vertexWeight0.x * jointData.jointMatrices[int(vertexJoint0.x)] +
 		vertexWeight0.y * jointData.jointMatrices[int(vertexJoint0.y)] +
 		vertexWeight0.z * jointData.jointMatrices[int(vertexJoint0.z)] +
-		vertexWeight0.w * jointData.jointMatrices[int(vertexJoint0.w)];
+		vertexWeight0.w * jointData.jointMatrices[int(vertexJoint0.w)]);
 
 	vec3 deformedPos = (skinMat * vertexPos).xyz;
 	vec3 deformedNorm = (skinMat * vertexNorm).xyz;
