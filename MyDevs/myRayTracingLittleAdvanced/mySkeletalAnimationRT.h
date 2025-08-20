@@ -2,7 +2,11 @@
 #include "myAnimComputePass.h"
 #include "myRayTracingLittleAdvanced.h"
 
-
+/**
+ * If Timer On, build "build accel" command each frame in render() func
+ */
+#define ACCEL_BUILD_TIMER_ON 1
+#define MEASURE_FRAME_COUNT 3000
 class MySkeletalAnimationRT : public MyVulkanRTBase
 {
 private:
@@ -75,7 +79,10 @@ public: // TLAS
 	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
 
 	myglTF::ModelRT model;
-
+#if ACCEL_BUILD_TIMER_ON
+private:
+	std::vector<std::unique_ptr<GPUTimer>> gpuTimers;
+#endif
 public:
 	MySkeletalAnimationRT();
 	~MySkeletalAnimationRT() override;

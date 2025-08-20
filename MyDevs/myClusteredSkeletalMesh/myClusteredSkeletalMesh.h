@@ -17,6 +17,13 @@
 #include "myBlasUpdateCompute.h"
 #include "myglTFModel.h"
 
+
+/**
+ * If Timer On, build "build accel" command each frame in render() func
+ */
+#define ACCEL_BUILD_TIMER_ON 1
+#define MEASURE_FRAME_COUNT 3000
+
 class MyClusteredSkeletalMesh : public MyVulkanRTBase
 {
 private: // NV Cluster Acceleration Structure extensions
@@ -109,7 +116,10 @@ public: // CLAS
 
 
 	myglTF::ModelRT model;
-
+#if ACCEL_BUILD_TIMER_ON
+private:
+	std::vector<std::unique_ptr<GPUTimer>> gpuTimers;
+#endif
 public:
 	MyClusteredSkeletalMesh();
 	~MyClusteredSkeletalMesh() override;

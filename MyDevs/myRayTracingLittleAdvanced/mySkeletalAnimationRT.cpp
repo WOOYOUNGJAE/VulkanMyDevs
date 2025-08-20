@@ -738,9 +738,8 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 	for (int32_t i = 0; i < drawCmdBuffers.size(); ++i)
 	{
 		VkCommandBuffer cmdBuffer = drawCmdBuffers[i];
-
 		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
-
+#if !ACCEL_BUILD_TIMER_ON
 		animComputePass->buildCommandBuffer(cmdBuffer);
 		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
 		vkCmdPipelineBarrier(
@@ -760,7 +759,7 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 
 			buildTLAS(cmdBuffer);
 		}
-
+#endif
 		/*
 			Dispatch the ray tracing commands
 		*/
@@ -920,6 +919,14 @@ void MySkeletalAnimationRT::prepare()
 	createShaderBindingTables();
 	createDescriptorSets();
 	buildCommandBuffers();
+#if ACCEL_BUILD_TIMER_ON
+	for (uint32_t i = 0; i < 2; ++i)
+	{
+		gpuTimers.push_back(std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod));
+		auto& refTimer = gpuTimers.back();
+		refTimer->init();
+	}
+#endif
 	prepared = true;
 }
 
@@ -953,6 +960,52 @@ void MySkeletalAnimationRT::render()
 
 	updateUniformBuffers();
 	uniformData.frame = -1;
+
+#if ACCEL_BUILD_TIMER_ON
+	static float accBuildBLASTime = 0.f;
+	static float accBuildTLASTime = 0.f;
+	VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	animComputePass->buildCommandBuffer(cmdBuffer);
+
+	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
+	vkCmdPipelineBarrier(
+		cmdBuffer,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+		VK_FLAGS_NONE,
+		1, &memBarrier,
+		0, nullptr,
+		0, nullptr);
+
+	// build or update AS
+	{
+		gpuTimers[0]->reset(cmdBuffer);
+		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
+		buildBLASes(cmdBuffer);
+		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
+
+		accelBuildPipelineBarrier(cmdBuffer);
+
+		gpuTimers[1]->reset(cmdBuffer);
+		gpuTimers[1]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
+		buildTLAS(cmdBuffer);
+		gpuTimers[1]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
+	}
+	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
+	accBuildBLASTime += gpuTimers[0]->timerResult();
+	accBuildTLASTime += gpuTimers[1]->timerResult();
+	static uint32_t frameCount = 0;
+	++frameCount;
+	if (frameCount == MEASURE_FRAME_COUNT)
+	{
+		float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
+		float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
+		std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
+		std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
+		std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
+		std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
+	}
+#endif
 
 	draw();
 }

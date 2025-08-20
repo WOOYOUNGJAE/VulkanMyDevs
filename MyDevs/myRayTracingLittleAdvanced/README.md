@@ -125,9 +125,9 @@ Legacy code - [myBuildASIndirect.cpp](myBuildASIndirect.cpp)
 /**
  * @example
  * gpuTimer.reset()
- * gpuTimer.record()
+ * gpuTimer.record(, 0)
  * "Record On CommandBuffer Things"
- * gpuTimer.record()
+ * gpuTimer.record(, 1)
  * float deltaTime = gpuTimer.timerResult()
  */	
 class GPUTimer // in MyVulkanRTBase.h
