@@ -44,6 +44,16 @@ layout(binding = 6, set = 0) uniform sampler2D textures[];
 
 void main()
 {
+	uint clusterID = gl_PrimitiveID ;
+
+	uint h = clusterID * 1664525u + 1013904223u;
+	hitValue = vec3(
+	    float((h >>  0) & 0xFF),
+	    float((h >>  8) & 0xFF),
+	    float((h >> 16) & 0xFF)
+	) / 255.0 * 0.3 + 0.5;
+	return;
+
 	Triangle tri = unpackTriangle(gl_PrimitiveID, 64);
 	hitValue = vec3(tri.normal);
 

@@ -737,24 +737,46 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 
 	for (int32_t i = 0; i < drawCmdBuffers.size(); ++i)
 	{
-		VK_CHECK_RESULT(vkBeginCommandBuffer(drawCmdBuffers[i], &cmdBufInfo));
+		VkCommandBuffer cmdBuffer = drawCmdBuffers[i];
+
+		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
+
+		animComputePass->buildCommandBuffer(cmdBuffer);
+		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
+		vkCmdPipelineBarrier(
+			cmdBuffer,
+			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			VK_FLAGS_NONE,
+			1, &memBarrier,
+			0, nullptr,
+			0, nullptr);
+
+		// build or update AS
+		{
+			buildBLASes(cmdBuffer);
+
+			accelBuildPipelineBarrier(cmdBuffer);
+
+			buildTLAS(cmdBuffer);
+		}
 
 		/*
 			Dispatch the ray tracing commands
 		*/
-		vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
+		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
 
 		// push constant - vertex/index device addressvkCmdPushConstants(
-		vkCmdPushConstants(drawCmdBuffers[i], rtPipelineLayout,
+		vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
 			VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
 			0, sizeof(PushConstantData), &pushConstantData
 		);
 
-		vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
+		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
 
 		VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
 		vkCmdTraceRaysKHR(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			&shaderBindingTables.raygen.stridedDeviceAddressRegion,
 			&shaderBindingTables.miss.stridedDeviceAddressRegion,
 			&shaderBindingTables.hit.stridedDeviceAddressRegion,
@@ -769,7 +791,7 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 
 		// Prepare current swap chain image as transfer destination
 		vks::tools::setImageLayout(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			swapChain.images[i],
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -777,7 +799,7 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 
 		// Prepare ray tracing output image as transfer source
 		vks::tools::setImageLayout(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			storageImage.image,
 			VK_IMAGE_LAYOUT_GENERAL,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -789,11 +811,11 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 		copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
 		copyRegion.dstOffset = { 0, 0, 0 };
 		copyRegion.extent = { width, height, 1 };
-		vkCmdCopyImage(drawCmdBuffers[i], storageImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapChain.images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+		vkCmdCopyImage(cmdBuffer, storageImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swapChain.images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
 		// Transition swap chain image back for presentation
 		vks::tools::setImageLayout(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			swapChain.images[i],
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -801,15 +823,15 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 
 		// Transition ray tracing output image back to general layout
 		vks::tools::setImageLayout(
-			drawCmdBuffers[i],
+			cmdBuffer,
 			storageImage.image,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			VK_IMAGE_LAYOUT_GENERAL,
 			subresourceRange);
 
-		drawUI(drawCmdBuffers[i], frameBuffers[i]);
+		drawUI(cmdBuffer, frameBuffers[i]);
 
-		VK_CHECK_RESULT(vkEndCommandBuffer(drawCmdBuffers[i]));
+		VK_CHECK_RESULT(vkEndCommandBuffer(cmdBuffer));
 	}
 }
 
@@ -932,18 +954,5 @@ void MySkeletalAnimationRT::render()
 	updateUniformBuffers();
 	uniformData.frame = -1;
 
-	// build AS
-	{
-		VkCommandBuffer updateCmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-
-		animComputePass->buildCommandBuffer(updateCmdBuffer);
-
-		buildBLASes(updateCmdBuffer);
-		accelBuildPipelineBarrier(updateCmdBuffer);
-		buildTLAS(updateCmdBuffer);
-
-		buildTLAS(updateCmdBuffer);
-		vulkanDevice->flushCommandBuffer(updateCmdBuffer, queue);
-	}
 	draw();
 }
