@@ -1,48 +1,30 @@
-# My Cluster Acceleration Structure
+# My Clustered Skeletal Mesh
 ---
 ## Table of Contents
-+ [Cluster Acceleration Structure](#1.-Cluster-Acceleration-Structure-link)
++ [Clustered Skeletal Mesh](#1.-Clustered-Skeletal-Mesh-link)
 
-Keyword : Cluster Acceleration Structure
+Keyword : Cluster Acceleration Structure, Skeletal Mesh, Skinning, Raytracing
 
-# 1. Cluster Acceleration Structure [(link)](./myClusterAccelerationStructureNV.cpp)
-<img src="../images/MyClusterAccelerationStructure.jpg" height="256px">
-
-
+# 1. Clustered Skeletal Mesh [(link)](./myClusteredSkeletalMesh.cpp)
+<img src="../images/ClusteredSkeletalAnimationRT.jpg" height="256px">
 
 ## Description
+[myClusterAccelerationStructureNV](../myClusterAccelerationStructureNV/myClusterAccelerationStructureNV.cpp) 와 [mySkeletalAnimationRT](../myRayTracingLittleAdvanced/mySkeletalAnimationRT.cpp) 의 결합 프로젝트.\
+skeletal mesh의 gltf 모델을 Cluster Acceleration Structure 기반 가속 구조로 빌드를 하고 Compute Shader로 애니메이션을 수행한다.
 
+## 1. Applying Node Transform
+[myClusterAccelerationStructureNV README](../myClusterAccelerationStructureNV/README.md) 에서 언급한 바와 같이 CLAS를 빌드할 때 transform을 입력할 수 없기 때문에 node-transform을 vertex에 선반영 시켜야 한다.
 
-# Others
-## 1. CLAS Transform
-### 기존의 gltf Raytracing 같은 경우
-1. node의 transfrom을 vertex position에 선반영할지
-2. acceleration structure을 빌드할 때 input transform matrix에 입력할지
+Static Object 같은 경우는 최초 gltf 로딩을 할 때 vertex에 node-transform을 반영하면 되지만,\
+매 프레임 vertex의 정보가 변경되어야 하는 애니메이션 Object같은 경우 Compute Shader내에서 node-transform을 곱하여 적용한다.
 
-두 가지 옵션이 있었다. 그러나
-
-### CLAS 로 구성되는 Clustered BLAS 같은 경우
-Geometry의 node 계층을 고려하지 않고 임의의 cluster로 분할하였기 때문에 어떤 cluster에 어떤 node matrix를 적용할지 알 수 없다.\
-더군다나 cluster build input 구조체 역시 trasnform 입력 변수가 없다.
+### [anim.comp code](../../shaders/glsl/myClusteredSkeletalMesh/anim.comp)
 ```c++
-typedef struct VkClusterAccelerationStructureBuildTriangleClusterInfoNV {
-    uint32_t                                                         clusterID;
-    VkClusterAccelerationStructureClusterFlagsNV                     clusterFlags;
-    uint32_t                                                         triangleCount:9;
-    uint32_t                                                         vertexCount:9;
-    uint32_t                                                         positionTruncateBitCount:6;
-    uint32_t                                                         indexType:4;
-    uint32_t                                                         opacityMicromapIndexType:4;
-    VkClusterAccelerationStructureGeometryIndexAndGeometryFlagsNV    baseGeometryIndexAndGeometryFlags;
-    uint16_t                                                         indexBufferStride;
-    uint16_t                                                         vertexBufferStride;
-    uint16_t                                                         geometryIndexAndFlagsBufferStride;
-    uint16_t                                                         opacityMicromapIndexBufferStride;
-    VkDeviceAddress                                                  indexBuffer;
-    VkDeviceAddress                                                  vertexBuffer;
-    VkDeviceAddress                                                  geometryIndexAndFlagsBuffer;
-    VkDeviceAddress                                                  opacityMicromapArray;
-    VkDeviceAddress                                                  opacityMicromapIndexBuffer;
-} VkClusterAccelerationStructureBuildTriangleClusterInfoNV;
+mat4 skinMat = 
+    jointData.matrix * (vertexWeight0.x * jointData.jointMatrices[int(vertexJoint0.x)] +
+    vertexWeight0.y * jointData.jointMatrices[int(vertexJoint0.y)] +
+    vertexWeight0.z * jointData.jointMatrices[int(vertexJoint0.z)] +
+    vertexWeight0.w * jointData.jointMatrices[int(vertexJoint0.w)]);
+
+vec3 deformedPos = (skinMat * vertexPos).xyz;
 ```
-따라서 각 vertex에 gltf node matrix를 선반영하는 것이 불가피하다.

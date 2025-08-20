@@ -12,8 +12,6 @@ Keyword : Cluster Acceleration Structure
 
 ## Description
 
-
-# Others
 ## 1. CLAS Transform
 ### 기존의 gltf Raytracing 같은 경우
 1. node의 transfrom을 vertex position에 선반영할지
