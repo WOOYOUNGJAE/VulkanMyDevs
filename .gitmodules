@@ -1,12 +1,12 @@
 [submodule "external/glm"]
 	path = external/glm
 	url = https://github.com/g-truc/glm
-[submodule "external/meshoptimizer"]
-	path = external/meshoptimizer
-	url = https://github.com/zeux/meshoptimizer.git
 [submodule "external/nv_cluster_builder"]
 	path = external/nv_cluster_builder
 	url = https://github.com/nvpro-samples/nv_cluster_builder.git
 [submodule "assets"]
 	path = assets
 	url = https://github.com/WOOYOUNGJAE/Vulkan-Assets-Sascha.git
+[submodule "external/meshoptimizer"]
+	path = external/meshoptimizer
+	url = https://github.com/WOOYOUNGJAE/meshoptimizer.git
