@@ -39,6 +39,8 @@ vec3 deformedPos = (skinMat * vertexPos).xyz;
 | **Average TLAS Build Time** | 0.013284 (ms) | 0.0132442 (ms) |
 | **Average Total AS Build Time** | 0.257088 (ms) | 0.146307 (ms) |
 
+<small>Num Vertices: 3273</small>\
+<small>Num Triangles: 4612</small>\
 <small>Measured Frame Count: 3000</small>
 
 - [myRayTracingLittleAdvanced](../myRayTracingLittleAdvanced) 에 추가한 [GPU Timer](../myRayTracingLittleAdvanced//README.md#1-gpu-timer-code)을 활용하여 Acceleration Structure 빌드 커맨드 수행 시간 측정
