@@ -2228,7 +2228,9 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 					vert->tangent = bufferTangents ? glm::vec4(glm::make_vec4(&bufferTangents[v * 4])) : glm::vec4(0.0f);
 					if (hasSkin)
 					{
-						static_cast<VertexSkinning*>(vert)->joint0 = glm::vec4(glm::make_vec4(&bufferJoints[v * 4]));
+						//static_cast<VertexSkinning*>(vert)->joint0 = glm::vec4(glm::make_vec4(&bufferJoints[v * 4]));
+						uint8_t* ptr = (uint8_t*)bufferJoints;
+						static_cast<VertexSkinning*>(vert)->joint0 = glm::vec4(glm::make_vec4(&ptr[v * 4]));
 						static_cast<VertexSkinning*>(vert)->weight0 = glm::vec4(glm::make_vec4(&bufferWeights[v * 4]));
 					}
 					vertices.push_back(vert);
@@ -2561,16 +2563,22 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			const tinygltf::Node node = gltfModel.nodes[scene.nodes[i]];
 			loadNode(nullptr, node, scene.nodes[i], gltfModel, tempIndicesCPU, tempVerticesCPU, scale);
 		}
+		loadSkins(gltfModel);
 		if (gltfModel.animations.size() > 0) {
 			loadAnimations(gltfModel);
 		}
 
-		loadSkins(gltfModel);
 		for (auto node : linearNodes) {
 			// Assign skins
 			if (node->skinIndex > -1) {
 				node->skin = skins[node->skinIndex];
 			}
+			//// Initial pose
+			//if (preTransform == false && node->mesh) {
+			//	node->update();
+			//}
+		}
+		for (auto node : linearNodes) {
 			// Initial pose
 			if (preTransform == false && node->mesh) {
 				node->update();
@@ -2794,7 +2802,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 				{
 					const Material& material = primitive->material;
 					MeshPrimitive primitiveRT{};
-					primitiveRT.textureIndexBaseColor = static_cast<int32_t>(material.baseColorTexture->index);
+					primitiveRT.textureIndexBaseColor = material.baseColorTexture ? static_cast<int32_t>(material.baseColorTexture->index) : -1;
 					primitiveRT.textureIndexOcclusion = primitive->material.occlusionTexture ? material.occlusionTexture->index : -1;
 					primitiveRT.vertexStartOffsetInMesh = vertexStartOffsetInMesh;
 					primitiveRT.IndexStartOffsetInMesh = indexStartOffsetInMesh;

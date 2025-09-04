@@ -15,7 +15,14 @@ void MyAnimComputePass::createDescriptorSets(myglTF::ModelRT& model)
 		{
 			if (node->mesh)
 			{
-				modelDescriptorSets.push_back(node->mesh->uniformBuffer.descriptorSet);
+				DispatchSet dispatchSet{};
+				dispatchSet.descriptorSet = node->mesh->uniformBuffer.descriptorSet;
+				dispatchSet.vertexStartOffset = node->mesh->primitives[0]->firstVertex;
+				for (const auto& primitive : node->mesh->primitives)
+				{
+					dispatchSet.numVertices += primitive->vertexCount;
+				}
+				modelDispatchSets.push_back(dispatchSet);
 			}
 
 		}
@@ -108,23 +115,31 @@ void MyAnimComputePass::createPipeline(const std::string& shaderFileName)
 
 void MyAnimComputePass::buildCommandBuffer(VkCommandBuffer commandBuffer)
 {
-
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-	vkCmdPushConstants(commandBuffer, pipelineLayout,
-		VK_SHADER_STAGE_COMPUTE_BIT,
-		0, sizeof(PushConstantData), &pushConstantData
-	);
 
 	// bind descriptorset 1
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 1, 1, &computeDescriptorSet, 0, 0);
-	for (auto& modelDescriptorSet : modelDescriptorSets)
-	{
-		// bind descriptorset 0
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &modelDescriptorSet, 0, 0);
 
-		vkCmdDispatch(commandBuffer, numTotalVertices, 1, 1);
-		
+	for (const auto& dispatchSet : modelDispatchSets)
+	{
+		pushConstantData.vertexStartOffset = dispatchSet.vertexStartOffset;
+		vkCmdPushConstants(commandBuffer, pipelineLayout,
+			VK_SHADER_STAGE_COMPUTE_BIT,
+			0, sizeof(PushConstantData), &pushConstantData
+		);
+
+		// bind descriptorset 0
+
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &dispatchSet.descriptorSet, 0, 0);
+
+		vkCmdDispatch(commandBuffer, (dispatchSet.numVertices), 1, 1);
 	}
+
+
+	//auto dispatchSet = modelDispatchSets[4];
+	//vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &dispatchSet.descriptorSet, 0, 0);
+
+	//vkCmdDispatch(commandBuffer, (dispatchSet.numVertices), 1, 1);
 
 	//VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
 

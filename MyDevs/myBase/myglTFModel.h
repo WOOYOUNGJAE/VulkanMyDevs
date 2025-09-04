@@ -173,7 +173,7 @@ namespace myglTF
 
 		struct UniformBlock {
 			glm::mat4 matrix;
-			glm::mat4 jointMatrix[64]{};
+			glm::mat4 jointMatrix[64*4]{};
 			float jointcount{ 0 };
 		} uniformBlock;
 
@@ -200,13 +200,13 @@ namespace myglTF
 		glTF node
 	*/
 	struct Node {
-		Node* parent;
+		Node* parent = nullptr;
 		uint32_t index;
 		std::vector<Node*> children;
 		glm::mat4 matrix;
 		std::string name;
-		Mesh* mesh;
-		Skin* skin;
+		Mesh* mesh = nullptr;
+		Skin* skin = nullptr;
 		int32_t skinIndex = -1;
 		glm::vec3 translation{};
 		glm::vec3 scale{ 1.0f };

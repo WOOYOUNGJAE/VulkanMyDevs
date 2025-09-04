@@ -5,7 +5,7 @@
 /**
  * If Timer On, build "build accel" command each frame in render() func
  */
-#define ACCEL_BUILD_TIMER_ON 1
+#define ACCEL_BUILD_TIMER_ON 0
 #define MEASURE_FRAME_COUNT 3000
 class MySkeletalAnimationRT : public MyVulkanRTBase
 {

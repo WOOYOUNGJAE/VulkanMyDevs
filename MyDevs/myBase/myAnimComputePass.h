@@ -17,12 +17,20 @@ public:
 	struct PushConstantData
 	{
 		uint64_t vertexBufferDeviceAddress = 0; // t-pose
-		uint64_t jointDataBufferDeviceAddress = 0; // joint data (matrices, num joints,,,)
+		uint32_t vertexStartOffset = 0; // from total scene vertices
 	}pushConstantData;
 
 	VkDescriptorSetLayout modelDescriptorSetLayoutUbo{ VK_NULL_HANDLE };
-	std::vector<VkDescriptorSet> modelDescriptorSets;
-
+	// dispatch per mesh
+	struct DispatchSet
+	{
+		uint32_t vertexStartOffset = 0; // from total scene vertices
+		VkDescriptorSet descriptorSet;
+		uint32_t numVertices;
+	};
+	std::vector<DispatchSet> modelDispatchSets;
+	//std::vector<VkDescriptorSet> modelDescriptorSets;
+	//std::vector<uint32_t> verticesNums;
 	uint32_t numTotalVertices{ 0 };
 
 public:
