@@ -120,19 +120,34 @@ void MyAnimComputePass::buildCommandBuffer(VkCommandBuffer commandBuffer)
 	// bind descriptorset 1
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 1, 1, &computeDescriptorSet, 0, 0);
 
-	for (const auto& dispatchSet : modelDispatchSets)
+
+	for (auto iterDispatchSet = modelDispatchSets.begin(); iterDispatchSet != modelDispatchSets.end(); ++iterDispatchSet)
 	{
-		pushConstantData.vertexStartOffset = dispatchSet.vertexStartOffset;
+		pushConstantData.vertexStartOffset = iterDispatchSet->vertexStartOffset;
 		vkCmdPushConstants(commandBuffer, pipelineLayout,
 			VK_SHADER_STAGE_COMPUTE_BIT,
 			0, sizeof(PushConstantData), &pushConstantData
 		);
 
 		// bind descriptorset 0
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &iterDispatchSet->descriptorSet, 0, 0);
 
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &dispatchSet.descriptorSet, 0, 0);
+		vkCmdDispatch(commandBuffer, (iterDispatchSet->numVertices), 1, 1);
 
-		vkCmdDispatch(commandBuffer, (dispatchSet.numVertices), 1, 1);
+		// If not last element -> memory barrier
+		if (iterDispatchSet != modelDispatchSets.end() - 1)
+		{
+			VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT };
+			vkCmdPipelineBarrier(
+				commandBuffer,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				VK_FLAGS_NONE,
+				1, &memBarrier,
+				0, nullptr,
+				0, nullptr);			
+		}
+		
 	}
 
 

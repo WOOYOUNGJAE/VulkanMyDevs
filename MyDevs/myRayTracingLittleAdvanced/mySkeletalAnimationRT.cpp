@@ -165,7 +165,7 @@ void MySkeletalAnimationRT::initBLASes()
 
 					vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(vertexBuffer);// +primitive->firstVertex * sizeof(vkglTF::Vertex);
 					indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.indices.buffer) + primitive->firstIndex * sizeof(uint32_t);
-					transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + nodeIdx * sizeof(VkTransformMatrixKHR);
+					transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + nodeIdx++ * sizeof(VkTransformMatrixKHR);
 
 					VkAccelerationStructureGeometryKHR asGeometry{}; // per gltf primitive
 					asGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -954,7 +954,11 @@ void MySkeletalAnimationRT::render()
 		{
 			accTime = 0.f;
 		}
-		model.updateAnimation(0, animationSpeed * accTime);
+		// update all animations, ALl skeletal mesh should have a single animation.
+		for (uint32_t animIdx = 0; animIdx < model.animations.size(); ++animIdx)
+		{
+			model.updateAnimation(animIdx, animationSpeed * accTime);
+		}
 		
 	}
 

@@ -2826,8 +2826,8 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 				{
 					const Material& material = primitive->material;
 					MeshPrimitive primitiveRT{};
-					primitiveRT.textureIndexBaseColor = static_cast<int32_t>(material.baseColorTexture->index);
-					primitiveRT.textureIndexOcclusion = primitive->material.occlusionTexture ? material.occlusionTexture->index : -1;
+					primitiveRT.textureIndexBaseColor = material.baseColorTexture ? static_cast<int32_t>(material.baseColorTexture->index) : -1;
+					primitiveRT.textureIndexOcclusion = material.occlusionTexture ? material.occlusionTexture->index : -1;
 					primitiveRT.vertexStartOffsetInMesh = vertexStartOffsetInMesh;
 					primitiveRT.IndexStartOffsetInMesh = indexStartOffsetInMesh;
 					tempPrimitives.push_back(primitiveRT); ++primitiveStartOffset;
