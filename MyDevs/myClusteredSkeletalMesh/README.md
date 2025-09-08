@@ -39,9 +39,11 @@ vec3 deformedPos = (worldMat * skinMat * vertexPos).xyz;
 | **Average BLAS Build Time** | 0.243804 (ms) | 0.0581301 (ms) |
 | **Average TLAS Build Time** | 0.013284 (ms) | 0.0132442 (ms) |
 | **Average Total AS Build Time** | 0.257088 (ms) | 0.146307 (ms) |
+| **Average Tracing Time** | 0.24183 (ms) | 0.231211 (ms) |
+| **Average FPS** | 42.53 fps (23.51 ms)  | 44.83 fps (22.31 ms) |
 
-<small>Num Vertices: 3273</small>\
-<small>Num Triangles: 4612</small>\
-<small>Measured Frame Count: 3000</small>
+<small>**Num Vertices**: 15,716(Model_1) + 9,285(Model_2) + 6,109(Model_3) = **31,110**</small>\
+<small>**Num Triangles**: 31,292(Model_1) + 17,916(Model_2) + 12,174(Model_3) = **61,382**</small>\
+<small>**Measured Frame Count**: **3000**</small>
 
 - [myRayTracingLittleAdvanced](../myRayTracingLittleAdvanced) 에 추가한 [GPU Timer](../myRayTracingLittleAdvanced//README.md#1-gpu-timer-code)을 활용하여 Acceleration Structure 빌드 커맨드 수행 시간 측정
