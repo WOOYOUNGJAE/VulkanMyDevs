@@ -12,7 +12,6 @@
 */
 
 #include "myDynamicAccelerationStructure.h"
-#define FORCE_STATIC_SCENE 0
 
 MyDynamicAccelerationStructure::MyDynamicAccelerationStructure()
 {

@@ -15,7 +15,6 @@
 
 #include "myClusteredSkeletalMesh.h"
 #include "myIncludesCPUGPU.h"
-#define FORCE_STATIC_SCENE 0
 myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::MakeClusters /*| myglTF::FileLoadingFlags::PreTransformVertices*/);
 
 
@@ -769,6 +768,7 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 	{
 		VkCommandBuffer cmdBuffer = drawCmdBuffers[i];
 		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
+
 #if !ACCEL_BUILD_TIMER_ON
 		animComputePass->buildCommandBuffer(cmdBuffer);
 		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
@@ -829,6 +829,7 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 		}
 #endif
 
+#if !TRACE_TIMER_ON
 		/*
 			Dispatch the ray tracing commands
 		*/
@@ -852,6 +853,7 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 			width,
 			height,
 			1);
+#endif
 
 		/*
 			Copy ray tracing output to swap chain image
@@ -967,7 +969,7 @@ void MyClusteredSkeletalMesh::prepare()
 {
 	MyVulkanRTBase::prepare();
 
-#if ACCEL_BUILD_TIMER_ON
+#if MEASURE_MODE
 #if defined(_WIN32)
 	setupConsole("Vulkan example");
 #endif
@@ -1110,14 +1112,16 @@ void MyClusteredSkeletalMesh::render()
 
 	uniformData.frame = -1;
 
+#if MEASURE_MODE
+	VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr};
+	static uint32_t frameCount, accFPS = 0;
+	static float accBuildCLASTime, accBuildBLASTime, accBuildTLASTime = 0.f;
+	static float accTraceTime = 0.f;
 
 #if ACCEL_BUILD_TIMER_ON
-	static float accBuildCLASTime = 0.f;
-	static float accBuildBLASTime = 0.f;
-	static float accBuildTLASTime = 0.f;
-	VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 	animComputePass->buildCommandBuffer(cmdBuffer);
-	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
+	memBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
 	vkCmdPipelineBarrier(
 		cmdBuffer,
 		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -1183,26 +1187,59 @@ void MyClusteredSkeletalMesh::render()
 		buildTLAS(cmdBuffer);
 		gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 	}
+#endif
+
+#if TRACE_TIMER_ON
+	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
+
+	// push constant - vertex/index device addressvkCmdPushConstants(
+	vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
+		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
+		0, sizeof(PushConstantData), &pushConstantData
+	);
+
+	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
+
+	gpuTimer->reset(cmdBuffer);
+	gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0);
+	VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
+	vkCmdTraceRaysKHR(
+		cmdBuffer,
+		&shaderBindingTables.raygen.stridedDeviceAddressRegion,
+		&shaderBindingTables.miss.stridedDeviceAddressRegion,
+		&shaderBindingTables.hit.stridedDeviceAddressRegion,
+		&emptySbtEntry,
+		width,
+		height,
+		1);
+	gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 1);
+#endif
 	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
-	static uint32_t frameCount, accFPS = 0;
 	++frameCount;
 	if (frameCount >= WARMINGUP_FRAME)
 	{
+		accFPS += lastFPS;
 		accBuildCLASTime += gpuTimers[0]->timerResult();
 		accBuildBLASTime += gpuTimers[1]->timerResult();
 		accBuildTLASTime += gpuTimers[2]->timerResult();
-		accFPS += lastFPS;
+#if TRACE_TIMER_ON
+		accTraceTime += gpuTimer->timerResult();
+#endif
 		if (frameCount == MEASURE_FRAME_COUNT)
 		{
 			float clasAvg = accBuildCLASTime / MEASURE_FRAME_COUNT;
 			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
 			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
+			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
 			std::cout << "With CLAS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
 			std::cout << "Average CLAS Build Time = " << clasAvg << "(ms)\n";
 			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
 			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
 			std::cout << "Average Total AS Build Time = " << clasAvg + blasAvg + tlasAvg << "(ms)\n";
-			std::cout << "Average Total FPS = " << (float)accFPS / MEASURE_FRAME_COUNT << "(fps)\n";
+#if TRACE_TIMER_ON
+			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
+#endif
+			std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
 		}
 	}
 #endif

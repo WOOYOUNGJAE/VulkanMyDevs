@@ -15,7 +15,6 @@
 
 #include "myClusterAccelerationStructureNV.h"
 #include "myIncludesCPUGPU.h"
-#define FORCE_STATIC_SCENE 0
 myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::MakeClusters | myglTF::FileLoadingFlags::PreTransformVertices);
 
 

@@ -12,7 +12,6 @@
 */
 
 #include "MyBuildASIndirect.h"
-#define FORCE_STATIC_SCENE 0
 
 MyBuildASIndirect::MyBuildASIndirect()
 {
