@@ -14,6 +14,9 @@
 #include <chrono>
 #include <iomanip>
 
+#define WARMINGUP_FRAME 10
+#define MEASURE_FRAME_COUNT (WARMINGUP_FRAME + 3000)
+
 namespace vks
 {
 	class Benchmark {

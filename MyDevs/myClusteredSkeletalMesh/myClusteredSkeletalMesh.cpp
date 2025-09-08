@@ -16,7 +16,7 @@
 #include "myClusteredSkeletalMesh.h"
 #include "myIncludesCPUGPU.h"
 #define FORCE_STATIC_SCENE 0
-myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::MakeClusters);
+myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::MakeClusters /*| myglTF::FileLoadingFlags::PreTransformVertices*/);
 
 
 MyClusteredSkeletalMesh::MyClusteredSkeletalMesh()
@@ -24,8 +24,8 @@ MyClusteredSkeletalMesh::MyClusteredSkeletalMesh()
 	title = "MyClusteredSkeletalMesh";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
-	camera.setRotation(glm::vec3(0.0f, 0.0f, 0.0f));
-	camera.setTranslation(glm::vec3(0.0f, -0.1f, -1.0f));
+	camera.setRotation(glm::vec3(-10.0f, -3.0f, 0.0f));
+	camera.setTranslation(glm::vec3(0.0f, 1.3f, -3.7f));
 
 	enableExtensions();
 
@@ -801,6 +801,19 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 				0, nullptr,
 				0, nullptr);
 
+			// blas udpate dispatch commands
+			{
+				ClusteredBlasPushConstantData clusteredBlasPushConstants{};
+				uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
+				clusteredBlasPushConstants.sumCount = numClusteredBlases;
+				clusteredBlasPushConstants.instanceCount = numClusteredBlases * 1; // not instancing yet
+				clusteredBlasPushConstants.animated = 0;
+				clusteredBlasPushConstants.blasAddresses = clusteredBlasDstAddressBuffer.deviceAddress;
+				clusteredBlasPushConstants.clusteredGeometryDatas = model.geometryNodes.deviceAddress;
+				clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
+				blasUpdateComputePass->buildCommandBuffer(cmdBuffer, clusteredBlasPushConstants);
+			}
+
 			memBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
 			memBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
 			vkCmdPipelineBarrier(
@@ -937,9 +950,9 @@ void MyClusteredSkeletalMesh::loadAssets()
 	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 	//model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag | myglTF::FileLoadingFlags::PreTransformVertices);
 	//model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\MyHome\\Assets\\mixamo\\MocapGuy\\gltf\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 
-	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 
 void MyClusteredSkeletalMesh::enableExtensions()
@@ -953,6 +966,12 @@ void MyClusteredSkeletalMesh::enableExtensions()
 void MyClusteredSkeletalMesh::prepare()
 {
 	MyVulkanRTBase::prepare();
+
+#if ACCEL_BUILD_TIMER_ON
+#if defined(_WIN32)
+	setupConsole("Vulkan example");
+#endif
+#endif
 
 	vkGetClusterAccelerationStructureBuildSizesNV = reinterpret_cast<PFN_vkGetClusterAccelerationStructureBuildSizesNV>(vkGetDeviceProcAddr(device, "vkGetClusterAccelerationStructureBuildSizesNV"));
 	vkCmdBuildClusterAccelerationStructureIndirectNV = reinterpret_cast<PFN_vkCmdBuildClusterAccelerationStructureIndirectNV>(vkGetDeviceProcAddr(device, "vkCmdBuildClusterAccelerationStructureIndirectNV"));
@@ -1075,12 +1094,17 @@ void MyClusteredSkeletalMesh::render()
 		// Update Animation
 		static float accTime = 0.f; // accumulated Time
 		static float animationSpeed = 1.f;
-		accTime += frameTimer;
-		if (accTime > model.animations[0].end) // run only first animation
+
+		// update all animations, ALl skeletal mesh should have a single animation.
+		for (uint32_t animIdx = 0; animIdx < model.activeAnimations.size(); ++animIdx)
 		{
-			accTime = 0.f;
+			myglTF::ActiveAnimation& anim = model.activeAnimations[animIdx];
+			anim.accPlayTime += frameTimer;
+			if (anim.accPlayTime > anim.end)
+				anim.accPlayTime = 0.f;
+			model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 		}
-		model.updateAnimation(0, animationSpeed * accTime);
+
 	}
 	updateUniformBuffers();
 
@@ -1129,6 +1153,20 @@ void MyClusteredSkeletalMesh::render()
 			0, nullptr,
 			0, nullptr);
 
+		// blas udpate dispatch commands
+		{
+			ClusteredBlasPushConstantData clusteredBlasPushConstants{};
+			uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
+			clusteredBlasPushConstants.sumCount = numClusteredBlases;
+			clusteredBlasPushConstants.instanceCount = numClusteredBlases * 1; // not instancing yet
+			clusteredBlasPushConstants.animated = 0;
+			clusteredBlasPushConstants.blasAddresses = clusteredBlasDstAddressBuffer.deviceAddress;
+			clusteredBlasPushConstants.clusteredGeometryDatas = model.geometryNodes.deviceAddress;
+			clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
+			blasUpdateComputePass->buildCommandBuffer(cmdBuffer, clusteredBlasPushConstants);
+		}
+
+
 		memBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
 		memBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
 		vkCmdPipelineBarrier(
@@ -1146,24 +1184,28 @@ void MyClusteredSkeletalMesh::render()
 		gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 	}
 	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
-	accBuildCLASTime += gpuTimers[0]->timerResult();
-	accBuildBLASTime += gpuTimers[1]->timerResult();
-	accBuildTLASTime += gpuTimers[2]->timerResult();
-	static uint32_t frameCount = 0;
+	static uint32_t frameCount, accFPS = 0;
 	++frameCount;
-	if (frameCount == MEASURE_FRAME_COUNT)
+	if (frameCount >= WARMINGUP_FRAME)
 	{
-		float clasAvg = accBuildCLASTime / MEASURE_FRAME_COUNT;
-		float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
-		float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
-		std::cout << "With CLAS, Measured Frame Count: " << MEASURE_FRAME_COUNT  << "\n";
-		std::cout << "Average CLAS Build Time = " << clasAvg << "(ms)\n";
-		std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
-		std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
-		std::cout << "Average Total AS Build Time = " << clasAvg + blasAvg + tlasAvg << "(ms)\n";
+		accBuildCLASTime += gpuTimers[0]->timerResult();
+		accBuildBLASTime += gpuTimers[1]->timerResult();
+		accBuildTLASTime += gpuTimers[2]->timerResult();
+		accFPS += lastFPS;
+		if (frameCount == MEASURE_FRAME_COUNT)
+		{
+			float clasAvg = accBuildCLASTime / MEASURE_FRAME_COUNT;
+			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
+			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
+			std::cout << "With CLAS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
+			std::cout << "Average CLAS Build Time = " << clasAvg << "(ms)\n";
+			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
+			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
+			std::cout << "Average Total AS Build Time = " << clasAvg + blasAvg + tlasAvg << "(ms)\n";
+			std::cout << "Average Total FPS = " << (float)accFPS / MEASURE_FRAME_COUNT << "(fps)\n";
+		}
 	}
 #endif
-
 	draw();
 }
 

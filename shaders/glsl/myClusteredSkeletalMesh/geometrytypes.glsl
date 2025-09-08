@@ -20,8 +20,10 @@ struct Triangle {
 // Todo change to specialization
 #ifdef USE_SKINNING
 #define NUM_VEC4_FROM_VERTEX_SIZE 6
+#define VERTEX_SIZE 96
 #else
 #define NUM_VEC4_FROM_VERTEX_SIZE 4
+#define VERTEX_SIZE 64
 #endif
 
 

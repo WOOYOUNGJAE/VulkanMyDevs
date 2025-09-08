@@ -2568,6 +2568,11 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			loadAnimations(gltfModel);
 		}
 
+		for (auto& anim : animations)
+		{
+			activeAnimations.push_back(ActiveAnimation(anim));
+		}
+
 		for (auto node : linearNodes) {
 			// Assign skins
 			if (node->skinIndex > -1) {
@@ -2577,12 +2582,13 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			//if (preTransform == false && node->mesh) {
 			//	node->update();
 			//}
-		}
-		for (auto node : linearNodes) {
-			// Initial pose
-			if (preTransform == false && node->mesh) {
-				node->update();
+			for (auto node : linearNodes) {
+				// Initial pose
+				if (preTransform == false && node->mesh) {
+					node->update();
+				}
 			}
+
 		}
 	}
 	else {
@@ -2616,6 +2622,21 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 							vertex->color = primitive->material.baseColorFactor * vertex->color;
 						}
 					}
+				}
+			}
+		}
+		// precalculate vertex tranform && skinning
+		if (isSkinningModel)
+		{
+			for (Node* node : linearNodes)
+			{
+				// if not skin node
+				if (node->mesh == nullptr)
+				{
+					node->scale = glm::vec3(1.f);
+					node->rotation = glm::mat4(1.f);
+					node->translation = glm::vec3(0.f);
+					node->matrix = glm::mat4(1.f);
 				}
 			}
 		}
@@ -2938,7 +2959,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	descriptorPoolCI.pPoolSizes = poolSizes.data();
-	descriptorPoolCI.maxSets = uboCount + imageCount * 2;
+	descriptorPoolCI.maxSets = uboCount + imageCount * 2*2;
 	VK_CHECK_RESULT(vkCreateDescriptorPool(device->logicalDevice, &descriptorPoolCI, nullptr, &descriptorPool));
 
 	// Descriptors for per-node uniform buffers

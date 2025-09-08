@@ -28,8 +28,9 @@ mat4 skinMat =
     vertexWeight0.z * jointData.jointMatrices[int(vertexJoint0.z)] +
     vertexWeight0.w * jointData.jointMatrices[int(vertexJoint0.w)]);
 
-vec3 deformedPos = (skinMat * vertexPos).xyz;
+vec3 deformedPos = (worldMat * skinMat * vertexPos).xyz;
 ```
+기존의 BLAS의 경우 BLAS 빌드 할 때 Transform buffer을 입력하여 world space 변환이 가능했으나, Clustered BLAS는 Transform 입력을 지원하지 않기 때문에 compute shader에서 world 까지 변환을 마친 후 BVH 빌드를 해야 한다.
 
 ## 2. Compare AS Building Performance
 | 항목 | Traditional AS | With CLAS |

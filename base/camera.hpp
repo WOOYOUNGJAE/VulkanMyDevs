@@ -78,6 +78,12 @@ public:
 		bool down = false;
 	} keys;
 
+	void printPose()
+	{
+		printf("camera.setTranslation(glm::vec3(%f, %f, %f));\n", position.x, position.y, position.z);
+		printf("camera.setRotation(glm::vec3(%f, %f, %f));\n", rotation.x, rotation.y, rotation.z);
+	}
+
 	bool moving() const
 	{
 		return keys.left || keys.right || keys.up || keys.down;

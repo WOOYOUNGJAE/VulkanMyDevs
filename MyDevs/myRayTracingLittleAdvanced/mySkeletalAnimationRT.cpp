@@ -23,8 +23,8 @@ MySkeletalAnimationRT::MySkeletalAnimationRT()
 	title = "MySkeletalAnimationRT";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
-	camera.setRotation(glm::vec3(0.0f, 0.0f, 0.0f));
-	camera.setTranslation(glm::vec3(0.0f, -0.1f, -1.0f));
+	camera.setRotation(glm::vec3(-10.0f, -3.0f, 0.0f));
+	camera.setTranslation(glm::vec3(0.0f, 1.3f, -3.7f));
 
 	enableExtensions();
 
@@ -874,8 +874,10 @@ void MySkeletalAnimationRT::getEnabledFeatures()
 void MySkeletalAnimationRT::loadAssets()
 {
 	//model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Timmy.gltf", vulkanDevice, queue, g_loadingFlag);
 
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 
 void MySkeletalAnimationRT::enableExtensions()
@@ -889,7 +891,11 @@ void MySkeletalAnimationRT::enableExtensions()
 void MySkeletalAnimationRT::prepare()
 {
 	MyVulkanRTBase::prepare();
-
+#if ACCEL_BUILD_TIMER_ON
+#if defined(_WIN32)
+	setupConsole("Vulkan example");
+#endif
+#endif
 #if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
 	std::string batchPath = getShadersPath() + "MySkeletalAnimationRT/ShaderCompile.bat";
 	system(batchPath.c_str());
@@ -949,17 +955,17 @@ void MySkeletalAnimationRT::render()
 		// Update Animation
 		static float accTime = 0.f; // accumulated Time
 		static float animationSpeed = 1.f;
-		accTime += frameTimer;
-		if (accTime > model.animations[0].end) // run only first animation
-		{
-			accTime = 0.f;
-		}
+
 		// update all animations, ALl skeletal mesh should have a single animation.
-		for (uint32_t animIdx = 0; animIdx < model.animations.size(); ++animIdx)
+		for (uint32_t animIdx = 0; animIdx < model.activeAnimations.size(); ++animIdx)
 		{
-			model.updateAnimation(animIdx, animationSpeed * accTime);
+			myglTF::ActiveAnimation& anim = model.activeAnimations[animIdx];
+			anim.accPlayTime += frameTimer;
+			if (anim.accPlayTime > anim.end)
+				anim.accPlayTime = 0.f;
+			model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 		}
-		
+
 	}
 
 	updateUniformBuffers();
@@ -996,18 +1002,23 @@ void MySkeletalAnimationRT::render()
 		gpuTimers[1]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 	}
 	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
-	accBuildBLASTime += gpuTimers[0]->timerResult();
-	accBuildTLASTime += gpuTimers[1]->timerResult();
-	static uint32_t frameCount = 0;
+	static uint32_t frameCount, accFPS = 0;
 	++frameCount;
-	if (frameCount == MEASURE_FRAME_COUNT)
+	if (frameCount >= WARMINGUP_FRAME)
 	{
-		float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
-		float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
-		std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
-		std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
-		std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
-		std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
+		accBuildBLASTime += gpuTimers[0]->timerResult();
+		accBuildTLASTime += gpuTimers[1]->timerResult();
+		accFPS += lastFPS;
+		if (frameCount == MEASURE_FRAME_COUNT)
+		{
+			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
+			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
+			std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
+			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
+			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
+			std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
+			std::cout << "Average Total FPS = " << (float)accFPS / MEASURE_FRAME_COUNT << "(fps)\n";
+		}
 	}
 #endif
 

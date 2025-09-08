@@ -247,6 +247,18 @@ namespace myglTF
 		float start = std::numeric_limits<float>::max();
 		float end = std::numeric_limits<float>::min();
 	};
+	struct ActiveAnimation : Animation
+	{
+		ActiveAnimation(const Animation& rhs)
+		{
+			name = rhs.name;
+			samplers = rhs.samplers;
+			channels = rhs.channels;
+			start = rhs.start;
+			end = rhs.end;
+		}
+		float accPlayTime = 0.f;
+	};
 
 	/*
 		glTF default vertex layout with easy Vulkan mapping functions
@@ -426,6 +438,7 @@ namespace myglTF
 		std::vector<Texture> textures;
 		std::vector<Material> materials;
 		std::vector<Animation> animations;
+		std::vector<ActiveAnimation> activeAnimations;
 		std::vector<GeometryNodePerPrimitiveRT> geometryNodesPerPrimitive;
 		std::vector<GeometryNodePerMeshRT> geometryNodesPerMesh;
 
