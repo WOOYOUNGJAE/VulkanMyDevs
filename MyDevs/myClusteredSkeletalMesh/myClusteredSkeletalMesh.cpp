@@ -1246,6 +1246,16 @@ void MyClusteredSkeletalMesh::render()
 	draw();
 }
 
+void MyClusteredSkeletalMesh::OnUpdateUIOverlay(vks::UIOverlay* overlay)
+{
+	if (overlay->header("Visibility"))
+	{
+		(overlay->radioButton("Render Texture", (int*)& pushConstantData.renderMode, 0));
+		(overlay->radioButton("Render Triangle", (int*)&pushConstantData.renderMode, 1));
+		(overlay->radioButton("Render Cluster", (int*)&pushConstantData.renderMode, 2));
+	}
+}
+
 MyClusteredSkeletalMesh* myClusterAccelerationStructureNV;
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
