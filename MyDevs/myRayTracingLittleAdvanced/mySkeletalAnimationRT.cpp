@@ -251,7 +251,7 @@ void MySkeletalAnimationRT::initTLAS()
 		blasInstance.instanceCustomIndex = 0;
 		blasInstance.mask = 0xFF;
 		blasInstance.instanceShaderBindingTableRecordOffset = 0;
-		blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+		blasInstance.flags = 0;
 		blasInstance.accelerationStructureReference = blas.deviceAddress;
 		blasInstances.push_back(blasInstance);
 	}
@@ -262,26 +262,9 @@ void MySkeletalAnimationRT::initTLAS()
 		blasInstance.instanceCustomIndex = 0;
 		blasInstance.mask = 0xFF;
 		blasInstance.instanceShaderBindingTableRecordOffset = 0;
-		blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+		blasInstance.flags = 0;
 		blasInstance.accelerationStructureReference = blas.deviceAddress;
 		blasInstances.push_back(blasInstance);
-	}
-	// for clustered BLAS
-	{
-		VkAccelerationStructureInstanceKHR blasInstance{};
-		blasInstance.transform = transformMatrix;
-		blasInstance.instanceCustomIndex = 0;
-		blasInstance.mask = 0xFF;
-		blasInstance.instanceShaderBindingTableRecordOffset = 0;
-		blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-		blasInstance.flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
-
-		VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
-		accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-		//accelerationDeviceAddressInfo.accelerationStructure = clusteredBLASes.handle;
-		blasInstance.accelerationStructureReference = 0;// Upadated during compute shader 
-		for (uint32_t i = 0; i < model.clusteredGeometryNodes.size(); ++i)
-			blasInstances.push_back(blasInstance);
 	}
 	blasInstances.shrink_to_fit();
 
@@ -602,11 +585,6 @@ void MySkeletalAnimationRT::createRayTracingPipeline()
 	}
 
 
-	// for Cluster Acceleration Structure
-	VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV pipelineCLAS = {
-	VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CLUSTER_ACCELERATION_STRUCTURE_CREATE_INFO_NV };
-	pipelineCLAS.allowClusterAccelerationStructure = VK_TRUE;
-
 	/*
 		Create the ray tracing pipeline
 	*/
@@ -618,7 +596,6 @@ void MySkeletalAnimationRT::createRayTracingPipeline()
 	rayTracingPipelineCI.pGroups = shaderGroups.data();
 	rayTracingPipelineCI.maxPipelineRayRecursionDepth = 1;
 	rayTracingPipelineCI.layout = rtPipelineLayout;
-	rayTracingPipelineCI.pNext = &pipelineCLAS;
 
 	VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &rtPipeline));
 }
@@ -875,19 +852,16 @@ void MySkeletalAnimationRT::getEnabledFeatures()
 void MySkeletalAnimationRT::loadAssets()
 {
 	//model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Timmy.gltf", vulkanDevice, queue, g_loadingFlag);
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 	model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 
 void MySkeletalAnimationRT::enableExtensions()
 {
 	MyVulkanRTBase::enableExtensions();
-
-	// Extensions required
-	enabledDeviceExtensions.push_back(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 }
 
 void MySkeletalAnimationRT::prepare()
@@ -1068,4 +1042,12 @@ void MySkeletalAnimationRT::render()
 
 #endif
 	draw();
+}
+
+void MySkeletalAnimationRT::OnUpdateUIOverlay(vks::UIOverlay* overlay)
+{
+	if (overlay->header("Visibility"))
+	{
+		(overlay->checkBox("Render Triangle", (bool*)&pushConstantData.bRenderTriangle));
+	}
 }

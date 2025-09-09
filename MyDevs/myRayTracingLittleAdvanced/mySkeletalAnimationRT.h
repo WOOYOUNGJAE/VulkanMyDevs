@@ -63,6 +63,7 @@ public: // TLAS
 	{
 		uint64_t sceneVertexBufferDeviceAddress = 0;
 		uint64_t sceneIndexBufferDeviceAddress = 0;
+		uint32_t bRenderTriangle = 0;
 	}pushConstantData;
 
 	// RT Pipeline
@@ -124,4 +125,6 @@ public:
 	void draw();
 
 	virtual void render();
+
+	void OnUpdateUIOverlay(vks::UIOverlay* overlay) override;
 };

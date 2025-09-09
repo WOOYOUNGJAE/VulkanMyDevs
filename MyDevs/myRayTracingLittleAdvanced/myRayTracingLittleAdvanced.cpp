@@ -2,7 +2,7 @@
 
 /**
  * 0==multiblas
- * 1==dynamicAS
+ * 1==dynamicAS - TODO not work now. use skeletalAnimationRT
  * 2==buildIndirect
  * 3==skeletalAnimationRT
  */

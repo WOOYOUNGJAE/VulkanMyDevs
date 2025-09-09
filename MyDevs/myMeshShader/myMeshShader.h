@@ -68,5 +68,5 @@ public:
 	void updateUniformBuffers();
 	void prepare();
 	virtual void render();
-	virtual void OnUpdateUIOverlay(vks::UIOverlay* overlay);
+	void OnUpdateUIOverlay(vks::UIOverlay* overlay) override;
 };

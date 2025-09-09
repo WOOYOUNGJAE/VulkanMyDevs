@@ -69,6 +69,7 @@ public: // TLAS
 	{
 		uint64_t sceneVertexBufferDeviceAddress = 0;
 		uint64_t sceneIndexBufferDeviceAddress = 0;
+		uint32_t bRenderTriangle = 1;
 	}pushConstantData;
 
 	VkPipeline pipeline{ VK_NULL_HANDLE };
