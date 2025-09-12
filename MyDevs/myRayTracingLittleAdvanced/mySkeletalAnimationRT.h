@@ -63,7 +63,7 @@ public: // TLAS
 	{
 		uint64_t sceneVertexBufferDeviceAddress = 0;
 		uint64_t sceneIndexBufferDeviceAddress = 0;
-		uint32_t bRenderTriangle = 0;
+		uint32_t bRenderTriangle = 1;
 	}pushConstantData;
 
 	// RT Pipeline

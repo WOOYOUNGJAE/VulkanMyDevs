@@ -961,11 +961,11 @@ void MyClusteredSkeletalMesh::loadAssets()
 	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 	//model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag | myglTF::FileLoadingFlags::PreTransformVertices);
 
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 
 void MyClusteredSkeletalMesh::enableExtensions()
@@ -1236,7 +1236,7 @@ void MyClusteredSkeletalMesh::render()
 #if TRACE_TIMER_ON
 		accTraceTime += gpuTimer->timerResult();
 #endif
-		if (frameCount == MEASURE_FRAME_COUNT)
+		if (frameCount == MEASURE_END_FRAME)
 		{
 			float clasAvg = accBuildCLASTime / MEASURE_FRAME_COUNT;
 			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;

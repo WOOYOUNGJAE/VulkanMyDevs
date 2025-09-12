@@ -101,7 +101,7 @@ public: // CLAS
 		uint64_t sceneVertexBufferDeviceAddress = 0;
 		uint64_t sceneIndexBufferDeviceAddress = 0;
 		uint32_t numPrimitives = 0;
-		uint32_t renderMode = 0; // 0:Texture 1:Triangle 2:Cluster
+		uint32_t renderMode = 1; // 0:Texture 1:Triangle 2:Cluster
 	}pushConstantData;
 
 	// RT Pipeline
