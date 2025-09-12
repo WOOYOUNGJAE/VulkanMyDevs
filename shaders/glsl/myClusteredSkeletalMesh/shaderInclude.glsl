@@ -11,21 +11,21 @@
 #extension GL_EXT_spirv_intrinsics : require
 spirv_decorate(extensions = ["SPV_NV_cluster_acceleration_structure"], capabilities = [5437], 11, 5436) in int gl_ClusterIDNV_;
 
-layout(location = 0) rayPayloadInEXT vec3 hitValue;
 layout(location = 2) rayPayloadEXT bool shadowed;
-layout(location = 3) rayPayloadInEXT uint payloadSeed;
 
 hitAttributeEXT vec2 attribs;
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 layout(binding = 3, set = 0) uniform sampler2D image;
 
-struct GeometryNode {
-	uint32_t vertexStartOffset; // from scene's total vertex buffer
-	uint32_t indexStartOffset; // from scene's total Index buffer
-	// primitive contains material info
-	uint32_t primitiveStartOffset;
-};
+#include "../../../MyDevs/myBase/myIncludesCPUGPU.h"
+#define GeometryNode ClusteredGeometryData
+//struct GeometryNode {
+//	uint32_t vertexStartOffset; // from scene's total vertex buffer
+//	uint32_t indexStartOffset; // from scene's total Index buffer
+//	// primitive contains material info
+//	uint32_t primitiveStartOffset;
+//};
 layout(binding = 4, set = 0) buffer GeometryNodes { GeometryNode nodes[]; } geometryNodes;
 
 
@@ -36,12 +36,14 @@ struct MeshPrimitive
 	int32_t textureIndexBaseColor;
 	int32_t textureIndexOcclusion;
 };
-layout(binding = 5, set = 0) buffer MeshPrimitives { MeshPrimitive primitives[]; } meshPrimitives;
-layout(binding = 6, set = 0) uniform sampler2D textures[];
+layout(binding = 5, set = 0) buffer MeshPrimitives { ClusteredMeshPrimitive primitives[]; } meshPrimitives;
+layout(binding = 6, set = 0) buffer Clusters { ClusterRT clusters[]; } sceneClusters;
+layout(binding = 7, set = 0) uniform sampler2D textures[];
 
 layout(push_constant) uniform PushConstant {
 	uint64_t vertexBufferAddress;
 	uint64_t indexBufferAddress;
+	uint32_t numPrimitives;
 	uint32_t renderMode; // 0:Texture 1:Triangle 2:Cluster
 } pushData;
 

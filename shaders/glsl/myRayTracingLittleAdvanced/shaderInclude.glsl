@@ -7,9 +7,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 
-layout(location = 0) rayPayloadInEXT vec3 hitValue;
 layout(location = 2) rayPayloadEXT bool shadowed;
-layout(location = 3) rayPayloadInEXT uint payloadSeed;
 
 hitAttributeEXT vec2 attribs;
 

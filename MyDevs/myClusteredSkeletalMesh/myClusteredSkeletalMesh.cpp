@@ -315,8 +315,9 @@ void MyClusteredSkeletalMesh::initTLAS()
 		blasInstance.instanceCustomIndex = 0;
 		blasInstance.mask = 0xFF;
 		blasInstance.instanceShaderBindingTableRecordOffset = 0;
-		blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 		blasInstance.flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+		blasInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+		blasInstance.flags = 0;
 
 		VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 		accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
@@ -546,8 +547,10 @@ void MyClusteredSkeletalMesh::createRayTracingPipeline()
 		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 4),
 		// Binding 5: All Primtivies SSBO.
 		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 5),
-		// Binding 6: All images used by the glTF model
-		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 6, imageCount),
+		// Binding 6: All Clusters SSBO.
+		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 6),
+		// Binding 7: All images used by the glTF model
+		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 7, imageCount),
 	};
 
 
@@ -562,7 +565,8 @@ void MyClusteredSkeletalMesh::createRayTracingPipeline()
 		0,
 		0,
 		0,
-		VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT
+		0,
+		VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT,
 	};
 	setLayoutBindingFlags.pBindingFlags = descriptorBindingFlags.data();
 
@@ -657,13 +661,14 @@ void MyClusteredSkeletalMesh::createDescriptorSets()
 {
 	uint32_t imageCount = static_cast<uint32_t>(model.textures.size());
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		{ VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 },
-		{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
-		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
+		{ VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 }, // Binding 0: Top level acceleration structure
+		{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 }, // Binding 1: Ray tracing result image
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 }, // Binding 2: Uniform data
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
-		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 },
-		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(model.textures.size()) }
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }, // Binding 4: Geometry node information SSBO
+		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}, // Binding 5 : All Mesh Primitives
+		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}, // Binding 6 : Cluster Data
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(model.textures.size()) },
 	};
 
 	VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 1);
@@ -704,7 +709,9 @@ void MyClusteredSkeletalMesh::createDescriptorSets()
 		// Binding 4: Geometry node information SSBO
 		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &model.geometryNodes.descriptor),
 		// Binding 5 : All Mesh Primitives
-		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &model.primitives.descriptor)
+		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &model.primitives.descriptor),
+		// Binding 6 : Cluster Data
+		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6, &model.clusters.descriptor)
 	};
 
 	// Image descriptors for the image array
@@ -719,7 +726,7 @@ void MyClusteredSkeletalMesh::createDescriptorSets()
 
 	VkWriteDescriptorSet writeDescriptorImgArray{};
 	writeDescriptorImgArray.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	writeDescriptorImgArray.dstBinding = 6;
+	writeDescriptorImgArray.dstBinding = 7;
 	writeDescriptorImgArray.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	writeDescriptorImgArray.descriptorCount = imageCount;
 	writeDescriptorImgArray.dstSet = rtDescriptorSet;
@@ -835,6 +842,8 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 		*/
 		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
 
+
+		pushConstantData.numPrimitives = model.primitives.count;
 		// push constant - vertex/index device addressvkCmdPushConstants(
 		vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
 			VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
@@ -951,10 +960,12 @@ void MyClusteredSkeletalMesh::loadAssets()
 {
 	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 	//model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag | myglTF::FileLoadingFlags::PreTransformVertices);
-	//model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 
 void MyClusteredSkeletalMesh::enableExtensions()

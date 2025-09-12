@@ -7,14 +7,37 @@
 
 
 #include "shaderInclude.glsl"
-
 #include "random.glsl"
+layout(location = 3) rayPayloadInEXT uint payloadSeed;
+
 void main()
 {
-	Triangle tri = unpackTriangle(gl_PrimitiveID);
+	uint primitiveID = gl_PrimitiveID;
+	uint clusterID = gl_ClusterIDNV_;
+	Triangle tri = unpackTriangle(gl_InstanceID, clusterID, primitiveID);
 	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
-	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];
+	ClusterRT cluster = sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID];
+
+	// offset from all scene's triangles
+	uint triOffsetGlobal = geometryNode.triangleStartOffset + cluster.firstTriangle + primitiveID;
+
+	// find primitive Index
+	uint primitiveIdx = 0;
+	for (uint i = 0; i < pushData.numPrimitives; ++i)
+	{
+		if (triOffsetGlobal >= meshPrimitives.primitives[i].triangleStartOffsetGlobal)
+			primitiveIdx = i;
+		else
+			break;
+	}
+
+	ClusteredMeshPrimitive meshPrimitive = meshPrimitives.primitives[primitiveIdx];
+
 	vec4 color = texture(textures[nonuniformEXT(meshPrimitive.textureIndexBaseColor)], tri.uv);
+
+
+//	ClusteredMeshPrimitive meshPrimitive = meshPrimitives.primitives[1];
+//	vec4 color = texture(textures[nonuniformEXT(meshPrimitive.textureIndexBaseColor)], tri.uv);
 
 
 	// If the alpha value of the texture at the current UV coordinates is below a given threshold, we'll ignore this intersection

@@ -6,8 +6,8 @@
 #version 460
 
 #include "shaderInclude.glsl"
-
 #include "random.glsl"
+layout(location = 3) rayPayloadInEXT uint payloadSeed;
 
 void main()
 {

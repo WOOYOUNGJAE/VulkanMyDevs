@@ -1,17 +1,16 @@
-/* Copyright (c) 2023, Sascha Willems
- *
- * SPDX-License-Identifier: MIT
- *
- */
 #version 460
 
 #include "shaderInclude.glsl"
+layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
 void main()
 {
-//	if (pushData.renderMode > 0)
+	uint primitiveID = gl_PrimitiveID;
+	uint clusterID = gl_ClusterIDNV_;
+	uint instanceID = gl_InstanceID;
+	if (pushData.renderMode > 0)
 	{
-		uint minUnitID = (pushData.renderMode == 1) ? gl_PrimitiveID : gl_ClusterIDNV_;
+		uint minUnitID = (pushData.renderMode == 1) ? primitiveID : clusterID;
 	
 		uint h = minUnitID * 1664525u + 1013904223u;
 		hitValue = vec3(
@@ -22,11 +21,28 @@ void main()
 		return;
 	}
 
-	Triangle tri = unpackTriangle(gl_PrimitiveID);
-	hitValue = vec3(tri.normal);
+	Triangle tri = unpackTriangle(instanceID, clusterID, primitiveID);
+	
+	GeometryNode geometryNode = geometryNodes.nodes[instanceID];
+	ClusterRT cluster = sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID];
 
-	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
-	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];
+
+	// offset from all scene's triangles
+	uint triOffsetGlobal = geometryNode.triangleStartOffset + cluster.firstTriangle + primitiveID;
+
+
+	// find primitive Index
+	uint primitiveIdx = 0;
+	for (uint i = 0; i < pushData.numPrimitives; ++i)
+	{
+		if (triOffsetGlobal >= meshPrimitives.primitives[i].triangleStartOffsetGlobal)
+			primitiveIdx = i;
+		else
+			break;
+	}
+
+	ClusteredMeshPrimitive meshPrimitive = meshPrimitives.primitives[primitiveIdx];
+
 
 	vec3 color = texture(textures[nonuniformEXT(meshPrimitive.textureIndexBaseColor)], tri.uv).rgb;
 	if (meshPrimitive.textureIndexOcclusion > -1) {

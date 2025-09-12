@@ -6,6 +6,7 @@
 #version 460
 
 #include "shaderInclude.glsl"
+layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
 void main()
 {
@@ -24,10 +25,16 @@ void main()
 	
 
 	Triangle tri = unpackTriangle(gl_PrimitiveID);
-	hitValue = vec3(tri.normal);
 
 	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
+//	MeshPrimitive meshPrimitive = meshPrimitives.primitives[1];
 	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];
+		
+//	hitValue = vec3(float(meshPrimitive.textureIndexBaseColor) / 100.f);return;
+	if (nonuniformEXT(meshPrimitive.textureIndexBaseColor) == -1)
+	{
+		hitValue = vec3(1,1,0);return;
+	}
 
 	vec3 color = texture(textures[nonuniformEXT(meshPrimitive.textureIndexBaseColor)], tri.uv).rgb;
 	if (meshPrimitive.textureIndexOcclusion > -1) {

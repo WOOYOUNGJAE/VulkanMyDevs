@@ -471,7 +471,7 @@ namespace myglTF
 			Clusters clustersGPU{};
 		};
 		std::vector<PerMeshClustersBuildData> perMeshClustersBuildDatas;
-
+		Clusters clusters{}; // all scene's clusters
 		//uint32_t clusterTrianglesMax = 64;
 		/* count array per triangle-counts */
 		std::vector<uint32_t> clusterTriangleHistogram;

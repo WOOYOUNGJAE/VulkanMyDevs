@@ -2044,6 +2044,7 @@ myglTF::ModelRT::~ModelRT()
 	CleanBufferMemory(vertices);
 	CleanBufferMemory(deformingVertices); // if skinned mesh
 	CleanBufferMemory(indices);
+	CleanBufferMemory(clusters);
 
 
 	vkDestroyBuffer(device->logicalDevice, rootUniformBuffer.buffer, nullptr);
@@ -2662,6 +2663,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 
 	// build cluster preapre data
+	std::vector<ClusterRT> tempClusters; // for Total Clusters
 	if (bMakeClusters)
 	{
 		for (auto& node : linearNodes)
@@ -2703,7 +2705,6 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		clusterTriangleHistogram.resize(64 + 1, 0);
 		clusterVertexHistogram.resize(64 + 1, 0);
 
-		//tempIndicesCPU.resize(copiedIndicesCPU.size(), 0);
 		for (uint32_t geometryIdx = 0; geometryIdx < numGeometries; ++geometryIdx)
 		{
 			PerMeshClustersBuildData& refPerMeshClustersData = perMeshClustersBuildDatas[geometryIdx];
@@ -2722,35 +2723,40 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			m_numTotalClusters += numClusters;
 			m_perMeshClusterMax = std::max(m_perMeshClusterMax, numClusters);
 
-			// Create Buffer & Memery
-			size_t clusterVertexBufferSize = refPerMeshClustersData.clusterVerticesCPU.size() * sizeof(uint32_t);
-			size_t clusterIndexBufferSize = refPerMeshClustersData.clusterIndicesCPU.size() * sizeof(uint8_t);
-			size_t clusterBBoxBufferSize = refPerMeshClustersData.clusterBBoxesCPU.size() * sizeof(BBox);
-			size_t clusterBufferSize = refPerMeshClustersData.clustersCPU.size() * sizeof(ClusterRT);
+			std::move(refPerMeshClustersData.clustersCPU.begin(), refPerMeshClustersData.clustersCPU.end(), std::back_inserter(tempClusters));
 
 
-			device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-				clusterVertexBufferSize, &refPerMeshClustersData.clusterVerticesGPU.buffer, &refPerMeshClustersData.clusterVerticesGPU.memory, transferQueue, refPerMeshClustersData.clusterVerticesCPU.data());
-			refPerMeshClustersData.clusterVerticesGPU.deviceAddress = getBufferDeviceAddress(refPerMeshClustersData.clusterVerticesGPU.buffer);
+			// TODO Not Use Yet
+			//// Create Buffer & Memery
+			//size_t clusterVertexBufferSize = refPerMeshClustersData.clusterVerticesCPU.size() * sizeof(uint32_t);
+			//size_t clusterIndexBufferSize = refPerMeshClustersData.clusterIndicesCPU.size() * sizeof(uint8_t);
+			//size_t clusterBBoxBufferSize = refPerMeshClustersData.clusterBBoxesCPU.size() * sizeof(BBox);
+			//size_t clusterBufferSize = refPerMeshClustersData.clustersCPU.size() * sizeof(ClusterRT);
 
-			device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-				clusterIndexBufferSize, &refPerMeshClustersData.clusterIndicesGPU.buffer, &refPerMeshClustersData.clusterIndicesGPU.memory, transferQueue, refPerMeshClustersData.clusterIndicesCPU.data());
-			refPerMeshClustersData.clusterIndicesGPU.deviceAddress = getBufferDeviceAddress(refPerMeshClustersData.clusterIndicesGPU.buffer);
 
-			device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-				clusterBBoxBufferSize, &refPerMeshClustersData.clusterBBoxesGPU.buffer, &refPerMeshClustersData.clusterBBoxesGPU.memory, transferQueue, refPerMeshClustersData.clusterBBoxesCPU.data());
-			refPerMeshClustersData.clusterBBoxesGPU.deviceAddress = getBufferDeviceAddress(refPerMeshClustersData.clusterBBoxesGPU.buffer);
+			//device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+			//	clusterVertexBufferSize, &refPerMeshClustersData.clusterVerticesGPU.buffer, &refPerMeshClustersData.clusterVerticesGPU.memory, transferQueue, refPerMeshClustersData.clusterVerticesCPU.data());
+			//refPerMeshClustersData.clusterVerticesGPU.deviceAddress = getBufferDeviceAddress(refPerMeshClustersData.clusterVerticesGPU.buffer);
 
-			device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-				clusterBufferSize, &refPerMeshClustersData.clustersGPU.buffer, &refPerMeshClustersData.clustersGPU.memory, transferQueue, refPerMeshClustersData.clustersCPU.data());
-			refPerMeshClustersData.clustersGPU.deviceAddress = getBufferDeviceAddress(refPerMeshClustersData.clustersGPU.buffer);
+			//device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+			//	clusterIndexBufferSize, &refPerMeshClustersData.clusterIndicesGPU.buffer, &refPerMeshClustersData.clusterIndicesGPU.memory, transferQueue, refPerMeshClustersData.clusterIndicesCPU.data());
+			//refPerMeshClustersData.clusterIndicesGPU.deviceAddress = getBufferDeviceAddress(refPerMeshClustersData.clusterIndicesGPU.buffer);
 
-			// Create Descriptor Info
-			refPerMeshClustersData.clusterVerticesGPU.descriptor = { refPerMeshClustersData.clusterVerticesGPU.buffer, 0, clusterVertexBufferSize };
-			refPerMeshClustersData.clusterIndicesGPU.descriptor = { refPerMeshClustersData.clusterIndicesGPU.buffer, 0, clusterIndexBufferSize };
-			refPerMeshClustersData.clusterBBoxesGPU.descriptor = { refPerMeshClustersData.clusterBBoxesGPU.buffer, 0, clusterBBoxBufferSize };
-			refPerMeshClustersData.clustersGPU.descriptor = { refPerMeshClustersData.clustersGPU.buffer, 0, clusterBufferSize };
+			//device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+			//	clusterBBoxBufferSize, &refPerMeshClustersData.clusterBBoxesGPU.buffer, &refPerMeshClustersData.clusterBBoxesGPU.memory, transferQueue, refPerMeshClustersData.clusterBBoxesCPU.data());
+			//refPerMeshClustersData.clusterBBoxesGPU.deviceAddress = getBufferDeviceAddress(refPerMeshClustersData.clusterBBoxesGPU.buffer);
+
+			//device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+			//	clusterBufferSize, &refPerMeshClustersData.clustersGPU.buffer, &refPerMeshClustersData.clustersGPU.memory, transferQueue, refPerMeshClustersData.clustersCPU.data());
+			//refPerMeshClustersData.clustersGPU.deviceAddress = getBufferDeviceAddress(refPerMeshClustersData.clustersGPU.buffer);
+
+			//// Create Descriptor Info
+			//refPerMeshClustersData.clusterVerticesGPU.descriptor = { refPerMeshClustersData.clusterVerticesGPU.buffer, 0, clusterVertexBufferSize };
+			//refPerMeshClustersData.clusterIndicesGPU.descriptor = { refPerMeshClustersData.clusterIndicesGPU.buffer, 0, clusterIndexBufferSize };
+			//refPerMeshClustersData.clusterBBoxesGPU.descriptor = { refPerMeshClustersData.clusterBBoxesGPU.buffer, 0, clusterBBoxBufferSize };
+			//refPerMeshClustersData.clustersGPU.descriptor = { refPerMeshClustersData.clustersGPU.buffer, 0, clusterBufferSize };
 		}
+		clusters.count = m_numTotalClusters;
 	}
 
 	// Create Vertex/Index Buffer (After Cluster created)
@@ -2783,11 +2789,13 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	uint32_t primitiveStartOffset = 0;
 	uint32_t vertexStartOffset = 0;
 	uint32_t indexStartOffset = 0;
-	std::vector<MeshPrimitive> tempPrimitives; // for GeometryNodePerMesh
+	std::vector<MeshPrimitive> tempPrimitives; // for GeometryNodePerMesh, not for CLAS
+	std::vector<ClusteredMeshPrimitive> tempClusteredPrimitives; // only for CLAS
 
 	VkDeviceAddress vertexBaseDeviceAddress = 0;  
 	VkDeviceAddress indexBaseDeviceAddress = getBufferDeviceAddress(indices.buffer);
 	uint32_t meshIdx = 0u;
+	uint32_t clusterStartOffset = 0u;
 	for (auto& node : linearNodes)
 	{
 		if (node->mesh)
@@ -2840,18 +2848,19 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 				ClusteredGeometryNodeRT geometryNode{};
 				geometryNode.vertexBufferDeviceAddress = vertexBaseDeviceAddress;
 				geometryNode.indexBufferDeviceAddress = indexBaseDeviceAddress;
-				geometryNode.primitiveStartOffset = primitiveStartOffset;
+				geometryNode.triangleStartOffset = indexStartOffset / 3;
 				uint32_t vertexCountInMesh = 0u;
 				uint32_t IndexCountInMesh = 0u;
 				for (const auto& primitive : node->mesh->primitives)
 				{
 					const Material& material = primitive->material;
-					MeshPrimitive primitiveRT{};
+					ClusteredMeshPrimitive primitiveRT{};
 					primitiveRT.textureIndexBaseColor = material.baseColorTexture ? static_cast<int32_t>(material.baseColorTexture->index) : -1;
-					primitiveRT.textureIndexOcclusion = material.occlusionTexture ? material.occlusionTexture->index : -1;
-					primitiveRT.vertexStartOffsetInMesh = vertexStartOffsetInMesh;
-					primitiveRT.IndexStartOffsetInMesh = indexStartOffsetInMesh;
-					tempPrimitives.push_back(primitiveRT); ++primitiveStartOffset;
+					primitiveRT.textureIndexOcclusion = material.occlusionTexture ? (int32_t)material.occlusionTexture->index : -1;
+					primitiveRT.triangleStartOffsetGlobal = indexStartOffset / 3;
+					//primitiveRT.vertexStartOffsetInMesh = vertexStartOffsetInMesh;
+					//primitiveRT.IndexStartOffsetInMesh = indexStartOffsetInMesh;
+					tempClusteredPrimitives.push_back(primitiveRT); ++primitiveStartOffset;
 					vertexStartOffset += primitive->vertexCount;
 					indexStartOffset += primitive->indexCount;
 					vertexStartOffsetInMesh += primitive->vertexCount;
@@ -2860,10 +2869,12 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 					IndexCountInMesh += primitive->indexCount;
 				}
 				geometryNode.geometryID = meshIdx;
+				geometryNode.clusterStartOffset = clusterStartOffset;
 				geometryNode.numClusters = perMeshClustersBuildDatas[meshIdx].clustersCPU.size();
 				geometryNode.numVertices = vertexCountInMesh;
 				geometryNode.numTriangles = (IndexCountInMesh / 3);
 				clusteredGeometryNodes.push_back(geometryNode);
+				clusterStartOffset += geometryNode.numClusters;
 				++meshIdx;
 			}
 		}
@@ -2916,7 +2927,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		}		
 	}
 	// For Primitives
-	if (isGeometryNodePerMesh || bMakeClusters)
+	if (isGeometryNodePerMesh)
 	{
 		size_t primitiveBufferSize = tempPrimitives.size() * sizeof(MeshPrimitive);
 
@@ -2925,7 +2936,21 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 		primitives.descriptor = { primitives.buffer, 0, primitiveBufferSize };
 	}
+	else if (bMakeClusters) // For cluster
+	{
+		size_t primitiveBufferSize = tempClusteredPrimitives.size() * sizeof(ClusteredMeshPrimitive);
 
+		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			primitiveBufferSize, &primitives.buffer, &primitives.memory, transferQueue, tempClusteredPrimitives.data());
+		primitives.count = tempClusteredPrimitives.size();
+		primitives.descriptor = { primitives.buffer, 0, primitiveBufferSize };
+
+		assert(clusters.count > 0);
+		size_t clusterBufferSize = clusters.count * sizeof(ClusterRT);
+		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			clusterBufferSize, &clusters.buffer, &clusters.memory, transferQueue, tempClusters.data());
+		clusters.descriptor = { clusters.buffer, 0, clusterBufferSize };
+	}
 	// Setup descriptors
 	uint32_t uboCount{ 0 };
 	uint32_t imageCount{ 0 };

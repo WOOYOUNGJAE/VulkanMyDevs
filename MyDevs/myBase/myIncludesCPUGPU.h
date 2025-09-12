@@ -66,21 +66,53 @@ struct ClusteredGeometryData
 
     mat4 worldMatrix;
 
+    // all scene's vertex/index buff address push as pushconstant for bindless
     uint64_t vertexBufferDeviceAddress;
     uint64_t indexBufferDeviceAddress;
-    uint64_t clusters; // index of cluster array
-    uint64_t clusterLocalVertices;
-    uint64_t clusterLocalTriangles;
-    uint64_t clusterBboxes;
+
+    //uint64_t clusters; // index of cluster array
+    //uint64_t clusterLocalVertices;
+    //uint64_t clusterLocalTriangles;
+    //uint64_t clusterBboxes;
 
     uint32_t numTriangles;
     uint32_t numVertices;
     uint32_t numClusters;
     uint32_t geometryID;
 
-    uint64_t blasReference; // for building blas instance. update this in comp shader
+    uint64_t blasReference; // for building blas instance. update this in comp shader TODO: DLELETE?
     // TODO: testing
-    uint32_t primitiveStartOffset;
+    uint32_t triangleStartOffset; // from all scene's triangles
+    uint32_t clusterStartOffset; // from all scene's clusters, use as allClusters[clsuterStartOffset + clusterID]
+};
+
+struct ClusterRT
+{
+    uint32_t numVertices; // num of cluster's vertices
+    uint32_t numTriangles; // num of cluster's vertices
+    uint32_t firstTriangle; // first triangle offset from global(mesh's) triangles
+
+    /**
+    * Offset of first vertex/index from total local vertices/triangles
+    * example:
+    *|  cluster0           |  cluster1           |  cluster2           |
+    *| localVertices(uint) | localVertices(uint) | localVertices(uint) |
+    *
+    */
+    uint32_t firstLocalVertex;
+    uint32_t firstLocalIndex; // first local triangle's "INDEX" from total local triangles
+    uint32_t padding0;
+    uint64_t padding1;
+};
+
+struct ClusteredMeshPrimitive
+{
+    /*uint32_t vertexStartOffsetInMesh;
+    uint32_t IndexStartOffsetInMesh;*/
+    int32_t textureIndexBaseColor;
+    int32_t textureIndexOcclusion;
+    uint32_t triangleStartOffsetGlobal; // start offset in scene's all triangles
+    int32_t padding;
 };
 
 /** same as

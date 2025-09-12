@@ -30,20 +30,21 @@ struct Triangle {
 #define INDEX_TYPE_SIZE 4
 
 // This function will unpack our vertex buffer data into a single triangle and calculates uv coordinates
-Triangle unpackTriangle(uint primitiveID) {
+Triangle unpackTriangle(uint instanceID, uint clusterID, uint primitiveID) {
 	Triangle tri;
 	const uint triIndex = primitiveID * 3;
 
-	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
-	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];
-
+	GeometryNode geometryNode = geometryNodes.nodes[instanceID];
+	//MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset /*+ TODO */];
+	ClusterRT cluster = sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID];
 	
 	// move to start of this node(mesh)'s MeshPrimitive
-	uint64_t nodeVertexAddress = pushData.vertexBufferAddress;// +vertexSize * (geometryNode.vertexStartOffset + meshPrimitive.vertexStartOffsetInMesh + primitiveID);
-	uint64_t nodeIndexAddress = pushData.indexBufferAddress + INDEX_TYPE_SIZE * (geometryNode.indexStartOffset + meshPrimitive.IndexStartOffsetInMesh + (primitiveID * 3)); // index size
+	uint64_t curVertexAddress = geometryNode.vertexBufferDeviceAddress;// All scene's vertices address
+	uint64_t curIndexAddress = geometryNode.indexBufferDeviceAddress + INDEX_TYPE_SIZE * (geometryNode.triangleStartOffset + cluster.firstTriangle + primitiveID) * 3;
 
-	Vertices   vertices = Vertices(nodeVertexAddress);
-	Indices    indices = Indices(nodeIndexAddress);
+
+	Vertices   vertices = Vertices(curVertexAddress); // All vertices
+	Indices    indices = Indices(curIndexAddress); // Current Triangle
 
 		
 	// Unpack vertices
