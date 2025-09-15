@@ -20,7 +20,7 @@ myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLo
 
 MyClusteredSkeletalMesh::MyClusteredSkeletalMesh()
 {
-	title = "MyClusteredSkeletalMesh";
+	title = "MyClusteredSkeletalMesh (" + std::to_string(width) + "x" + std::to_string(height) + ")";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
 	camera.setRotation(glm::vec3(-10.0f, -3.0f, 0.0f));
@@ -1261,7 +1261,7 @@ void MyClusteredSkeletalMesh::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 {
 	if (overlay->header("Visibility"))
 	{
-		(overlay->radioButton("Render Texture", (int*)& pushConstantData.renderMode, 0));
+		//(overlay->radioButton("Render Texture", (int*)& pushConstantData.renderMode, 0));
 		(overlay->radioButton("Render Triangle", (int*)&pushConstantData.renderMode, 1));
 		(overlay->radioButton("Render Cluster", (int*)&pushConstantData.renderMode, 2));
 	}
