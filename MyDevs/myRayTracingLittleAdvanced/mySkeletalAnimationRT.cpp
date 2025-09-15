@@ -321,6 +321,8 @@ void MySkeletalAnimationRT::initTLAS()
 
 void MySkeletalAnimationRT::buildBLASes(VkCommandBuffer cmdBuffer)
 {
+	//CPUTimer timer("Build Blas Timer");
+
 	// TODO build Static-Dynamic BLAS Parallelly
 	uint32_t numStaticBlases = staticBLASes.size();
 	uint32_t numDynamicBlases = dynamicBLASes.size(); // for Deformable Mesh

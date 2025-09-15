@@ -133,6 +133,31 @@ public:
 	};
 	std::unique_ptr<GPUTimer> gpuTimer;
 
+	class CPUTimer
+	{
+	public:
+		CPUTimer()
+		{
+			std::string msg = name + " Starts\n";
+			printf(msg.c_str());
+			startTime = std::chrono::high_resolution_clock::now();
+		}
+		CPUTimer(const std::string& timerName) : name(timerName)
+		{
+			std::string msg = name + " Starts\n";
+			printf(msg.c_str());
+			startTime = std::chrono::high_resolution_clock::now();
+		}
+		~CPUTimer()
+		{
+			float duration = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - startTime).count();
+			std::string msg = name + " Result : " + std::to_string(duration) + "(ms)\n";
+			printf(msg.c_str());
+		}
+	private:
+		std::chrono::time_point<std::chrono::high_resolution_clock> startTime{};
+		std::string name = "CPU Timer";
+	};
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = VK_NULL_HANDLE;
 	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = VK_NULL_HANDLE;
 	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = VK_NULL_HANDLE;

@@ -300,6 +300,7 @@ void MyHCBTriangle::initTLAS()
 
 void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
 {
+	//CPUTimer timer("Build Blas Timer");
 	uint32_t numStaticBlases = staticBLASes.size();
 	uint32_t numDynamicBlases = dynamicBLASes.size(); // for Deformable Mesh
 
