@@ -122,6 +122,7 @@ set(EXAMPLES
     myRayTracingLittleAdvanced
     myClusterAccelerationStructureNV
     myClusteredSkeletalMesh
+    myHitCountBasedBlasBuilding
 )
 
 buildMyBase()

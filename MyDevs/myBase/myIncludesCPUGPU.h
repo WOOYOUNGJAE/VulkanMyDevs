@@ -101,8 +101,8 @@ struct ClusterRT
     */
     uint32_t firstLocalVertex;
     uint32_t firstLocalIndex; // first local triangle's "INDEX" from total local triangles
+    uint64_t triangleHitMask;
     uint32_t padding0;
-    uint64_t padding1;
 };
 
 struct ClusteredMeshPrimitive

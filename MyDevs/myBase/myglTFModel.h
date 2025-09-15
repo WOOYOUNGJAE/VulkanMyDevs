@@ -290,7 +290,9 @@ namespace myglTF
 		PrepareMeshShaderPipeline = 0x000000040,
 		GeometryNodePerPrimitive = 0x000000080, // Original Sascha Style
 		GeometryNodePerMesh = 0x000000100, // New Style
-		MakeClusters = 0x000000200, // for CLAS
+		MakeClusters = 0x000000200, // Just make clusters. decide usage for clusterdTriangleBLAS or ClusteredBLAS
+		ClusteredTriangleBLAS = (MakeClusters | 0x000000400), // for Clustered Triangle Base Mesh, No CLAS
+		ClusteredBLAS = (MakeClusters | 0x000000800), // for CLAS
 	};
 
 	// descriptorset bind num into pipeline
@@ -299,98 +301,6 @@ namespace myglTF
 		RenderOpaqueNodes = 0x00000002,
 		RenderAlphaMaskedNodes = 0x00000004,
 		RenderAlphaBlendedNodes = 0x00000008
-	};
-
-	/*
-		glTF model loading and rendering class
-	*/
-	class Model {
-	public:
-		VkDescriptorSetLayout descriptorSetLayoutImage {VK_NULL_HANDLE};
-		VkDescriptorSetLayout descriptorSetLayoutUbo{ VK_NULL_HANDLE };
-		VkDescriptorSetLayout descriptorSetLayoutMeshShader{ VK_NULL_HANDLE };
-		static VkMemoryPropertyFlags memoryPropertyFlags;
-		static uint32_t descriptorBindingFlags;
-	private:
-		myglTF::Texture* getTexture(uint32_t index);
-		myglTF::Texture emptyTexture;
-		void createEmptyTexture(VkQueue transferQueue);
-		/**
-		 * @param outMeshletVertices: Meshlet::vertex == Index from OriginalVertexBuffer
-		 * @param outMeshletPackedTriangles: single uint32 contains 3 indices(triangle)
-		 * @param pOutMeshlets
-		 * @param outNumMeshlets
-		 */
-		void generateMeshlets(const std::vector<VertexType*>& originalVertices, const std::vector<uint32_t>& originalIndices, std::vector<uint32_t>&
-		                      outMeshletVertices, std::vector<uint32_t>& outMeshletPackedTriangles, meshopt_Meshlet** pOutMeshlets, uint32_t&
-		                      outNumMeshlets);
-	public:
-		vks::VulkanDevice* device;
-		VkDescriptorPool descriptorPool;
-		typedef struct PRIMITIVE_TAG
-		{
-			uint32_t count = 0;
-			VkBuffer buffer = VK_NULL_HANDLE;
-			VkDeviceMemory memory = VK_NULL_HANDLE;
-		}Vertices, Indices, MeshletVertices, MeshletIndices, Meshlets;
-		Vertices vertices{};
-		Indices indices{};
-#pragma region MeshShader
-		Meshlets meshlets{};
-		MeshletVertices meshletVertices{};
-		MeshletIndices meshletIndices{};
-		VkDescriptorBufferInfo vertexBufferDescriptor; // for Original vertex, used only for mesh shader
-		VkDescriptorBufferInfo meshletsDescriptor;
-		VkDescriptorBufferInfo meshletVerticesDescriptor;
-		VkDescriptorBufferInfo meshletIndicesDescriptor;
-		VkDescriptorSet meshShaderDescriptorSet{ VK_NULL_HANDLE };
-		VkPipeline meshShaderPipeline{ VK_NULL_HANDLE };
-#pragma endregion MeshShader
-
-		// Used only if model needs only single representing uniform data
-		RootNodeUniformBuffer rootUniformBuffer{};
-		struct UniformData
-		{
-			glm::mat4 matrix; // root model matrix
-		}uniformBlock{};
-
-		std::vector<Node*> nodes;
-		std::vector<Node*> linearNodes;
-		std::vector<Skin*> skins;
-		std::vector<Texture> textures;
-		std::vector<Material> materials;
-		std::vector<Animation> animations;
-
-		struct Dimensions {
-			glm::vec3 min = glm::vec3(FLT_MAX);
-			glm::vec3 max = glm::vec3(-FLT_MAX);
-			glm::vec3 size;
-			glm::vec3 center;
-			float radius;
-		} dimensions;
-
-		bool metallicRoughnessWorkflow = true;
-		bool buffersBound = false;
-		bool preTransform = false;
-		std::string path;
-
-		Model() {};
-		~Model();
-		void loadNode(myglTF::Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, const tinygltf::Model& model, std::vector<uint32_t>& indexBuffer, std::vector<VertexType*>& vertices, float globalscale);
-		void loadSkins(tinygltf::Model& gltfModel);
-		void loadImages(tinygltf::Model& gltfModel, vks::VulkanDevice* device, VkQueue transferQueue);
-		void loadMaterials(tinygltf::Model& gltfModel);
-		void loadAnimations(tinygltf::Model& gltfModel);
-		void loadFromFile(std::string filename, vks::VulkanDevice* device, VkQueue transferQueue, uint32_t fileLoadingFlags = myglTF::FileLoadingFlags::None, float scale = 1.0f);
-		void bindBuffers(VkCommandBuffer commandBuffer);
-		void drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t renderFlags = 0, VkPipelineLayout pipelineLayout = VK_NULL_HANDLE, uint32_t bindImageSet = 1);
-		void draw(VkCommandBuffer commandBuffer, uint32_t renderFlags = 0, VkPipelineLayout pipelineLayout = VK_NULL_HANDLE, uint32_t bindImageSet = 1, PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT = nullptr);
-		void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
-		void getSceneDimensions();
-		void updateAnimation(uint32_t index, float time);
-		Node* findNode(Node* parent, uint32_t index);
-		Node* nodeFromIndex(uint32_t index);
-		void prepareNodeDescriptor(myglTF::Node* node, VkDescriptorSetLayout descriptorSetLayout);
 	};
 
 	/**
@@ -483,6 +393,9 @@ namespace myglTF
 		uint32_t m_clusterVertexMax = 0u;
 		uint32_t m_perMeshClusterMax = 0u; // max num of clusters per mesh
 		uint32_t m_numTotalClusters = 0u;
+		std::vector<ClusterRT> tempClusters; // for Total Clusters
+		ClusterRT* clusterViewer;
+
 		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData, const uint32_t firstIndexGlobalOffset);
 #pragma endregion Cluster
 
