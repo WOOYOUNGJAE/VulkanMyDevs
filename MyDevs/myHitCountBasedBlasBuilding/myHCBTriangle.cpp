@@ -131,16 +131,15 @@ void MyHCBTriangle::initBLASes()
 	for (uint32_t meshIdx = 0; meshIdx < model.clusteredGeometryNodes.size(); ++meshIdx)
 	{
 		const ClusteredGeometryNodeRT& refGeometryNode = model.clusteredGeometryNodes[meshIdx];
-		const myglTF::ModelRT::PerMeshClustersBuildData& perMeshClusterData = model.perMeshClustersBuildDatas[meshIdx];
-
-		// empalce back and get reference - for avoiding dangling pointer due to moving array;
-		PerBLASBuildInfo& refPerBlasBuildInfo = dynamicPerBlasBuildInfos.emplace_back(PerBLASBuildInfo{});
-		VkDeviceSize vertexStride = sizeof(myglTF::VertexSkinning);
-		std::vector<uint32_t> maxPrimitiveCounts{};
+		const myglTF::ModelRT::PerMeshClustersBuildData& perMeshClusterData = model.perMeshClustersBuildDatas[meshIdx];	
 
 		// per cluster
 		for (uint32_t i = 0; i < perMeshClusterData.clustersCPU.size(); ++i)
 		{
+			// empalce back and get reference - for avoiding dangling pointer due to moving array;
+			PerBLASBuildInfo& refPerBlasBuildInfo = dynamicPerBlasBuildInfos.emplace_back(PerBLASBuildInfo{});
+			VkDeviceSize vertexStride = sizeof(myglTF::VertexSkinning);
+			std::vector<uint32_t> maxPrimitiveCounts{};
 			const ClusterRT& cluster = perMeshClusterData.clustersCPU[i];
 
 			// Build
@@ -176,33 +175,35 @@ void MyHCBTriangle::initBLASes()
 			buildRangeInfo.primitiveCount = cluster.numTriangles;
 			buildRangeInfo.transformOffset = 0;
 			refPerBlasBuildInfo.buildRangeInfos.push_back(buildRangeInfo);
-		}
-		// Get size info
-		VkAccelerationStructureBuildGeometryInfoKHR& accelerationStructureBuildGeometryInfo = refPerBlasBuildInfo.asBuildGeometryInfo;
-		accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-		accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+
+			// Get size info
+			VkAccelerationStructureBuildGeometryInfoKHR& accelerationStructureBuildGeometryInfo = refPerBlasBuildInfo.asBuildGeometryInfo;
+			accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+			accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 #if FORCE_STATIC_SCENE
-		accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 #else
-		accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
 #endif
-		accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refPerBlasBuildInfo.asGeometries.size());
-		accelerationStructureBuildGeometryInfo.pGeometries = refPerBlasBuildInfo.asGeometries.data();
+			accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refPerBlasBuildInfo.asGeometries.size());
+			accelerationStructureBuildGeometryInfo.pGeometries = refPerBlasBuildInfo.asGeometries.data();
 
-		VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
-		accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-		vkGetAccelerationStructureBuildSizesKHR(
-			device,
-			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-			&accelerationStructureBuildGeometryInfo,
-			maxPrimitiveCounts.data(),
-			&accelerationStructureBuildSizesInfo);
-		refPerBlasBuildInfo.asSize = accelerationStructureBuildSizesInfo.accelerationStructureSize;
+			VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
+			accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+			vkGetAccelerationStructureBuildSizesKHR(
+				device,
+				VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+				&accelerationStructureBuildGeometryInfo,
+				maxPrimitiveCounts.data(),
+				&accelerationStructureBuildSizesInfo);
+			refPerBlasBuildInfo.asSize = accelerationStructureBuildSizesInfo.accelerationStructureSize;
 
-		AccelerationStructure blas{};
-		MyVulkanRTBase::createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
-		refPerBlasBuildInfo.blasScratchSizeMax = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
-		dynamicBLASes.push_back(blas);
+			AccelerationStructure blas{};
+			MyVulkanRTBase::createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
+			refPerBlasBuildInfo.blasScratchSizeMax = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
+			dynamicBLASes.push_back(blas);
+		}
+		
 
 	}
 	auto updateDeviceAddresses = [&](auto& blasArray)
@@ -308,9 +309,12 @@ void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
 	//gpuTimer->reset(commandBuffer);
 	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
 
+	static int readyCount = 0;
 	// ramda func
-	auto processBLASes = [&](auto& blases, auto& buildInfos, auto& buildingSets) {
-		for (uint32_t blasIdx = 0; blasIdx < buildInfos.size(); ++blasIdx) {
+	auto processBLASes = [&](auto& blases, auto& buildInfos, auto& buildingSets)
+	{
+		for (uint32_t blasIdx = 0; blasIdx < buildInfos.size(); ++blasIdx) 
+		{
 			AccelerationStructure& blas = blases[blasIdx];
 			PerBLASBuildInfo& refBuildInfo = buildInfos[blasIdx];
 
@@ -338,17 +342,29 @@ void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
 #if FORCE_STATIC_SCENE
 				return;
 #endif
+				if (model.clusterViewer[blasIdx].triangleHitMask > 0 || readyCount < 4) // TODO Temp : this should be model.clusterViewer[mesh's first cluster offset + cur cluster]
+				{
+					buildingSets.buildRangeInfosArray.push_back(refBuildInfo.buildRangeInfos.data());
+					buildingSets.buildGeometryInfos.push_back(refBuildInfo.asBuildGeometryInfo);
+				}
 				refBuildInfo.asBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
 				refBuildInfo.asBuildGeometryInfo.srcAccelerationStructure = blas.handle;
 				refBuildInfo.asBuildGeometryInfo.dstAccelerationStructure = blas.handle;
 			}
 		}
-		};
+	};
 
 	// static blas
 	processBLASes(staticBLASes, staticPerBlasBuildInfos, staticBlasBuildingSets);
-	// dynamic blas  
-	processBLASes(dynamicBLASes, dynamicPerBlasBuildInfos, dynamicBlasBuildingSets);
+	// dynamic blas
+	ASBuildSets tempBuildSets{};
+	tempBuildSets.buildRangeInfosArray.reserve(dynamicBlasBuildingSets.buildRangeInfosArray.size());
+	tempBuildSets.buildGeometryInfos.reserve(dynamicBlasBuildingSets.buildGeometryInfos.size());
+	ASBuildSets& refDynamicBlasBuildSets = isFirstBuild ? dynamicBlasBuildingSets : tempBuildSets;
+	processBLASes(dynamicBLASes, dynamicPerBlasBuildInfos, refDynamicBlasBuildSets);
+	refDynamicBlasBuildSets.buildRangeInfosArray.shrink_to_fit();
+	refDynamicBlasBuildSets.buildGeometryInfos.shrink_to_fit();
+
 
 
 	// dynamic blas
@@ -356,9 +372,9 @@ void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
 	{
 		vkCmdBuildAccelerationStructuresKHR(
 			cmdBuffer,
-			numDynamicBlases,
-			dynamicBlasBuildingSets.buildGeometryInfos.data(),
-			dynamicBlasBuildingSets.buildRangeInfosArray.data());
+			refDynamicBlasBuildSets.buildGeometryInfos.size(),
+			refDynamicBlasBuildSets.buildGeometryInfos.data(),
+			refDynamicBlasBuildSets.buildRangeInfosArray.data());
 	}
 	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 
@@ -372,6 +388,7 @@ void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
 			staticBlasBuildingSets.buildRangeInfosArray.data());
 
 	}
+	++readyCount;
 }
 
 void MyHCBTriangle::buildTLAS(VkCommandBuffer cmdBuffer)
@@ -839,9 +856,9 @@ void MyHCBTriangle::loadAssets()
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 
 void MyHCBTriangle::enableExtensions()

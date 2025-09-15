@@ -11,7 +11,7 @@ layout(location = 0) rayPayloadInEXT vec3 hitValue;
 void main()
 {
 	uint primitiveID = gl_PrimitiveID;
-	uint clusterID = gl_GeometryIndexEXT;
+	uint clusterID = gl_InstanceID;
 	uint instanceID = gl_InstanceID;
 //	if (pushData.renderMode > 0)
 	{
@@ -25,9 +25,9 @@ void main()
 	}
 	
 
-	Triangle tri = unpackTriangle(instanceID, clusterID, primitiveID);
+//	Triangle tri = unpackTriangle(instanceID, clusterID, primitiveID);
 
-	GeometryNode geometryNode = geometryNodes.nodes[instanceID];
+	GeometryNode geometryNode = geometryNodes.nodes[0];
 	sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID].triangleHitMask |= (1 << primitiveID);
 
 ////	MeshPrimitive meshPrimitive = meshPrimitives.primitives[1];
