@@ -18,7 +18,7 @@ Keyword : Cluster Acceleration Structure, Skinning, Raytracing, Hit Count Based 
 
 ## 1.1 Write Hit Info onto Cluster Node
 ### [closestHit code](../../shaders/glsl/myHitCountBasedBlasBuilding/closesthit.rchit)
-```glsl
+```c++
 struct ClusterNode
 {
     uint32_t numVertices; // num of cluster's vertices
@@ -35,3 +35,16 @@ sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID].triangleHitM
 
 
 ## 2. Compare AS Building Performance
+| 항목 | Traditional BLAS | With CLAS | Clustered Triangle BLAS(HCB) |
+| :--- | :--- | :--- | :--- |
+| **Average CLAS Build Time** | - | 0.352267 (ms) | - |
+| **Average BLAS Build Time** | 0.692217 (ms) | 0.162364 (ms) | 0.275347 (ms)|
+| **Average TLAS Build Time** |0.015652 (ms) | 0.0132442 (ms) |0.0276187 (ms)|
+| **Average Total AS Build Time** | 0.707869 (ms) | 0.530502 (ms) | 0.302965 (ms)|
+| **Average Tracing Time** | 0.556284 (ms) | 0.562901 (ms) | 0.635924 (ms) |
+| **Average FPS** | 10.906 fps (91.6926 ms) | 10.95 fps (91.290 ms) |  10.86 (92.098 ms)|
+
+<small>**Num Vertices**: **126,150**</small>\
+<small>**Num Triangles**: **234,277**</small>\
+<small>**Num Joints**: **640**</small>\
+<small>**Measured Frame Count**: **1000**</small>
