@@ -42,9 +42,25 @@ sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID].triangleHitM
 | **Average TLAS Build Time** |0.015652 (ms) | 0.0132442 (ms) |0.0276187 (ms)|
 | **Average Total AS Build Time** | 0.707869 (ms) | 0.530502 (ms) | 0.302965 (ms)|
 | **Average Tracing Time** | 0.556284 (ms) | 0.562901 (ms) | 0.635924 (ms) |
-| **Average FPS** | 10.906 fps (91.6926 ms) | 10.95 fps (91.290 ms) |  10.86 (92.098 ms)|
+| **Average FPS** | 10.906 fps (91.6926 ms) | 10.95 fps (91.290 ms) |  10.86 fps (92.098 ms)|
 
 <small>**Num Vertices**: **126,150**</small>\
 <small>**Num Triangles**: **234,277**</small>\
 <small>**Num Joints**: **640**</small>\
+<small>**Measured Frame Count**: **1000**</small>
+
+
+## 3. Performance - One Model
+| 항목 | Traditional BLAS | With CLAS | Clustered Triangle BLAS(HCB) |
+| :--- | :--- | :--- | :--- |
+| **Average CLAS Build Time** | - | 0.0886761 (ms) | - |
+| **Average BLAS Build Time** | 0.318392 (ms) | 0.0879172 (ms) | 0.0296483 (ms)|
+| **Average TLAS Build Time** |0.0133533 (ms) | 0.0136807 (ms) |0.0211135 (ms)|
+| **Average Total AS Build Time** | 0.331745 (ms) | 0.190274 (ms) | 0.0507618 (ms)|
+| **Average Tracing Time** | 0.478362 (ms) | 0.483186 (ms) | 0.49135 (ms) |
+| **Average FPS** | 90.54 fps (11.045 ms) | 90.61 fps (11.036 ms) |  91.26 (10.958 ms)|
+
+<small>**Num Vertices**: **9,285**</small>\
+<small>**Num Triangles**: **17,916**</small>\
+<small>**Num Joints**: **168**</small>\
 <small>**Measured Frame Count**: **1000**</small>
