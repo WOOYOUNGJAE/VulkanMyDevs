@@ -19,19 +19,23 @@ You can view the original README [here](https://github.com/SaschaWillems/Vulkan#
 
 ### Ray Tracing
 
-- [Ray Tracing Basic](MyDevs/myRaytracingBasic/) - Basic Ray Tracing similar to Sascha's implementation
-
-- [My Raytracing Little Advanced](MyDevs/myRayTracingLittleAdvanced//) - Multi BLAS, Dynamic AS, AnimationRT, Indirect Build,,,
+- [My Raytracing Little Advanced](MyDevs/myRayTracingLittleAdvanced//) - Multi BLAS, Dynamic AS, AnimationRT, ,,,
 
     <img src="MyDevs/images/MultiBLAS.jpg" height="256px">
-    
+
+### Ray Tracing - Clustered Scene    
 - [NV Cluster Acceleration Structuer](MyDevs/myClusterAccelerationStructureNV/)
 
     <img src="MyDevs/images/MyClusterAccelerationStructure.jpg" height="256px">
     
-- [Clustered Skeletal Mesh](MyDevs/myClusteredSkeletalMesh/)
+- [Clustered Skeletal Mesh (CLAS)](MyDevs/myClusteredSkeletalMesh/)
 
     <img src="MyDevs/images/ClusteredSkeletalAnimationRT.jpg" height="256px">
+    
+- [ Hit Count Based BLAS Building](MyDevs/myHitCountBasedBlasBuilding//)
+
+    - 이전 프레임의 Ray-Hit이 되지 않은 Cluster은 다음 BLAS 빌드(업데이트) 생략 + 성능 비교
+
 
 
 ## About Coding Convention...

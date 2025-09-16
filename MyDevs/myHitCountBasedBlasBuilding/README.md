@@ -7,7 +7,7 @@
 Keyword : Cluster Acceleration Structure, Skinning, Raytracing, Hit Count Based Building
 
 **핵심 아이디어**:
-오브젝트를 Clustering 후 이전 프레임의 Ray-Hit이 되지 않은 Cluster은 다음 BLAS 빌드(업데이트)에서 제외한다.
+오브젝트를 Clustering 후 이전 프레임의 Ray-Hit이 되지 않은 Cluster은 다음 BLAS 빌드(업데이트)를 생략한다.
 - idea from GDC2025 - RTX Mega Geometry(https://youtu.be/KblmxDkaUfc?t=2807)
 
 # 1. Hit Count Based BLAS Building - Clustered Triangle BLAS [(link)](./myClusteredSkeletalMesh.cpp)
@@ -34,7 +34,7 @@ sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID].triangleHitM
 
 
 
-## 2. Compare AS Building Performance
+## 1.2 Compare AS Building Performance (8 Models)
 | 항목 | Traditional BLAS | With CLAS | Clustered Triangle BLAS(HCB) |
 | :--- | :--- | :--- | :--- |
 | **Average CLAS Build Time** | - | 0.352267 (ms) | - |
@@ -50,7 +50,7 @@ sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID].triangleHitM
 <small>**Measured Frame Count**: **1000**</small>
 
 
-## 3. Performance - One Model
+## 1.3 Compare AS Building Performance (1 Model)
 | 항목 | Traditional BLAS | With CLAS | Clustered Triangle BLAS(HCB) |
 | :--- | :--- | :--- | :--- |
 | **Average CLAS Build Time** | - | 0.0886761 (ms) | - |
