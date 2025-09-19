@@ -3,8 +3,9 @@
 /**
  * 0==multiblas
  * 1==dynamicAS - TODO not work now. use skeletalAnimationRT
- * 2==buildIndirect
+ * 2==buildIndirect - 
  * 3==skeletalAnimationRT
+ * 4==bakedAnimationRT
  */
 #define RT_PROJECT_VERSION 3
 
@@ -24,6 +25,10 @@ myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLo
 #include "mySkeletalAnimationRT.h"
 myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::GeometryNodePerMesh);
 #define RT_CLASS MySkeletalAnimationRT
+#elif (RT_PROJECT_VERSION == 4)
+#include "myBakedAnimationRT.h"
+myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::GeometryNodePerMesh);
+#define RT_CLASS MyBakedAnimationRT
 #endif
 
 RT_CLASS* runInstance;

@@ -1,0 +1,66 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+
+#define NUM_VEC4_FROM_VERTEX_SIZE 6
+#define VERTEX_SIZE 96
+
+layout(buffer_reference, scalar) buffer Vertices {vec4 v[]; };
+layout(push_constant) uniform pushConstant {
+	uint64_t vertexBufferAddress;
+	uint32_t vertexStartOffset; // from total scene vertices
+	uint32_t frame;
+} pushConstantData;
+
+
+struct JointData 
+{
+	mat4 jointMatrices[64*4];
+};
+layout(binding = 0, set = 0, scalar) uniform UniformData
+{
+	JointData jointData;
+}uniformData;
+
+layout(binding = 1, set = 1, scalar) buffer DeformedVertices
+{
+	vec4 v[];
+}deformedVertices;
+
+//layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+	uint32_t vertexStartOffset = pushConstantData.vertexStartOffset;
+	uint64_t vertexDeviceStartOffset = vertexStartOffset * VERTEX_SIZE;
+	uint32_t threadIdxGlobal = gl_GlobalInvocationID.x;
+	Vertices tPoseVertices = Vertices(pushConstantData.vertexBufferAddress + vertexDeviceStartOffset);	
+	
+	vec4 vertexPos = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 0];
+	vec4 vertexNorm = vec4(0);
+	vertexNorm.x = vertexPos.w;
+	vertexPos.w = 1.f;
+	vertexNorm.yz = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 1].xy;
+	vec4 vertexJoint0 = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 4];
+	vec4 vertexWeight0 = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 5];
+
+	JointData jointData = uniformData.jointData;
+	mat4 skinMat = 
+		vertexWeight0.x * jointData.jointMatrices[int(vertexJoint0.x)] +
+		vertexWeight0.y * jointData.jointMatrices[int(vertexJoint0.y)] +
+		vertexWeight0.z * jointData.jointMatrices[int(vertexJoint0.z)] +
+		vertexWeight0.w * jointData.jointMatrices[int(vertexJoint0.w)];
+
+	vec3 deformedPos = (skinMat * vertexPos).xyz;
+	vec3 deformedNorm = (transpose(inverse(skinMat)) * vertexNorm).xyz; 
+
+	// write into ssbo
+	// pos
+	deformedVertices.v[(vertexStartOffset + threadIdxGlobal) * NUM_VEC4_FROM_VERTEX_SIZE + 0].xyz = deformedPos;
+	// normal
+	deformedVertices.v[(vertexStartOffset + threadIdxGlobal) * NUM_VEC4_FROM_VERTEX_SIZE + 0].w = deformedNorm.x;
+	deformedVertices.v[(vertexStartOffset + threadIdxGlobal) * NUM_VEC4_FROM_VERTEX_SIZE + 1].xy = deformedNorm.yz;
+
+}
