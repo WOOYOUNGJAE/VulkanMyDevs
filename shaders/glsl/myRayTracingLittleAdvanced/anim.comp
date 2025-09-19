@@ -12,7 +12,8 @@ layout(buffer_reference, scalar) buffer Vertices {vec4 v[]; };
 layout(push_constant) uniform pushConstant {
 	uint64_t vertexBuffer;
 	uint32_t vertexStartOffset; // from total scene vertices
-} pushConstantDeviceAddresses;
+	uint32_t numVertices;
+} pushConstantData;
 
 
 struct JointData 
@@ -32,13 +33,18 @@ layout(binding = 1, set = 1, scalar) buffer DeformedVertices
 	vec4 v[];
 }deformedVertices;
 
-//layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+//layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+//layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
-	uint32_t vertexStartOffset = pushConstantDeviceAddresses.vertexStartOffset;
-	uint64_t vertexDeviceStartOffset = vertexStartOffset * VERTEX_SIZE;
 	uint32_t threadIdxGlobal = gl_GlobalInvocationID.x;
-	Vertices tPoseVertices = Vertices(pushConstantDeviceAddresses.vertexBuffer + vertexDeviceStartOffset);	
+	if (threadIdxGlobal > pushConstantData.numVertices)
+		return;
+
+	uint32_t vertexStartOffset = pushConstantData.vertexStartOffset;
+	uint64_t vertexDeviceStartOffset = vertexStartOffset * VERTEX_SIZE;
+	Vertices tPoseVertices = Vertices(pushConstantData.vertexBuffer + vertexDeviceStartOffset);	
 	
 	vec4 vertexPos = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 0];
 	vec4 vertexNorm = vec4(0);

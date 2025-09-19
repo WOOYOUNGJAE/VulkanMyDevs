@@ -86,8 +86,9 @@ namespace myglTF
 		VkDeviceMemory memory = VK_NULL_HANDLE;
 		VkDescriptorBufferInfo descriptor;
 		VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+		uint64_t deviceAddress = 0;
 		void* mapped;
-	}MeshUniformBuffer, RootNodeUniformBuffer;
+	}UniformBufferSet, MeshUniformBuffer, RepresentingBuffer;
 
 	/*
 		glTF texture loading class
@@ -310,8 +311,8 @@ namespace myglTF
 	{
 	public:
 		VkDescriptorSetLayout descriptorSetLayoutImage{ VK_NULL_HANDLE };
-		uint32_t uboBinding = 0;
-		VkDescriptorSetLayout descriptorSetLayoutUbo{ VK_NULL_HANDLE };
+		uint32_t modelBufferBinding = 0;
+		VkDescriptorSetLayout descriptorSetLayoutModel{ VK_NULL_HANDLE };
 		static VkMemoryPropertyFlags memoryPropertyFlags;
 		static uint32_t descriptorBindingFlags;
 	private:
@@ -336,7 +337,7 @@ namespace myglTF
 		GeometryNodes geometryNodes{}; // GeometryNode type and the buffer size are already determined at creation.
 		Primitives primitives; // for multi blas
 		// Used only if model needs only single representing uniform data
-		RootNodeUniformBuffer rootUniformBuffer{};
+		RepresentingBuffer representingBuffer{}; // this can be root node buffer or something else(bakedAnimiData,,).
 		struct UniformData
 		{
 			glm::mat4 matrix; // root model matrix
@@ -345,6 +346,7 @@ namespace myglTF
 		std::vector<Node*> nodes;
 		std::vector<Node*> linearNodes;
 		std::vector<Skin*> skins;
+		std::vector<Mesh*> linearMeshes;
 		std::vector<Texture> textures;
 		std::vector<Material> materials;
 		std::vector<Animation> animations;
@@ -398,6 +400,29 @@ namespace myglTF
 
 		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData, const uint32_t firstIndexGlobalOffset);
 #pragma endregion Cluster
+
+		void bakeAnimations();
+		bool isBakedAnimation = false;
+		float animMaxFrame = 0;
+		float animMaxTime = 0;
+		float samplingRate = FLT_MAX; // min second interval between samples
+		uint32_t animMaxFPS = 0;
+		///** DELETE
+		// * @accessing example 
+		// * glm::mat4[64 * 4] curJointMats = jointMats[curTime + startOffsets[curVertex.joint0]]
+		// */
+		//struct BakedAnimations
+		//{
+		//	std::vector<glm::mat4>			worldMats;	  // num: (animFps * animDuration) * allAnims
+		//	std::vector<glm::mat4[64 * 4]>	jointMats{};  // num: (animFps * animDuration) * allAnims
+		//	std::vector<uint32_t>			durations; // num: all Joints
+		//};
+		struct BakedAnimation // num : skinnedMesh * maxTime
+		{
+			glm::mat4 jointMats[64 * 4]{}; // num: (animFps * animDuration) * allAnims
+		};
+		std::vector<BakedAnimation> bakedAnimations;
+		std::vector<UniformBufferSet> bakedUniformBuffers;
 
 		bool metallicRoughnessWorkflow = true;
 		bool buffersBound = false;

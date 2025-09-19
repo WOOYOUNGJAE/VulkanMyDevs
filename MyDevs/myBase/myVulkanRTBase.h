@@ -13,7 +13,8 @@
 #define FORCE_STATIC_SCENE 0
 #define MEASURE_MODE 1
 #define ACCEL_BUILD_TIMER_ON (MEASURE_MODE & 1) // MeasureMode Must be ON 
-#define TRACE_TIMER_ON (ACCEL_BUILD_TIMER_ON & 1) // AccelBuildTimer Must be ON
+#define TRACE_TIMER_ON (ACCEL_BUILD_TIMER_ON & 0) // AccelBuildTimer Must be ON
+#define ANIM_TIMER_ON 1
 struct ScratchBuffer
 {
 	uint64_t deviceAddress = 0;
@@ -133,31 +134,7 @@ public:
 	};
 	std::unique_ptr<GPUTimer> gpuTimer;
 
-	class CPUTimer
-	{
-	public:
-		CPUTimer()
-		{
-			std::string msg = name + " Starts\n";
-			printf(msg.c_str());
-			startTime = std::chrono::high_resolution_clock::now();
-		}
-		CPUTimer(const std::string& timerName) : name(timerName)
-		{
-			std::string msg = name + " Starts\n";
-			printf(msg.c_str());
-			startTime = std::chrono::high_resolution_clock::now();
-		}
-		~CPUTimer()
-		{
-			float duration = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - startTime).count();
-			std::string msg = name + " Result : " + std::to_string(duration) + "(ms)\n";
-			printf(msg.c_str());
-		}
-	private:
-		std::chrono::time_point<std::chrono::high_resolution_clock> startTime{};
-		std::string name = "CPU Timer";
-	};
+	
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = VK_NULL_HANDLE;
 	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = VK_NULL_HANDLE;
 	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = VK_NULL_HANDLE;

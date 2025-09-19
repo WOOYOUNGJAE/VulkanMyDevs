@@ -2,6 +2,7 @@
 
 #include "myDeviceFuncTable.h"
 #include "myIncludesCPUGPU.h"
+#include "myUtils.h"
 #include "MyVulkanRTBase.h"
 
 VkMemoryPropertyFlags myglTF::ModelRT::memoryPropertyFlags = 0;
@@ -707,8 +708,8 @@ myglTF::ModelRT::~ModelRT()
 	CleanBufferMemory(clusters);
 
 
-	vkDestroyBuffer(device->logicalDevice, rootUniformBuffer.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, rootUniformBuffer.memory, nullptr);
+	vkDestroyBuffer(device->logicalDevice, representingBuffer.buffer, nullptr);
+	vkFreeMemory(device->logicalDevice, representingBuffer.memory, nullptr);
 
 	for (auto& texture : textures) {
 		texture.destroy();
@@ -719,9 +720,9 @@ myglTF::ModelRT::~ModelRT()
 	for (auto& skin : skins) {
 		delete skin;
 	}
-	if (descriptorSetLayoutUbo != VK_NULL_HANDLE) {
-		vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutUbo, nullptr);
-		descriptorSetLayoutUbo = VK_NULL_HANDLE;
+	if (descriptorSetLayoutModel != VK_NULL_HANDLE) {
+		vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutModel, nullptr);
+		descriptorSetLayoutModel = VK_NULL_HANDLE;
 	}
 	if (descriptorSetLayoutImage != VK_NULL_HANDLE) {
 		vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutImage, nullptr);
@@ -947,6 +948,7 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 		/*If has Skin, can decide wheater to create uniform buffer*/
 		newMesh->createUniformBuffer(hasSkin);
 		newNode->mesh = newMesh;
+		linearMeshes.push_back(newMesh);
 	}
 	if (parent) {
 		parent->children.push_back(newNode);
@@ -1540,6 +1542,8 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 	getSceneDimensions();
 
+
+
 	// find max frequency and max
 	{
 		for (uint32_t i = 0; i < clusterTriangleHistogram.size(); i++)
@@ -1556,6 +1560,12 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		}
 	}
 
+	if (isBakedAnimation)
+	{
+		bakeAnimations();
+	}
+
+	// Device things
 	// GeometryNode
 	{
 		size_t geometryNodeBufferSize = 0;
@@ -1612,12 +1622,21 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	// Setup descriptors
 	uint32_t uboCount{ 0 };
 	uint32_t imageCount{ 0 };
-	if (preTransform == false)
+	// Case : each mesh has its descriptor
+	const bool hasMultipleUbo = preTransform == false;
+	if (hasMultipleUbo)
 	{
-		for (auto& node : linearNodes) {
-			if (node->mesh) {
-				uboCount++;
-			}
+		if (isBakedAnimation)
+		{
+			uboCount = bakedAnimations.size();
+		}
+		else
+		{
+			for (auto& node : linearNodes) {
+				if (node->mesh) {
+					uboCount++;
+				}
+			}			
 		}
 	}
 	else uboCount = 1;
@@ -1627,10 +1646,10 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			imageCount++;
 		}
 	}
-	std::vector<VkDescriptorPoolSize> poolSizes = {
-		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uboCount },
-	};
-	if (imageCount > 0) {
+	std::vector<VkDescriptorPoolSize> poolSizes;
+	VkDescriptorType modelDescriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSizes.push_back(VkDescriptorPoolSize{ modelDescriptorType, uboCount });
+		if (imageCount > 0) {
 		if (descriptorBindingFlags & DescriptorBindingFlags::ImageBaseColor) {
 			poolSizes.push_back({ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageCount });
 		}
@@ -1648,17 +1667,17 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	// Descriptors for per-node uniform buffers
 	{
 		// Layout is global, so only create if it hasn't already been created before
-		if (descriptorSetLayoutUbo == VK_NULL_HANDLE) {
+		if (descriptorSetLayoutModel == VK_NULL_HANDLE) {
 			uint32_t additionalFlag = isSkinningModel ? VK_SHADER_STAGE_COMPUTE_BIT : 0;
 			std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
 				// [model matrix] or [modelMat + Skinning info]
-				vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | additionalFlag, uboBinding),
+				vks::initializers::descriptorSetLayoutBinding(modelDescriptorType, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT | additionalFlag, modelBufferBinding),
 			};
 			VkDescriptorSetLayoutCreateInfo descriptorLayoutCI{};
 			descriptorLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 			descriptorLayoutCI.bindingCount = static_cast<uint32_t>(setLayoutBindings.size());
 			descriptorLayoutCI.pBindings = setLayoutBindings.data();
-			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayoutCI, nullptr, &descriptorSetLayoutUbo));
+			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayoutCI, nullptr, &descriptorSetLayoutModel));
 		}
 
 		if (preTransform && !isSkinningModel)
@@ -1668,35 +1687,76 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 				sizeof(UniformData),
-				&rootUniformBuffer.buffer,
-				&rootUniformBuffer.memory,
+				&representingBuffer.buffer,
+				&representingBuffer.memory,
 				&uniformBlock));
-			VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, rootUniformBuffer.memory, 0, sizeof(UniformData), 0, &rootUniformBuffer.mapped));
-			rootUniformBuffer.descriptor = { rootUniformBuffer.buffer, 0, sizeof(UniformData) };
+			VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, representingBuffer.memory, 0, sizeof(UniformData), 0, &representingBuffer.mapped));
+			representingBuffer.descriptor = { representingBuffer.buffer, 0, sizeof(UniformData) };
 
 			// allocate descriptor
 			VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
 			descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 			descriptorSetAllocInfo.descriptorPool = descriptorPool;
-			descriptorSetAllocInfo.pSetLayouts = &descriptorSetLayoutUbo;
+			descriptorSetAllocInfo.pSetLayouts = &descriptorSetLayoutModel;
 			descriptorSetAllocInfo.descriptorSetCount = 1;
-			VK_CHECK_RESULT(vkAllocateDescriptorSets(device->logicalDevice, &descriptorSetAllocInfo, &rootUniformBuffer.descriptorSet));
+			VK_CHECK_RESULT(vkAllocateDescriptorSets(device->logicalDevice, &descriptorSetAllocInfo, &representingBuffer.descriptorSet));
 
 			// update
 			VkWriteDescriptorSet writeDescriptorSet{};
 			writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			writeDescriptorSet.descriptorCount = 1;
-			writeDescriptorSet.dstSet = rootUniformBuffer.descriptorSet;
+			writeDescriptorSet.dstSet = representingBuffer.descriptorSet;
 			writeDescriptorSet.dstBinding = 0;
-			writeDescriptorSet.pBufferInfo = &rootUniformBuffer.descriptor;
+			writeDescriptorSet.pBufferInfo = &representingBuffer.descriptor;
 
 			vkUpdateDescriptorSets(device->logicalDevice, 1, &writeDescriptorSet, 0, nullptr);
 		}
 		else // prepare all meshes' ubo
 		{
-			for (auto node : nodes) {
-				prepareNodeDescriptor(node, descriptorSetLayoutUbo);
+			if (isBakedAnimation)
+			{
+				uint32_t numAllBakedAnimations = bakedAnimations.size();
+				bakedUniformBuffers.resize(numAllBakedAnimations);
+				for (uint32_t i = 0; i < numAllBakedAnimations; ++i)
+				{
+					auto& bakedUniformBuffer = bakedUniformBuffers[i];
+					VkDeviceSize bufferSize = sizeof(BakedAnimation);
+					// Create bufffer
+					device->CreateBuffer_DeviceLocal(
+						VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+						bufferSize,
+						&bakedUniformBuffer.buffer,
+						&bakedUniformBuffer.memory,
+						transferQueue,
+						&bakedAnimations[i]);
+					bakedUniformBuffer.descriptor = { bakedUniformBuffer.buffer, 0, bufferSize };
+
+					// allocate descriptor
+					VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
+					descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+					descriptorSetAllocInfo.descriptorPool = descriptorPool;
+					descriptorSetAllocInfo.pSetLayouts = &descriptorSetLayoutModel;
+					descriptorSetAllocInfo.descriptorSetCount = 1;
+					VK_CHECK_RESULT(vkAllocateDescriptorSets(device->logicalDevice, &descriptorSetAllocInfo, &bakedUniformBuffer.descriptorSet));
+
+					// update
+					VkWriteDescriptorSet writeDescriptorSet{};
+					writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+					writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+					writeDescriptorSet.descriptorCount = 1;
+					writeDescriptorSet.dstSet = bakedUniformBuffer.descriptorSet;
+					writeDescriptorSet.dstBinding = modelBufferBinding;
+					writeDescriptorSet.pBufferInfo = &bakedUniformBuffer.descriptor;
+
+					vkUpdateDescriptorSets(device->logicalDevice, 1, &writeDescriptorSet, 0, nullptr);
+				}
+			}
+			else
+			{
+				for (auto node : nodes) {
+					prepareNodeDescriptor(node, descriptorSetLayoutModel);
+				}
 			}
 		}
 	}
@@ -1872,7 +1932,7 @@ void myglTF::ModelRT::prepareNodeDescriptor(myglTF::Node* node, VkDescriptorSetL
 		writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		writeDescriptorSet.descriptorCount = 1;
 		writeDescriptorSet.dstSet = node->mesh->uniformBuffer.descriptorSet;
-		writeDescriptorSet.dstBinding = 0;
+		writeDescriptorSet.dstBinding = modelBufferBinding;
 		writeDescriptorSet.pBufferInfo = &node->mesh->uniformBuffer.descriptor;
 
 		vkUpdateDescriptorSets(device->logicalDevice, 1, &writeDescriptorSet, 0, nullptr);
@@ -1990,4 +2050,95 @@ void myglTF::ModelRT::createEmptyTexture(VkQueue transferQueue)
 	emptyTexture.descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	emptyTexture.descriptor.imageView = emptyTexture.view;
 	emptyTexture.descriptor.sampler = emptyTexture.sampler;
+}
+
+void myglTF::ModelRT::bakeAnimations()
+{
+	myUtils::ScopedCPUTimer scopedTimer = myUtils::ScopedCPUTimer("bakeAnim Timer");
+	animMaxFrame = 0.f;
+	samplingRate = FLT_MAX;
+	for (auto& anim : activeAnimations)
+	{
+		for (auto& channel : anim.channels) {
+			myglTF::AnimationSampler& sampler = anim.samplers[channel.samplerIndex];
+			if (sampler.inputs.size() > sampler.outputsVec4.size())
+				continue;
+
+			for (auto i = 0; i < sampler.inputs.size() - 1; i++) {
+				samplingRate = std::min(samplingRate, sampler.inputs[i + 1] - sampler.inputs[i]);
+			}
+		}
+	}
+	animMaxFPS = (uint32_t)(1.f / samplingRate);
+	for (auto& anim : activeAnimations)
+		animMaxFrame = std::max(animMaxFrame, anim.end); // still max time yet
+	animMaxTime = animMaxFrame;
+	animMaxFrame *= (1.f / samplingRate); // maxTime * FPS
+	bakedAnimations.reserve((uint32_t)animMaxFrame);
+
+
+	for (uint32_t frame = 0; frame < (uint32_t)animMaxFrame; ++frame)
+	{
+		for (uint32_t animIdx = 0; animIdx < activeAnimations.size(); ++animIdx) // animTypes
+		{
+			Animation& animation = animations[animIdx];
+			float time = (float)frame * samplingRate + 0.001f; // second
+
+			bool updated = false;
+			for (auto& channel : animation.channels) {
+				myglTF::AnimationSampler& sampler = animation.samplers[channel.samplerIndex];
+				if (sampler.inputs.size() > sampler.outputsVec4.size()) {
+					continue;
+				}
+
+				for (auto i = 0; i < sampler.inputs.size() - 1; i++) {
+					if ((time >= sampler.inputs[i]) && (time <= sampler.inputs[i + 1])) {
+						float u = std::max(0.0f, time - sampler.inputs[i]) / (sampler.inputs[i + 1] - sampler.inputs[i]);
+						if (u <= 1.0f) {
+							switch (channel.path) {
+							case myglTF::AnimationChannel::PathType::TRANSLATION: {
+								glm::vec4 trans = glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], u);
+								channel.node->translation = glm::vec3(trans);
+								break;
+							}
+							case myglTF::AnimationChannel::PathType::SCALE: {
+								glm::vec4 trans = glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], u);
+								channel.node->scale = glm::vec3(trans);
+								break;
+							}
+							case myglTF::AnimationChannel::PathType::ROTATION: {
+								glm::quat q1;
+								q1.x = sampler.outputsVec4[i].x;
+								q1.y = sampler.outputsVec4[i].y;
+								q1.z = sampler.outputsVec4[i].z;
+								q1.w = sampler.outputsVec4[i].w;
+								glm::quat q2;
+								q2.x = sampler.outputsVec4[i + 1].x;
+								q2.y = sampler.outputsVec4[i + 1].y;
+								q2.z = sampler.outputsVec4[i + 1].z;
+								q2.w = sampler.outputsVec4[i + 1].w;
+								channel.node->rotation = glm::normalize(glm::slerp(q1, q2, u));
+								break;
+							}
+							}
+							updated = true;
+						}
+					}
+				}
+			}
+			if (updated) // this animation has updated pose at currentTime
+			{
+				for (auto& node : nodes) {
+					node->update();
+				}
+			}
+		}
+		// after all anims cur time finished
+		for (const auto& mesh : linearMeshes)
+		{
+			BakedAnimation bakedAnimData{};
+			memcpy(bakedAnimData.jointMats, mesh->uniformBlock.jointMatrix, sizeof(BakedAnimation::jointMats));
+			bakedAnimations.push_back(bakedAnimData);
+		}
+	}
 }

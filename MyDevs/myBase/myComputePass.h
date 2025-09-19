@@ -14,7 +14,7 @@ protected:
 public:
 	VkQueue queue{ VK_NULL_HANDLE };
 	VkCommandPool commandPool{ VK_NULL_HANDLE };
-	VkCommandBuffer commandBuffer{ VK_NULL_HANDLE };
+	//VkCommandBuffer commandBuffer{ VK_NULL_HANDLE };
 	VkSemaphore semaphore{ VK_NULL_HANDLE };
 	VkDescriptorPool descriptorPool{ VK_NULL_HANDLE };
 	VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };

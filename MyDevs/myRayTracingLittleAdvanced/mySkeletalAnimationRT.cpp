@@ -858,8 +858,9 @@ void MySkeletalAnimationRT::loadAssets()
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 
 void MySkeletalAnimationRT::enableExtensions()
@@ -905,7 +906,7 @@ void MySkeletalAnimationRT::prepare()
 	createDescriptorSets();
 	buildCommandBuffers();
 #if ACCEL_BUILD_TIMER_ON
-	for (uint32_t i = 0; i < 2; ++i)
+	for (uint32_t i = 0; i < 3; ++i)
 	{
 		gpuTimers.push_back(std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod));
 		auto& refTimer = gpuTimers.back();
@@ -956,12 +957,15 @@ void MySkeletalAnimationRT::render()
 	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr };
 
 	static uint32_t frameCount, accFPS = 0;
-	static float accBuildBLASTime, accBuildTLASTime = 0.f;
+	static float accBuildBLASTime, accBuildTLASTime, accAnimTime = 0.f;
 	static float accTraceTime = 0.f;
 
 
 #if ACCEL_BUILD_TIMER_ON
+	gpuTimers[2]->reset(cmdBuffer);
+	gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
 	animComputePass->buildCommandBuffer(cmdBuffer);
+	gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 
 	memBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
 	vkCmdPipelineBarrier(
@@ -1023,6 +1027,7 @@ void MySkeletalAnimationRT::render()
 #if ACCEL_BUILD_TIMER_ON
 		accBuildBLASTime += gpuTimers[0]->timerResult();
 		accBuildTLASTime += gpuTimers[1]->timerResult();
+		accAnimTime += gpuTimers[2]->timerResult();
 #endif
 #if (TRACE_TIMER_ON)
 		accTraceTime += gpuTimer->timerResult();
@@ -1031,11 +1036,13 @@ void MySkeletalAnimationRT::render()
 		{
 			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
 			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
+			float animAvg = accAnimTime / MEASURE_FRAME_COUNT;
 			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
 			std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
 			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
 			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
 			std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
+			std::cout << "Average Animation Time = " << animAvg << "(ms)\n";
 #if (TRACE_TIMER_ON)
 			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
 #endif

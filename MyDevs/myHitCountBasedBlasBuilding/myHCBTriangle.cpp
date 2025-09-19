@@ -13,6 +13,7 @@
 
 #include "myHCBTriangle.h"
 #include "myIncludesCPUGPU.h"
+#include "myUtils.h"
 
 
 MyHCBTriangle::MyHCBTriangle()
@@ -857,11 +858,10 @@ void MyHCBTriangle::loadAssets()
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
 }
-
 void MyHCBTriangle::enableExtensions()
 {
 	MyVulkanRTBase::enableExtensions();
@@ -943,7 +943,9 @@ void MyHCBTriangle::render()
 			anim.accPlayTime += frameTimer;
 			if (anim.accPlayTime > anim.end)
 				anim.accPlayTime = 0.f;
+			//myUtils::CPUTimer timer(true);
 			model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
+			//timer.record(true);
 		}
 	}
 #endif
