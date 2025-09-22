@@ -181,7 +181,6 @@ namespace myglTF
 		/**
 		 * "createUniformBuffer" combined
 		 */
-		Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool createUniformBuffer, bool hasSkin);
 		Mesh(vks::VulkanDevice* device, glm::mat4 matrix);
 		~Mesh();
 		void createUniformBuffer(bool hasSkin);
@@ -440,8 +439,12 @@ namespace myglTF
 		void loadFromFile(std::string filename, vks::VulkanDevice* device, VkQueue transferQueue, uint32_t fileLoadingFlags = myglTF::FileLoadingFlags::None, float scale = 1.0f);
 		void bindBuffers(VkCommandBuffer commandBuffer);
 		void getNodeDimensions(Node* node, glm::vec3& min, glm::vec3& max);
-		void getSceneDimensions();	
+		void getSceneDimensions();
+		/**
+		 * @note after all animations updated, updateNodeTransfors() must be called
+		 */
 		void updateAnimation(uint32_t index, float time);
+		void updateNodeTransforms();
 		Node* findNode(Node* parent, uint32_t index);
 		Node* nodeFromIndex(uint32_t index);
 		void prepareNodeDescriptor(myglTF::Node* node, VkDescriptorSetLayout descriptorSetLayout);

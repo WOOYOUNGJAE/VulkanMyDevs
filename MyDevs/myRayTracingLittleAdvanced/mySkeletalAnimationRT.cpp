@@ -15,6 +15,7 @@
 
 #include "mySkeletalAnimationRT.h"
 #include "myIncludesCPUGPU.h"
+#include "myUtils.h"
 
 
 MySkeletalAnimationRT::MySkeletalAnimationRT()
@@ -861,6 +862,8 @@ void MySkeletalAnimationRT::loadAssets()
 	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
+
+	animUpdateThreads.resize(model.activeAnimations.size());
 }
 
 void MySkeletalAnimationRT::enableExtensions()
@@ -905,7 +908,7 @@ void MySkeletalAnimationRT::prepare()
 	createShaderBindingTables();
 	createDescriptorSets();
 	buildCommandBuffers();
-#if ACCEL_BUILD_TIMER_ON
+#if MEASURE_MODE
 	for (uint32_t i = 0; i < 3; ++i)
 	{
 		gpuTimers.push_back(std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod));
@@ -938,13 +941,28 @@ void MySkeletalAnimationRT::render()
 		static float animationSpeed = 1.f;
 
 		// update all animations, ALl skeletal mesh should have a single animation.
-		for (uint32_t animIdx = 0; animIdx < model.activeAnimations.size(); ++animIdx)
 		{
-			myglTF::ActiveAnimation& anim = model.activeAnimations[animIdx];
-			anim.accPlayTime += frameTimer;
-			if (anim.accPlayTime > anim.end)
-				anim.accPlayTime = 0.f;
-			model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
+			static int i = 0;
+			static double msCount = 0;
+			++i;
+			//myUtils::CPUTimer cpuTimer("CPU anim");
+			//cpuTimer.start();
+			for (uint32_t animIdx = 0; animIdx < model.activeAnimations.size(); ++animIdx)
+			{
+				myglTF::ActiveAnimation& anim = model.activeAnimations[animIdx];
+				anim.accPlayTime += frameTimer;
+				if (anim.accPlayTime > anim.end)
+					anim.accPlayTime = 0.f;
+				model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
+			}
+			//cpuTimer.record();
+			model.updateNodeTransforms();
+			//if (i > 50)
+			//	msCount += cpuTimer.timerResultMilli();
+			//if (i > 3050)
+			//{
+			//	std::cout << msCount / 3000.0 << "ms - anim\n";
+			//}
 		}
 	}
 #endif

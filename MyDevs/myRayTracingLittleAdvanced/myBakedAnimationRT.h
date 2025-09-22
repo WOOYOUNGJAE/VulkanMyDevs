@@ -78,7 +78,7 @@ public: // TLAS
 	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
 
 	myglTF::ModelRT model;
-#if ACCEL_BUILD_TIMER_ON
+#if MEASURE_MODE
 private:
 	std::vector<std::unique_ptr<GPUTimer>> gpuTimers;
 #endif

@@ -442,26 +442,6 @@ void myglTF::Primitive::setDimensions(glm::vec3 min, glm::vec3 max)
 	dimensions.radius = glm::distance(min, max) / 2.0f;
 }
 
-myglTF::Mesh::Mesh(vks::VulkanDevice* device, glm::mat4 matrix, bool createUniformBuffer, bool hasSkin)
-{
-	this->device = device;
-	this->uniformBlock.matrix = matrix;
-
-	if (createUniformBuffer == false)
-		return;
-
-	VkDeviceSize blockSize = hasSkin ? sizeof(UniformBlock) : sizeof(glm::mat4);
-	VK_CHECK_RESULT(device->createBuffer(
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		blockSize,
-		&uniformBuffer.buffer,
-		&uniformBuffer.memory,
-		&uniformBlock));
-	VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, uniformBuffer.memory, 0, blockSize, 0, &uniformBuffer.mapped));
-	uniformBuffer.descriptor = { uniformBuffer.buffer, 0, blockSize };
-
-}
 
 myglTF::Mesh::Mesh(vks::VulkanDevice* device, glm::mat4 matrix)
 {
@@ -492,6 +472,7 @@ void myglTF::Mesh::createUniformBuffer(bool hasSkin)
 		&uniformBuffer.buffer,
 		&uniformBuffer.memory,
 		&uniformBlock));
+	myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)uniformBuffer.buffer, "Mesh Node Buffer");
 	VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, uniformBuffer.memory, 0, blockSize, 0, &uniformBuffer.mapped));
 	uniformBuffer.descriptor = { uniformBuffer.buffer, 0, blockSize };
 }
@@ -1429,6 +1410,8 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			vertexBufferSize, &vertices.buffer, &vertices.memory, transferQueue, vertexBufferByte.data());
 		vertices.deviceAddress = getBufferDeviceAddress(vertices.buffer);
+		myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)vertices.buffer, "Model Vertex Buffer");
+
 
 		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			indexBufferSize, &indices.buffer, &indices.memory, transferQueue, tempIndicesCPU.data());
@@ -1437,6 +1420,8 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		{
 			device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 				vertexBufferSize, &deformingVertices.buffer, &deformingVertices.memory, transferQueue, vertexBufferByte.data());
+			myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)deformingVertices.buffer, "Model Deforming Vertex Buffer");
+
 			deformingVertices.descriptor = { deformingVertices.buffer, 0, vertexBufferSize };
 		}
 	}
@@ -1883,11 +1868,12 @@ void myglTF::ModelRT::updateAnimation(uint32_t index, float time)
 			}
 		}
 	}
-	if (updated) {
-		for (auto& node : nodes) {
-			node->update();
-		}
-	}
+}
+
+void myglTF::ModelRT::updateNodeTransforms()
+{
+	for (auto& node : nodes)
+		node->update();
 }
 
 myglTF::Node* myglTF::ModelRT::findNode(Node* parent, uint32_t index)

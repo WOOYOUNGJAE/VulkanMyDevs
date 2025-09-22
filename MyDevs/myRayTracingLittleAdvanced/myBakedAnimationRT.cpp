@@ -944,12 +944,13 @@ void MyBakedAnimationRT::render()
 #if MEASURE_MODE
 
 	static uint32_t frameCount, accFPS = 0;
-	static float accBuildBLASTime, accBuildTLASTime, accAnimTime = 0.f;
+	static float accBuildBLASTime, accBuildTLASTime, accTraceTime = 0.f;
 
 #if ACCEL_BUILD_TIMER_ON
 	gpuTimers[2]->reset(cmdBuffer);
 	gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
 	animComputePass->buildCommandBuffer(cmdBuffer, (uint32_t)(accTime * (float)model.animMaxFPS) % (uint32_t)model.animMaxFrame);
+	std::cout << model.animMaxFPS << std::endl;
 	gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 
 	memBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };

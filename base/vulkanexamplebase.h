@@ -74,6 +74,7 @@
 #include "VulkanInitializers.hpp"
 #include "camera.hpp"
 #include "benchmark.hpp"
+#define MEASURE_MODE 1
 
 class VulkanExampleBase
 {

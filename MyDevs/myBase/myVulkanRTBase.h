@@ -9,11 +9,11 @@
 */
 
 #include "vulkanexamplebase.h"
+#include "myUtils.h"
 
 #define FORCE_STATIC_SCENE 0
-#define MEASURE_MODE 1
 #define ACCEL_BUILD_TIMER_ON (MEASURE_MODE & 1) // MeasureMode Must be ON 
-#define TRACE_TIMER_ON (ACCEL_BUILD_TIMER_ON & 0) // AccelBuildTimer Must be ON
+#define TRACE_TIMER_ON (ACCEL_BUILD_TIMER_ON & 1) // AccelBuildTimer Must be ON
 #define ANIM_TIMER_ON 1
 struct ScratchBuffer
 {
@@ -170,4 +170,7 @@ public:
 
 	virtual void enableExtensions();
 	virtual void prepare();
+	
+private:
+	myUtils::GPUDebug* pGpuDebug;
 };

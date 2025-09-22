@@ -1,5 +1,6 @@
 #include "myVulkanRTBase.h"
 #include "myDeviceFuncTable.h"
+#include "threadpool.hpp"
 /*
 * Ray Tracing Base
 *
@@ -11,6 +12,7 @@
 
 MyVulkanRTBase::~MyVulkanRTBase()
 {
+	delete pGpuDebug; pGpuDebug = nullptr;
 	delete deviceFuncTable; deviceFuncTable = nullptr;
 }
 
@@ -370,6 +372,10 @@ void MyVulkanRTBase::createAccelerationStructureBuffer(AccelerationStructure& ac
 void MyVulkanRTBase::prepare()
 {
 	VulkanExampleBase::prepare();
+
+	pGpuDebug = myUtils::GPUDebug::Get();
+	pGpuDebug->init(instance, device);
+
 	// Get properties and features
 	rayTracingPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
 	VkPhysicalDeviceProperties2 deviceProperties2{};

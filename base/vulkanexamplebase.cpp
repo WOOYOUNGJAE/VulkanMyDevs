@@ -290,7 +290,6 @@ void VulkanExampleBase::nextFrame()
 #endif
 	frameTimer = (float)tDiff / 1000.0f;
 	camera.update(frameTimer);
-	// std::cout << camera.position.x << "  " << camera.position.y << "  " << camera.position.z << "  " << std::endl;
 	if (camera.moving())
 	{
 		viewUpdated = true;
@@ -305,7 +304,9 @@ void VulkanExampleBase::nextFrame()
 		}
 	}
 	float fpsTimer = (float)(std::chrono::duration<double, std::milli>(tEnd - lastTimestamp).count());
+#if !MEASURE_MODE
 	if (fpsTimer > 1000.0f)
+#endif
 	{
 		lastFPS = static_cast<uint32_t>((float)frameCounter * (1000.0f / fpsTimer));
 #if defined(_WIN32)
