@@ -860,6 +860,7 @@ void MySkeletalAnimationRT::loadAssets()
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
 	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
 
@@ -944,7 +945,7 @@ void MySkeletalAnimationRT::render()
 		{
 			static int i = 0;
 			static double msCount = 0;
-			++i;
+			//++i;
 			//myUtils::CPUTimer cpuTimer("CPU anim");
 			//cpuTimer.start();
 			for (uint32_t animIdx = 0; animIdx < model.activeAnimations.size(); ++animIdx)
@@ -955,8 +956,11 @@ void MySkeletalAnimationRT::render()
 					anim.accPlayTime = 0.f;
 				model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 			}
+			model.updateJoints();
+			for (auto& node : model.nodes)
+				model.updateNodeTransforms(node);
+			//model.updateNodeTransforms();
 			//cpuTimer.record();
-			model.updateNodeTransforms();
 			//if (i > 50)
 			//	msCount += cpuTimer.timerResultMilli();
 			//if (i > 3050)

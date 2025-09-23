@@ -34,7 +34,7 @@ sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID].triangleHitM
 ## 1.2 Compare AS Building Performance (8 Models)
 | 항목 | Traditional BLAS | With CLAS | Clustered Triangle BLAS(HCB) |
 | :--- | :---: | :---: | :---: |
-| **Animation CPU Time** | 0.539307 (ms) |  |  |
+| **Animation CPU Time** | 4.05584 (ms) |  |  |
 | **Animation GPU Time** | 4.33263 (ms) |  |  |
 | **CLAS Build Time** | - |  |  |
 | **BLAS Build Time** | 0.693201 (ms) |  |  |

@@ -174,7 +174,7 @@ namespace myglTF
 
 		struct UniformBlock {
 			glm::mat4 matrix;
-			glm::mat4 jointMatrix[64*4]{};
+			glm::mat4 jointMatrix[MAX_JOINTS]{};
 			float jointcount{ 0 };
 		} uniformBlock;
 
@@ -192,8 +192,10 @@ namespace myglTF
 	struct Skin {
 		std::string name;
 		Node* skeletonRoot = nullptr;
+		Node* jointRoot = nullptr; // it can be skeletonRoot or joints[0]
 		std::vector<glm::mat4> inverseBindMatrices;
 		std::vector<Node*> joints;
+		// bool bUpdated = false;
 	};
 
 	/*
@@ -208,14 +210,52 @@ namespace myglTF
 		Mesh* mesh = nullptr;
 		Skin* skin = nullptr;
 		int32_t skinIndex = -1;
+		int32_t jointNodeIndex = -1; // if -1, not joint node
+		int32_t jointIndexInSkin = -1; // if -1, not joint node
 		glm::vec3 translation{};
 		glm::vec3 scale{ 1.0f };
 		glm::quat rotation{};
 		glm::mat4 localMatrix();
 		glm::mat4 getMatrix();
 		void update();
+
+		// skin has multiple mesh.
+		void updateJoints(glm::mat4 parentMatrix, std::array<glm::mat4, MAX_JOINTS>& jointMatrices)
+		{
+			// if not joint node, skip.
+			if (jointNodeIndex < 0)
+				return;
+			
+			glm::mat4 curNodeMatrix = localMatrix();
+			glm::mat4 toRoot = parentMatrix * curNodeMatrix;
+
+			// curjointSpace -> jointRoot
+			jointMatrices[jointIndexInSkin] = toRoot;
+
+			for (auto& child : children)
+				child->updateJoints(toRoot, jointMatrices);
+		}
 		~Node();
 	};
+
+	struct JointNode
+	{
+		JointNode() = delete;
+		JointNode(Node* node) : gltfNode(node), nodeIndex(node->index){}
+		Node* gltfNode = nullptr; // original node
+		std::vector<JointNode*> children;
+		glm::mat4 inverseBindMatrix = glm::mat4(1.f);
+		uint32_t nodeIndex = -1;
+		glm::mat4 finalMatrix = glm::mat4(1.f);
+		void update(glm::mat4 parentMatrix)
+		{
+			glm::mat4 curNodeMatrix = parentMatrix * gltfNode->localMatrix();
+			finalMatrix = glm::inverse(gltfNode->localMatrix()) * curNodeMatrix * inverseBindMatrix;
+			for (auto& child : children)
+				child->update(curNodeMatrix);
+		}
+	};
+
 
 	/*
 		glTF animation channel
@@ -344,7 +384,20 @@ namespace myglTF
 
 		std::vector<Node*> nodes;
 		std::vector<Node*> linearNodes;
+		typedef std::pair<Skin*, Mesh*> JointOwner;
+		struct AnimatedSkin
+		{
+			Skin* pSkin = nullptr;
+			Mesh* pMesh = nullptr; // 무시일단
+			Node* pJointRoot = nullptr;
+		};
+		std::unordered_map<Node*, JointOwner> rootJointMap; // rootJoint -> <itsSkin, itsMesh>
+		//std::unordered_map<Skin*, JointOwner> skinMap; // rootJoint -> <itsSkin, itsMesh>
+		std::vector<AnimatedSkin> animatedSkins;
+		std::unordered_map<Node*, AnimatedSkin> skinMap;
+		std::unordered_map<Node*, std::array<glm::mat4, MAX_JOINTS>> rootToMatricesMap; // rootJoint -> matrices
 		std::vector<Skin*> skins;
+		std::vector<JointNode*> jointRoots;
 		std::vector<Mesh*> linearMeshes;
 		std::vector<Texture> textures;
 		std::vector<Material> materials;
@@ -445,6 +498,8 @@ namespace myglTF
 		 */
 		void updateAnimation(uint32_t index, float time);
 		void updateNodeTransforms();
+		void updateJoints();
+		void updateNodeTransforms(Node* pNode);
 		Node* findNode(Node* parent, uint32_t index);
 		Node* nodeFromIndex(uint32_t index);
 		void prepareNodeDescriptor(myglTF::Node* node, VkDescriptorSetLayout descriptorSetLayout);

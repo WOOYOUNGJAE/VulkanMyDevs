@@ -499,7 +499,8 @@ void myglTF::Node::update()
 		glm::mat4 m = getMatrix();
 		if (skin) {
 			mesh->uniformBlock.matrix = m;
-			// Update join matrices
+
+			// Update joint matrices
 			glm::mat4 inverseTransform = glm::inverse(m);
 			for (size_t i = 0; i < skin->joints.size(); i++) {
 				myglTF::Node* jointNode = skin->joints[i];
@@ -509,6 +510,7 @@ void myglTF::Node::update()
 			}
 			mesh->uniformBlock.jointcount = (float)skin->joints.size();
 			memcpy(mesh->uniformBuffer.mapped, &mesh->uniformBlock, sizeof(mesh->uniformBlock));
+
 		}
 		else {
 			memcpy(mesh->uniformBuffer.mapped, &m, sizeof(glm::mat4));
@@ -949,12 +951,20 @@ void myglTF::ModelRT::loadSkins(tinygltf::Model& gltfModel)
 		// Find skeleton root node
 		if (source.skeleton > -1) {
 			newSkin->skeletonRoot = nodeFromIndex(source.skeleton);
+			newSkin->jointRoot = newSkin->skeletonRoot;
 		}
+		else // assume skin's first joint is root joint
+			newSkin->jointRoot = nodeFromIndex(source.joints[0]);
+
+		rootToMatricesMap.emplace(newSkin->jointRoot, std::array<glm::mat4, MAX_JOINTS>{});
 
 		// Find joint nodes
+		int32_t jointIndexInSkin = 0;
 		for (int jointIndex : source.joints) {
 			Node* node = nodeFromIndex(jointIndex);
 			if (node) {
+				node->jointNodeIndex = jointIndex;
+				node->jointIndexInSkin = jointIndexInSkin++;
 				newSkin->joints.push_back(nodeFromIndex(jointIndex));
 			}
 		}
@@ -1210,6 +1220,9 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			loadNode(nullptr, node, scene.nodes[i], gltfModel, tempIndicesCPU, tempVerticesCPU, scale);
 		}
 		loadSkins(gltfModel);
+
+		
+
 		if (gltfModel.animations.size() > 0) {
 			loadAnimations(gltfModel);
 		}
@@ -1219,19 +1232,47 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			activeAnimations.push_back(ActiveAnimation(anim));
 		}
 
+		// Assign skins
 		for (auto node : linearNodes) {
-			// Assign skins
 			if (node->skinIndex > -1) {
 				node->skin = skins[node->skinIndex];
 			}
-			for (auto node : linearNodes) {
-				// Initial pose
-				if (preTransform == false && node->mesh) {
-					node->update();
-				}
-			}
-
 		}
+		// collect skin's root nodes
+		for (auto& node : linearNodes)
+		{
+			if (node->skin && node->skin->jointRoot && node->mesh)
+			{
+				AnimatedSkin animatedSkin;
+				animatedSkin.pSkin = node->skin;
+				animatedSkin.pMesh = node->mesh;
+				animatedSkin.pJointRoot = node->skin->jointRoot;
+				skinMap.emplace(node, animatedSkin);
+				//animatedSkins.push_back(animatedSkin);
+				JointOwner jointOwner = JointOwner(node->skin, node->mesh);
+				rootJointMap.emplace(node->skin->jointRoot, jointOwner);
+			}
+		}
+		// update joints
+		updateJoints();
+		// Initial pose
+		//for (auto node : linearNodes) {
+		//	if (preTransform == false && node->mesh) {
+		//		node->update();
+		//	}
+		//}
+
+		/*for (auto& jointRoot : rootJointMap)
+		{
+			Skin* ownerSkin = jointRoot.second.first;
+			Mesh* ownerMesh = jointRoot.second.second;
+			jointRoot.first->updateJoints(
+				glm::mat4(1.f),
+				ownerMesh->uniformBlock.matrix,
+				ownerMesh, ownerSkin
+			);
+		}*/
+
 	}
 	else {
 		vks::tools::exitFatal("Could not load glTF file \"" + filename + "\": " + error, -1);
@@ -1874,6 +1915,48 @@ void myglTF::ModelRT::updateNodeTransforms()
 {
 	for (auto& node : nodes)
 		node->update();
+}
+
+void myglTF::ModelRT::updateJoints()
+{
+	for (auto& rootToMatrices : rootToMatricesMap)
+	{
+		Node* jointRoot = rootToMatrices.first;
+		auto& jointMatrices = rootToMatrices.second;
+		jointRoot->updateJoints(glm::mat4(1.f), jointMatrices);
+	}
+}
+
+void myglTF::ModelRT::updateNodeTransforms(Node* pNode)
+{
+	if (pNode->mesh) {
+		glm::mat4 m = pNode->getMatrix();
+		if (pNode->skin) {
+			pNode->mesh->uniformBlock.matrix = m;
+
+			const auto& jointMatrices = rootToMatricesMap[pNode->skin->jointRoot];
+
+			// Update joint matrices
+			glm::mat4 inverseTransform = glm::inverse(m);
+
+			for (size_t i = 0; i < pNode->skin->joints.size(); i++) {
+				myglTF::Node* jointNode = pNode->skin->joints[i];
+				glm::mat4 jointMat = jointMatrices[i] * pNode->skin->inverseBindMatrices[i];
+				jointMat = inverseTransform * jointMat;
+				pNode->mesh->uniformBlock.jointMatrix[i] = jointMat;
+			}
+			pNode->mesh->uniformBlock.jointcount = (float)pNode->skin->joints.size();
+			memcpy(pNode->mesh->uniformBuffer.mapped, &pNode->mesh->uniformBlock, sizeof(pNode->mesh->uniformBlock));
+
+		}
+		else {
+			memcpy(pNode->mesh->uniformBuffer.mapped, &m, sizeof(glm::mat4));
+		}
+	}
+
+	for (auto& child : pNode->children) {
+		updateNodeTransforms(child);
+	}
 }
 
 myglTF::Node* myglTF::ModelRT::findNode(Node* parent, uint32_t index)

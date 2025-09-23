@@ -23,7 +23,7 @@
 
 #define WAVE_SIZE 32 // warp sizes
 #define WORK_GROUP_SIZE 128 // thread block size
-
+#define MAX_JOINTS 256
 
 #ifdef __cplusplus
 #include <glm/glm.hpp>
