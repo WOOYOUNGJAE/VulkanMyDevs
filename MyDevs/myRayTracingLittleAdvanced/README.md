@@ -103,7 +103,7 @@ else
 // ....
 asGeometry.geometry.triangles.vertexData = getBufferDeviceAddress(vertexBuffer);
 ```
-## 기존 Sascha Matrix Update 개선
+## Imporvement from Sascha's Matrix Update
 ```c++
 void Node::update()
 {
