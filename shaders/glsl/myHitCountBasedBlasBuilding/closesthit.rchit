@@ -13,6 +13,8 @@ void main()
 	uint primitiveID = gl_PrimitiveID;
 	uint clusterID = gl_InstanceID;
 	uint instanceID = gl_InstanceID;
+
+
 //	if (pushData.renderMode > 0)
 	{
 		uint minUnitID = (pushData.renderMode == 1) ? primitiveID : clusterID;
@@ -23,10 +25,11 @@ void main()
 			float((h >> 16) & 0xFF)
 		) / 255.0 * 0.3 + 0.5;
 	}
+
 	
 
-//	Triangle tri = unpackTriangle(instanceID, clusterID, primitiveID);
 
+	Triangle tri = unpackTriangle(instanceID, clusterID, primitiveID);
 	GeometryNode geometryNode = geometryNodes.nodes[0];
 	sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID].triangleHitMask |= (1 << primitiveID);
 

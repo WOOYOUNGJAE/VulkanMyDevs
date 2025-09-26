@@ -15,7 +15,7 @@
 #include <iomanip>
 
 #define WARMINGUP_FRAME 10
-#define MEASURE_FRAME_COUNT 500
+#define MEASURE_FRAME_COUNT 1000
 #define MEASURE_END_FRAME (WARMINGUP_FRAME + MEASURE_FRAME_COUNT)
 
 namespace vks

@@ -113,7 +113,9 @@ void MySkeletalAnimationRT::initBLASes()
 			for (auto primitive : node->mesh->primitives) {
 				if (primitive->indexCount > 0) {
 					VkTransformMatrixKHR transformMatrix{};
-					auto m = glm::mat3x4(glm::transpose(node->getMatrix()));
+					//auto m = glm::mat3x4(glm::transpose(node->getMatrix()));
+					//auto m = glm::mat3x4(glm::transpose(node->getMatrix()));
+					auto m = glm::mat3x4(1.f);
 					memcpy(&transformMatrix, (void*)&m, sizeof(glm::mat3x4));
 					transformMatrices.push_back(transformMatrix);
 				}
@@ -859,9 +861,9 @@ void MySkeletalAnimationRT::loadAssets()
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
 
 	animUpdateThreads.resize(model.activeAnimations.size());
@@ -880,14 +882,14 @@ void MySkeletalAnimationRT::prepare()
 	setupConsole("Vulkan example");
 #endif
 #endif
-#if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
-	std::string batchPath = getShadersPath() + "MySkeletalAnimationRT/ShaderCompile.bat";
+#if WIN32 & !SKIP_SHADER_COMIPLE  // compile shaders
+	std::string batchPath = getShadersPath() + "myRayTracingLittleAdvanced/ShaderCompile.bat";
 	system(batchPath.c_str());
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
 	loadAssets();
-	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
-	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
+	pushConstantData.indexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
+	pushConstantData.vertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 
 	//createComputePipeline();
 
@@ -945,9 +947,8 @@ void MySkeletalAnimationRT::render()
 		{
 			static int i = 0;
 			static double msCount = 0;
-			//++i;
-			//myUtils::CPUTimer cpuTimer("CPU anim");
-			//cpuTimer.start();
+			++i;
+			myUtils::CPUTimer cpuTimer("CPU anim");
 			for (uint32_t animIdx = 0; animIdx < model.activeAnimations.size(); ++animIdx)
 			{
 				myglTF::ActiveAnimation& anim = model.activeAnimations[animIdx];
@@ -956,17 +957,19 @@ void MySkeletalAnimationRT::render()
 					anim.accPlayTime = 0.f;
 				model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 			}
+			cpuTimer.start();
+
 			model.updateJoints();
 			for (auto& node : model.nodes)
 				model.updateNodeTransforms(node);
-			//model.updateNodeTransforms();
-			//cpuTimer.record();
-			//if (i > 50)
-			//	msCount += cpuTimer.timerResultMilli();
-			//if (i > 3050)
-			//{
-			//	std::cout << msCount / 3000.0 << "ms - anim\n";
-			//}
+
+			cpuTimer.record();
+			if (i > 50)
+				msCount += cpuTimer.timerResultMilli();
+			if (i > 3050)
+			{
+				std::cout << msCount / 3000.0 << "ms - cpu anim\n";
+			}
 		}
 	}
 #endif
@@ -1080,6 +1083,9 @@ void MySkeletalAnimationRT::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 {
 	if (overlay->header("Visibility"))
 	{
-		(overlay->checkBox("Render Triangle", (bool*)&pushConstantData.bRenderTriangle));
+		//(overlay->radioButton("Render Texture", (int*)& pushConstantData.renderMode, 0));
+		// 0:Texture 1:Triangle 2:Cluster
+		(overlay->radioButton("Render Triangle", (int*)&pushConstantData.renderMode, 1));
+		(overlay->radioButton("Render Cluster", (int*)&pushConstantData.renderMode, 2));
 	}
 }

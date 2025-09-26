@@ -10,7 +10,20 @@ layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
 void main()
 {
-	if (pushData.bRenderTriangle != 0)
+
+	Triangle tri = unpackTriangle(gl_PrimitiveID);
+//	const float f = 0.25f;
+//	if (tri.weight0.x > f || tri.weight0.y > f || tri.weight0.z > f || tri.weight0.w > f)
+//	{
+//		hitValue = vec3(1,0,1);return;
+//	}
+//	else
+//	{
+//		hitValue = vec3(1,1,0);return;
+//	}
+
+
+	if (pushData.renderMode != 0)
 	{
 		uint triID = gl_PrimitiveID ;
 
@@ -24,7 +37,6 @@ void main()
 	}
 	
 
-	Triangle tri = unpackTriangle(gl_PrimitiveID);
 
 	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
 //	MeshPrimitive meshPrimitive = meshPrimitives.primitives[1];

@@ -302,6 +302,86 @@ void MyHCBTriangle::initTLAS()
 void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
 {
 	//CPUTimer timer("Build Blas Timer");
+
+	// TODO build Static-Dynamic BLAS Parallelly
+	uint32_t numStaticBlases = staticBLASes.size();
+	uint32_t numDynamicBlases = dynamicBLASes.size(); // for Deformable Mesh
+
+	//VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	const bool isFirstBuild = (numStaticBlases && staticBLASes[0].handle == VK_NULL_HANDLE)
+		|| (numDynamicBlases && dynamicBLASes[0].handle == VK_NULL_HANDLE);
+	//gpuTimer->reset(commandBuffer);
+	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
+
+	// ramda func
+	auto processBLASes = [&](auto& blases, auto& buildInfos, auto& buildingSets) {
+		for (uint32_t blasIdx = 0; blasIdx < buildInfos.size(); ++blasIdx) {
+			AccelerationStructure& blas = blases[blasIdx];
+			PerBLASBuildInfo& refBuildInfo = buildInfos[blasIdx];
+
+			if (isFirstBuild)
+			{
+				if (refBuildInfo.blasScratchBuffer.handle == VK_NULL_HANDLE)
+					refBuildInfo.blasScratchBuffer = createScratchBuffer(refBuildInfo.blasScratchSizeMax);
+
+				VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
+				accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+				accelerationStructureCreateInfo.buffer = blas.buffer;
+				accelerationStructureCreateInfo.size = refBuildInfo.asSize;
+				accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+				vkCreateAccelerationStructureKHR(device, &accelerationStructureCreateInfo, nullptr, &blas.handle);
+
+				refBuildInfo.asBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+				refBuildInfo.asBuildGeometryInfo.dstAccelerationStructure = blas.handle;
+				refBuildInfo.asBuildGeometryInfo.scratchData.deviceAddress = refBuildInfo.blasScratchBuffer.deviceAddress;
+
+				buildingSets.buildRangeInfosArray.push_back(refBuildInfo.buildRangeInfos.data());
+				buildingSets.buildGeometryInfos.push_back(refBuildInfo.asBuildGeometryInfo);
+			}
+			else // Update
+			{
+#if FORCE_STATIC_SCENE
+				return;
+#endif
+				refBuildInfo.asBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+				refBuildInfo.asBuildGeometryInfo.srcAccelerationStructure = blas.handle;
+				refBuildInfo.asBuildGeometryInfo.dstAccelerationStructure = blas.handle;
+			}
+		}
+		};
+
+	// static blas
+	processBLASes(staticBLASes, staticPerBlasBuildInfos, staticBlasBuildingSets);
+	// dynamic blas  
+	processBLASes(dynamicBLASes, dynamicPerBlasBuildInfos, dynamicBlasBuildingSets);
+
+
+	// dynamic blas
+	if (numDynamicBlases)
+	{
+		vkCmdBuildAccelerationStructuresKHR(
+			cmdBuffer,
+			numDynamicBlases,
+			dynamicBlasBuildingSets.buildGeometryInfos.data(),
+			dynamicBlasBuildingSets.buildRangeInfosArray.data());
+	}
+	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
+
+	// static blas
+	if (numStaticBlases)
+	{
+		vkCmdBuildAccelerationStructuresKHR(
+			cmdBuffer,
+			numStaticBlases,
+			staticBlasBuildingSets.buildGeometryInfos.data(),
+			staticBlasBuildingSets.buildRangeInfosArray.data());
+
+	}
+}
+
+void MyHCBTriangle::hcbBuildBLASes(VkCommandBuffer cmdBuffer)
+{
+	//CPUTimer timer("Build Blas Timer");
 	uint32_t numStaticBlases = staticBLASes.size();
 	uint32_t numDynamicBlases = dynamicBLASes.size(); // for Deformable Mesh
 
@@ -860,7 +940,7 @@ void MyHCBTriangle::loadAssets()
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 void MyHCBTriangle::enableExtensions()
 {
@@ -881,8 +961,8 @@ void MyHCBTriangle::prepare()
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
 	loadAssets();
-	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
-	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
+	pushConstantData.indexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
+	pushConstantData.vertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 
 	//createComputePipeline();
 
@@ -892,7 +972,7 @@ void MyHCBTriangle::prepare()
 	initBLASes();
 	initTLAS();
 
-	buildBLASes(accelBuildCmdBuffer);
+	hcbBuildBLASes(accelBuildCmdBuffer);
 	accelBuildPipelineBarrier(accelBuildCmdBuffer);
 	buildTLAS(accelBuildCmdBuffer);
 	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, queue);
@@ -944,9 +1024,13 @@ void MyHCBTriangle::render()
 			if (anim.accPlayTime > anim.end)
 				anim.accPlayTime = 0.f;
 			//myUtils::CPUTimer timer(true);
-			model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
+			//model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 			//timer.record(true);
 		}
+		model.updateJoints();
+		for (auto& node : model.nodes)
+			model.updateNodeTransforms(node);
+
 	}
 #endif
 
@@ -979,6 +1063,7 @@ void MyHCBTriangle::render()
 	{
 		gpuTimers[0]->reset(cmdBuffer);
 		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
+		//hcbBuildBLASes(cmdBuffer);
 		buildBLASes(cmdBuffer);
 		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 

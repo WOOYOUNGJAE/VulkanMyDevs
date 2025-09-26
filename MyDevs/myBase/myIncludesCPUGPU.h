@@ -162,4 +162,11 @@ struct Payload_MeshShader
 	uint32_t meshletIndices[WAVE_SIZE];
 };
 
+struct MainRendererPushConstantData
+{
+    uint64_t vertexBufferDeviceAddress;
+    uint64_t indexBufferDeviceAddress;
+    uint32_t renderMode; // 0:Texture 1:Triangle 2:Cluster
+};
+
 #endif

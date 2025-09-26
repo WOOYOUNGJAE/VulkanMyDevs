@@ -10,6 +10,7 @@
 
 #include "vulkanexamplebase.h"
 #include "myUtils.h"
+#include "myIncludesCPUGPU.h"
 
 #define FORCE_STATIC_SCENE 0
 #define ACCEL_BUILD_TIMER_ON (MEASURE_MODE & 1) // MeasureMode Must be ON 
@@ -171,6 +172,7 @@ public:
 	virtual void enableExtensions();
 	virtual void prepare();
 	
-private:
+protected:
 	myUtils::GPUDebug* pGpuDebug;
+	typedef MainRendererPushConstantData PushConstantDataBase;
 };

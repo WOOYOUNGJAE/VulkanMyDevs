@@ -802,8 +802,8 @@ void MyDynamicAccelerationStructure::prepare()
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
 	loadAssets();
-	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
-	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
+	pushConstantData.indexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
+	pushConstantData.vertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 	// Create the acceleration structures used to render the ray traced scene
 	//createBLASes();
 	initBLASes();

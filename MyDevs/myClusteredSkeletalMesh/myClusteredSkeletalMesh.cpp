@@ -963,9 +963,9 @@ void MyClusteredSkeletalMesh::loadAssets()
 
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 
 void MyClusteredSkeletalMesh::enableExtensions()
@@ -994,8 +994,8 @@ void MyClusteredSkeletalMesh::prepare()
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
 	loadAssets();
-	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
-	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
+	pushConstantData.indexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
+	pushConstantData.vertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 
 	// create compute pipieline
 	blasUpdateComputePass = std::make_unique<MyBLASUpdateCompute>(device);
@@ -1117,7 +1117,9 @@ void MyClusteredSkeletalMesh::render()
 				anim.accPlayTime = 0.f;
 			model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 		}
-
+		model.updateJoints();
+		for (auto& node : model.nodes)
+			model.updateNodeTransforms(node);
 	}
 	updateUniformBuffers();
 

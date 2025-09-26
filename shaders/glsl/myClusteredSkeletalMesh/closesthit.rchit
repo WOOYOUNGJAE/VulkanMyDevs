@@ -33,13 +33,13 @@ void main()
 
 	// find primitive Index
 	uint primitiveIdx = 0;
-	for (uint i = 0; i < pushData.numPrimitives; ++i)
-	{
-		if (triOffsetGlobal >= meshPrimitives.primitives[i].triangleStartOffsetGlobal)
-			primitiveIdx = i;
-		else
-			break;
-	}
+//	for (uint i = 0; i < pushData.numPrimitives; ++i)
+//	{
+//		if (triOffsetGlobal >= meshPrimitives.primitives[i].triangleStartOffsetGlobal)
+//			primitiveIdx = i;
+//		else
+//			break;
+//	}
 
 	ClusteredMeshPrimitive meshPrimitive = meshPrimitives.primitives[primitiveIdx];
 

@@ -522,6 +522,22 @@ void myglTF::Node::update()
 	}
 }
 
+void myglTF::Node::updateJoints(glm::mat4 parentMatrix, std::array<glm::mat4, 256>& jointMatrices)
+{
+	// if not joint node, skip.
+	if (jointNodeIndex < 0)
+		return;
+
+	glm::mat4 curNodeMatrix = localMatrix();
+	glm::mat4 toRoot = parentMatrix * curNodeMatrix;
+
+	// curjointSpace -> jointRoot
+	jointMatrices[jointIndexInSkin] = toRoot;
+
+	for (auto& child : children)
+		child->updateJoints(toRoot, jointMatrices);
+}
+
 myglTF::Node::~Node()
 {
 	if (mesh) {
@@ -535,8 +551,6 @@ myglTF::Node::~Node()
 void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData, const uint32_t firstIndexGlobalOffset)
 {
 	// Do Cluster things - Strongly influenced by https://github.com/nvpro-samples/vk_animated_clusters
-	uint32_t clusterTrianglesMax = 64;
-	uint32_t clusterVerticesMax = 64;
 	size_t minTriangles = (clusterTrianglesMax / 4) & ~3; // allow smaller clusters to be generated when that significantly improves their bounds
 	size_t maxVerticesPerMeshlet = clusterVerticesMax; // Same for MeshShader
 	size_t maxIndicesPerMeshlet = minTriangles; // If MeshShader:124
@@ -555,7 +569,7 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 	size_t numClusters = 0;
 	// build geometry clusters - Use MeshOptimizer(https://github.com/zeux/meshoptimizer)
 	{
-		std::vector<meshopt_Meshlet> meshlets(meshopt_buildMeshletsBound(originalIndices.size(), 64, minTriangles));
+		std::vector<meshopt_Meshlet> meshlets(meshopt_buildMeshletsBound(originalIndices.size(), clusterVerticesMax, minTriangles));
 
 		refClusterLocalIndices.resize(meshlets.size() * clusterTrianglesMax * 3);
 		refClusterLocalVertices.resize(meshlets.size() * clusterVerticesMax);
@@ -1170,7 +1184,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	const bool isGeometryNodePerMesh = fileLoadingFlags & myglTF::FileLoadingFlags::GeometryNodePerMesh;
 	const bool bMakeClusters = fileLoadingFlags & myglTF::FileLoadingFlags::MakeClusters;
 	const bool bClusteredTriangleBLAS = fileLoadingFlags & myglTF::FileLoadingFlags::ClusteredTriangleBLAS;
-	const bool bClusteredBLAS = fileLoadingFlags & myglTF::FileLoadingFlags::ClusteredBLAS | ClusteredTriangleBLAS /*TODO TEMP*/;
+	const bool bClusteredBLAS = fileLoadingFlags & (myglTF::FileLoadingFlags::ClusteredBLAS | ClusteredTriangleBLAS /*TODO TEMP*/);
 
 	auto getBufferDeviceAddress = [&](VkBuffer buffer)
 	{
@@ -1204,6 +1218,8 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	tinygltf::asset_manager = androidApp->activity->assetManager;
 #endif
 	bool fileLoaded = gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, filename);
+
+
 	std::vector<VertexType*> tempVerticesCPU;
 	std::vector<uint32_t> tempIndicesCPU;
 	bool isSkinningModel = gltfModel.skins.size() > 0;
@@ -1238,41 +1254,17 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 				node->skin = skins[node->skinIndex];
 			}
 		}
-		// collect skin's root nodes
-		for (auto& node : linearNodes)
-		{
-			if (node->skin && node->skin->jointRoot && node->mesh)
-			{
-				AnimatedSkin animatedSkin;
-				animatedSkin.pSkin = node->skin;
-				animatedSkin.pMesh = node->mesh;
-				animatedSkin.pJointRoot = node->skin->jointRoot;
-				skinMap.emplace(node, animatedSkin);
-				//animatedSkins.push_back(animatedSkin);
-				JointOwner jointOwner = JointOwner(node->skin, node->mesh);
-				rootJointMap.emplace(node->skin->jointRoot, jointOwner);
-			}
-		}
+
 		// update joints
 		updateJoints();
+		for (auto& node : nodes)
+			updateNodeTransforms(node);
 		// Initial pose
 		//for (auto node : linearNodes) {
 		//	if (preTransform == false && node->mesh) {
 		//		node->update();
 		//	}
 		//}
-
-		/*for (auto& jointRoot : rootJointMap)
-		{
-			Skin* ownerSkin = jointRoot.second.first;
-			Mesh* ownerMesh = jointRoot.second.second;
-			jointRoot.first->updateJoints(
-				glm::mat4(1.f),
-				ownerMesh->uniformBlock.matrix,
-				ownerMesh, ownerSkin
-			);
-		}*/
-
 	}
 	else {
 		vks::tools::exitFatal("Could not load glTF file \"" + filename + "\": " + error, -1);
@@ -1380,8 +1372,8 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		tempIndicesCPU.clear();
 		tempIndicesCPU.shrink_to_fit();
 
-		clusterTriangleHistogram.resize(64 + 1, 0);
-		clusterVertexHistogram.resize(64 + 1, 0);
+		clusterTriangleHistogram.resize(clusterTrianglesMax + 1, 0);
+		clusterVertexHistogram.resize(clusterVerticesMax + 1, 0);
 
 		for (uint32_t geometryIdx = 0; geometryIdx < numGeometries; ++geometryIdx)
 		{
@@ -1451,7 +1443,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			vertexBufferSize, &vertices.buffer, &vertices.memory, transferQueue, vertexBufferByte.data());
 		vertices.deviceAddress = getBufferDeviceAddress(vertices.buffer);
-		myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)vertices.buffer, "Model Vertex Buffer");
+		//myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)vertices.buffer, "Model Vertex Buffer");
 
 
 		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -1461,7 +1453,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		{
 			device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 				vertexBufferSize, &deformingVertices.buffer, &deformingVertices.memory, transferQueue, vertexBufferByte.data());
-			myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)deformingVertices.buffer, "Model Deforming Vertex Buffer");
+			//myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)deformingVertices.buffer, "Model Deforming Vertex Buffer");
 
 			deformingVertices.descriptor = { deformingVertices.buffer, 0, vertexBufferSize };
 		}
@@ -1649,7 +1641,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	uint32_t uboCount{ 0 };
 	uint32_t imageCount{ 0 };
 	// Case : each mesh has its descriptor
-	const bool hasMultipleUbo = preTransform == false;
+	const bool hasMultipleUbo = (preTransform == false);
 	if (hasMultipleUbo)
 	{
 		if (isBakedAnimation)
@@ -1922,7 +1914,7 @@ void myglTF::ModelRT::updateJoints()
 	for (auto& rootToMatrices : rootToMatricesMap)
 	{
 		Node* jointRoot = rootToMatrices.first;
-		auto& jointMatrices = rootToMatrices.second;
+		std::array<glm::mat4, 256>& jointMatrices = rootToMatrices.second;
 		jointRoot->updateJoints(glm::mat4(1.f), jointMatrices);
 	}
 }
@@ -1934,15 +1926,13 @@ void myglTF::ModelRT::updateNodeTransforms(Node* pNode)
 		if (pNode->skin) {
 			pNode->mesh->uniformBlock.matrix = m;
 
-			const auto& jointMatrices = rootToMatricesMap[pNode->skin->jointRoot];
+			const std::array<glm::mat4, MAX_JOINTS>& jointMatrices = rootToMatricesMap[pNode->skin->jointRoot];
 
-			// Update joint matrices
-			glm::mat4 inverseTransform = glm::inverse(m);
-
+			//glm::mat4 inverseTransform = glm::inverse(m); // inverse(node to world)
 			for (size_t i = 0; i < pNode->skin->joints.size(); i++) {
 				myglTF::Node* jointNode = pNode->skin->joints[i];
+				// No need to Multiply inverse of m(nodeWorld or MeshWorld), because jointMatrices is already MESH LOCAL
 				glm::mat4 jointMat = jointMatrices[i] * pNode->skin->inverseBindMatrices[i];
-				jointMat = inverseTransform * jointMat;
 				pNode->mesh->uniformBlock.jointMatrix[i] = jointMat;
 			}
 			pNode->mesh->uniformBlock.jointcount = (float)pNode->skin->joints.size();

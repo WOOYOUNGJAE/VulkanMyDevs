@@ -874,8 +874,8 @@ void MyBakedAnimationRT::prepare()
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
 	loadAssets();
-	pushConstantData.sceneIndexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
-	pushConstantData.sceneVertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
+	pushConstantData.indexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
+	pushConstantData.vertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 
 	//createComputePipeline();
 
@@ -1055,6 +1055,6 @@ void MyBakedAnimationRT::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 {
 	if (overlay->header("Visibility"))
 	{
-		(overlay->checkBox("Render Triangle", (bool*)&pushConstantData.bRenderTriangle));
+		(overlay->checkBox("Render Triangle", (bool*)&pushConstantData.renderMode));
 	}
 }

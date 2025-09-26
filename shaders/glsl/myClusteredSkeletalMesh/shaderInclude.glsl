@@ -40,13 +40,9 @@ layout(binding = 5, set = 0) buffer MeshPrimitives { ClusteredMeshPrimitive prim
 layout(binding = 6, set = 0) buffer Clusters { ClusterRT clusters[]; } sceneClusters;
 layout(binding = 7, set = 0) uniform sampler2D textures[];
 
-layout(push_constant) uniform PushConstant {
-	uint64_t vertexBufferAddress;
-	uint64_t indexBufferAddress;
-	uint32_t numPrimitives;
-	uint32_t renderMode; // 0:Texture 1:Triangle 2:Cluster
-} pushData;
-
+layout(push_constant) uniform pushConstant {
+	MainRendererPushConstantData pushData;
+};
 #define USE_SKINNING
 #include "bufferreferences.glsl"
 #include "geometrytypes.glsl"

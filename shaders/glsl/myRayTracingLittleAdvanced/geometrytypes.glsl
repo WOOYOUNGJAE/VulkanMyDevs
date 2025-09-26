@@ -9,12 +9,18 @@ struct Vertex
   vec3 pos;
   vec3 normal;
   vec2 uv;
+
+  vec4 joint0;
+  vec4 weight0;
 };
 
 struct Triangle {
 	Vertex vertices[3];
 	vec3 normal;
 	vec2 uv;
+
+	vec4 joint0;
+	vec4 weight0;
 };
 
 // Todo change to specialization
@@ -39,8 +45,8 @@ Triangle unpackTriangle(uint primitiveID) {
 
 	
 	// move to start of this node(mesh)'s MeshPrimitive
-	uint64_t nodeVertexAddress = pushData.vertexBufferAddress;// +vertexSize * (geometryNode.vertexStartOffset + meshPrimitive.vertexStartOffsetInMesh + primitiveID);
-	uint64_t nodeIndexAddress = pushData.indexBufferAddress + INDEX_TYPE_SIZE * (geometryNode.indexStartOffset + meshPrimitive.IndexStartOffsetInMesh + (primitiveID * 3)); // index size
+	uint64_t nodeVertexAddress = pushData.vertexBufferDeviceAddress;// +vertexSize * (geometryNode.vertexStartOffset + meshPrimitive.vertexStartOffsetInMesh + primitiveID);
+	uint64_t nodeIndexAddress = pushData.indexBufferDeviceAddress + INDEX_TYPE_SIZE * (geometryNode.indexStartOffset + meshPrimitive.IndexStartOffsetInMesh + (primitiveID * 3)); // index size
 
 	Vertices   vertices = Vertices(nodeVertexAddress);
 	Indices    indices = Indices(nodeIndexAddress);
@@ -60,10 +66,18 @@ Triangle unpackTriangle(uint primitiveID) {
 		tri.vertices[i].pos = d0.xyz;
 		tri.vertices[i].normal = vec3(d0.w, d1.xy);
 		tri.vertices[i].uv = d1.zw;
+
+		tri.vertices[i].joint0 = vertices.v[offset + 4];
+		tri.vertices[i].weight0 = vertices.v[offset + 5];
+
 	}
 	// Calculate values at barycentric coordinates
 	vec3 barycentricCoords = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
 	tri.uv = tri.vertices[0].uv * barycentricCoords.x + tri.vertices[1].uv * barycentricCoords.y + tri.vertices[2].uv * barycentricCoords.z;
 	tri.normal = tri.vertices[0].normal * barycentricCoords.x + tri.vertices[1].normal * barycentricCoords.y + tri.vertices[2].normal * barycentricCoords.z;
+
+	tri.joint0 = (tri.vertices[0].joint0 * barycentricCoords.x + tri.vertices[1].joint0 * barycentricCoords.y + tri.vertices[2].joint0 * barycentricCoords.z) / 3.f;
+	tri.weight0 = (tri.vertices[0].weight0 * barycentricCoords.x + tri.vertices[1].weight0 * barycentricCoords.y + tri.vertices[2].weight0 * barycentricCoords.z) / 3.f;
+
 	return tri;
 }

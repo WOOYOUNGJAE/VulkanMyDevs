@@ -62,6 +62,7 @@ void main()
 		vertexWeight0.w * jointData.jointMatrices[int(vertexJoint0.w)];
 
 //	vec3 deformedPos = (skinMat * vertexPos).xyz;
+	// bindSpace -> JointRoot(Mesh's Local) -> Mesh's World
 	vec3 deformedPos = (jointData.matrix * skinMat * vertexPos).xyz;
 	vec3 deformedNorm = (transpose(inverse(skinMat)) * vertexNorm).xyz; 
 

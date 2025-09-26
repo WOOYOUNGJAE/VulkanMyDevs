@@ -61,11 +61,9 @@ public: // TLAS
 	} uniformData;
 	vks::Buffer uniformBuffer;
 
-	struct PushConstantData
+	struct PushConstantData : PushConstantDataBase
 	{
-		uint64_t sceneVertexBufferDeviceAddress = 0;
-		uint64_t sceneIndexBufferDeviceAddress = 0;
-		uint32_t bRenderTriangle = 1;
+		float jointWeightRenderThreshold = 0.f;
 	}pushConstantData;
 
 	// RT Pipeline

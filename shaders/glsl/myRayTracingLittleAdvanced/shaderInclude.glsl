@@ -14,6 +14,9 @@ hitAttributeEXT vec2 attribs;
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 layout(binding = 3, set = 0) uniform sampler2D image;
 
+#include "../../../MyDevs/myBase/myIncludesCPUGPU.h"
+
+
 struct GeometryNode {
 	uint32_t vertexStartOffset; // from scene's total vertex buffer
 	uint32_t indexStartOffset; // from scene's total Index buffer
@@ -33,12 +36,9 @@ struct MeshPrimitive
 layout(binding = 5, set = 0) buffer MeshPrimitives { MeshPrimitive primitives[]; } meshPrimitives;
 layout(binding = 6, set = 0) uniform sampler2D textures[];
 
-layout(push_constant) uniform PushConstant {
-	uint64_t vertexBufferAddress;
-	uint64_t indexBufferAddress;
-	uint32_t bRenderTriangle;
-} pushData;
-
+layout(push_constant) uniform pushConstant {
+	MainRendererPushConstantData pushData;
+};
 #define USE_SKINNING
 #include "bufferreferences.glsl"
 #include "geometrytypes.glsl"

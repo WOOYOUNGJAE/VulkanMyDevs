@@ -59,12 +59,8 @@ public: // TLAS
 	} uniformData;
 	vks::Buffer uniformBuffer;
 
-	struct PushConstantData
+	struct PushConstantData : PushConstantDataBase
 	{
-		uint64_t sceneVertexBufferDeviceAddress = 0;
-		uint64_t sceneIndexBufferDeviceAddress = 0;
-		uint32_t numPrimitives = 0;
-		uint32_t renderMode = 1; // 0:Texture 1:Triangle 2:Cluster
 	}pushConstantData;
 
 	// RT Pipeline
@@ -97,7 +93,8 @@ public:
 	void initBLASes();
 	void initTLAS();
 
-	void buildBLASes(VkCommandBuffer cmdBuffer); // Build or Update
+	void buildBLASes(VkCommandBuffer cmdBuffer); // not HCB, same as normal building
+	void hcbBuildBLASes(VkCommandBuffer cmdBuffer); // Build or Update
 	void buildTLAS(VkCommandBuffer cmdBuffer);
 
 	void createShaderBindingTables();

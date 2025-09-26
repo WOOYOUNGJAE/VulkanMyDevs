@@ -219,22 +219,10 @@ namespace myglTF
 		glm::mat4 getMatrix();
 		void update();
 
-		// skin has multiple mesh.
-		void updateJoints(glm::mat4 parentMatrix, std::array<glm::mat4, MAX_JOINTS>& jointMatrices)
-		{
-			// if not joint node, skip.
-			if (jointNodeIndex < 0)
-				return;
-			
-			glm::mat4 curNodeMatrix = localMatrix();
-			glm::mat4 toRoot = parentMatrix * curNodeMatrix;
-
-			// curjointSpace -> jointRoot
-			jointMatrices[jointIndexInSkin] = toRoot;
-
-			for (auto& child : children)
-				child->updateJoints(toRoot, jointMatrices);
-		}
+		/**
+		 * @param parentMatrix In Initial Call, If this is Identity, jointMatrices represent "To Mesh Local". If this is "ToWorld", jointMatrices represent "To World"
+		 */
+		void updateJoints(glm::mat4 parentMatrix, std::array<glm::mat4, MAX_JOINTS>& jointMatrices);
 		~Node();
 	};
 
@@ -384,17 +372,6 @@ namespace myglTF
 
 		std::vector<Node*> nodes;
 		std::vector<Node*> linearNodes;
-		typedef std::pair<Skin*, Mesh*> JointOwner;
-		struct AnimatedSkin
-		{
-			Skin* pSkin = nullptr;
-			Mesh* pMesh = nullptr; // 무시일단
-			Node* pJointRoot = nullptr;
-		};
-		std::unordered_map<Node*, JointOwner> rootJointMap; // rootJoint -> <itsSkin, itsMesh>
-		//std::unordered_map<Skin*, JointOwner> skinMap; // rootJoint -> <itsSkin, itsMesh>
-		std::vector<AnimatedSkin> animatedSkins;
-		std::unordered_map<Node*, AnimatedSkin> skinMap;
 		std::unordered_map<Node*, std::array<glm::mat4, MAX_JOINTS>> rootToMatricesMap; // rootJoint -> matrices
 		std::vector<Skin*> skins;
 		std::vector<JointNode*> jointRoots;
@@ -414,6 +391,9 @@ namespace myglTF
 			float radius;
 		} dimensions;
 #pragma region Cluster
+		// cluster build config
+		inline static constexpr uint32_t clusterTrianglesMax	= 64*2;
+		inline static constexpr uint32_t clusterVerticesMax		= 64*2;
 		// struct for geometry node used for both cpu and shader
 		std::vector<ClusteredGeometryNodeRT> clusteredGeometryNodes; // per mesh
 		// per mesh
@@ -497,7 +477,7 @@ namespace myglTF
 		 * @note after all animations updated, updateNodeTransfors() must be called
 		 */
 		void updateAnimation(uint32_t index, float time);
-		void updateNodeTransforms();
+		void updateNodeTransforms(); // Legacy - Sascha's Style (BAD)
 		void updateJoints();
 		void updateNodeTransforms(Node* pNode);
 		Node* findNode(Node* parent, uint32_t index);

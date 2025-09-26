@@ -41,10 +41,8 @@ public:
 	} uniformData;
 	vks::Buffer uniformBuffer;
 
-	struct PushConstantData
+	struct PushConstantData : PushConstantDataBase
 	{
-		uint64_t sceneVertexBufferDeviceAddress = 0;
-		uint64_t sceneIndexBufferDeviceAddress = 0;
 	}pushConstantData;
 
 	VkPipeline pipeline{ VK_NULL_HANDLE };

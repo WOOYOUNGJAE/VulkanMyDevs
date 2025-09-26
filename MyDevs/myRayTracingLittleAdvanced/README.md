@@ -176,9 +176,9 @@ void myglTF::ModelRT::updateNodeTransforms(Node* pNode)
 ```
 ### 성능 향상
 | 항목 | 개선 전(Sascha) | 개선 후 |
-| :--- | :---: | :---: |
-| **Animation CPU Time** | 4.05584 (ms) | 0.87191 (ms) |
-| **FPS** | 94.422 fps (10.5908 ms) | 132.076fps (7.5714 ms)<br><sub>78.54% 성능 향상</sub>  |
+| :---: | :---: | :---: |
+| **Animation CPU Time** | 4.05584 (ms) | 0.87191 (ms)<br><sub>78.54% 성능 향상</sub> |
+| **FPS** | 94.422 fps (10.5908 ms) | 132.076fps (7.5714 ms)  |
 
 
 <small>**Num Vertices**: **126,150**</small>\
