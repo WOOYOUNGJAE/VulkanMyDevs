@@ -4,7 +4,7 @@
  *
  */
 #version 460
-
+#define JOINT_RENDER 0
 #include "shaderInclude.glsl"
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
@@ -12,22 +12,27 @@ void main()
 {
 
 	Triangle tri = unpackTriangle(gl_PrimitiveID);
-//	const float f = 0.25f;
-//	if (tri.weight0.x > f || tri.weight0.y > f || tri.weight0.z > f || tri.weight0.w > f)
-//	{
-//		hitValue = vec3(1,0,1);return;
-//	}
-//	else
-//	{
-//		hitValue = vec3(1,1,0);return;
-//	}
 
-
-	if (pushData.renderMode != 0)
+#if JOINT_RENDER
+	const float f = pushData.jointWeightRenderThreshold;
+	if (tri.weight0.x > f || tri.weight0.y > f || tri.weight0.z > f || tri.weight0.w > f)
 	{
-		uint triID = gl_PrimitiveID ;
+		hitValue = vec3(1,0,1);return;
+	}
+	else
+	{
+		hitValue = vec3(1,1,0);return;
+	}
+#endif
 
-		uint h = triID * 1664525u + 1013904223u;
+	uint primitiveID = gl_PrimitiveID;
+	uint clusterID = gl_GeometryIndexEXT; // or gl_InstanceID;
+	uint instanceID = gl_InstanceID;
+
+//	if (pushData.baseData.renderMode == 1)
+	{
+
+		uint h = instanceID * 1664525u + 1013904223u;
 		hitValue = vec3(
 			float((h >>  0) & 0xFF),
 			float((h >>  8) & 0xFF),

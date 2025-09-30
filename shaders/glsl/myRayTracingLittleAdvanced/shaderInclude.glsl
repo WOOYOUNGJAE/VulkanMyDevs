@@ -36,9 +36,18 @@ struct MeshPrimitive
 layout(binding = 5, set = 0) buffer MeshPrimitives { MeshPrimitive primitives[]; } meshPrimitives;
 layout(binding = 6, set = 0) uniform sampler2D textures[];
 
-layout(push_constant) uniform pushConstant {
-	MainRendererPushConstantData pushData;
+struct PushConstantData
+{
+	MainRendererPushConstantData baseData;
+#if JOINT_RENDER
+	float jointWeightRenderThreshold;
+#endif
 };
+
+layout(push_constant) uniform pushConstant {
+	PushConstantData pushData;
+};
+
 #define USE_SKINNING
 #include "bufferreferences.glsl"
 #include "geometrytypes.glsl"

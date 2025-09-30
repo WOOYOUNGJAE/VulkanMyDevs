@@ -45,8 +45,8 @@ Triangle unpackTriangle(uint primitiveID) {
 
 	
 	// move to start of this node(mesh)'s MeshPrimitive
-	uint64_t nodeVertexAddress = pushData.vertexBufferDeviceAddress;// +vertexSize * (geometryNode.vertexStartOffset + meshPrimitive.vertexStartOffsetInMesh + primitiveID);
-	uint64_t nodeIndexAddress = pushData.indexBufferDeviceAddress + INDEX_TYPE_SIZE * (geometryNode.indexStartOffset + meshPrimitive.IndexStartOffsetInMesh + (primitiveID * 3)); // index size
+	uint64_t nodeVertexAddress = pushData.baseData.vertexBufferDeviceAddress;// +vertexSize * (geometryNode.vertexStartOffset + meshPrimitive.vertexStartOffsetInMesh + primitiveID);
+	uint64_t nodeIndexAddress = pushData.baseData.indexBufferDeviceAddress + INDEX_TYPE_SIZE * (geometryNode.indexStartOffset + meshPrimitive.IndexStartOffsetInMesh + (primitiveID * 3)); // index size
 
 	Vertices   vertices = Vertices(nodeVertexAddress);
 	Indices    indices = Indices(nodeIndexAddress);
@@ -76,8 +76,8 @@ Triangle unpackTriangle(uint primitiveID) {
 	tri.uv = tri.vertices[0].uv * barycentricCoords.x + tri.vertices[1].uv * barycentricCoords.y + tri.vertices[2].uv * barycentricCoords.z;
 	tri.normal = tri.vertices[0].normal * barycentricCoords.x + tri.vertices[1].normal * barycentricCoords.y + tri.vertices[2].normal * barycentricCoords.z;
 
-	tri.joint0 = (tri.vertices[0].joint0 * barycentricCoords.x + tri.vertices[1].joint0 * barycentricCoords.y + tri.vertices[2].joint0 * barycentricCoords.z) / 3.f;
-	tri.weight0 = (tri.vertices[0].weight0 * barycentricCoords.x + tri.vertices[1].weight0 * barycentricCoords.y + tri.vertices[2].weight0 * barycentricCoords.z) / 3.f;
+	tri.joint0 = (tri.vertices[0].joint0 * barycentricCoords.x + tri.vertices[1].joint0 * barycentricCoords.y + tri.vertices[2].joint0 * barycentricCoords.z);// / 3.f;
+	tri.weight0 = (tri.vertices[0].weight0 * barycentricCoords.x + tri.vertices[1].weight0 * barycentricCoords.y + tri.vertices[2].weight0 * barycentricCoords.z);// / 3.f;
 
 	return tri;
 }

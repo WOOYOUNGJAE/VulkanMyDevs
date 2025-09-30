@@ -776,7 +776,6 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 		VkCommandBuffer cmdBuffer = drawCmdBuffers[i];
 		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
 
-#if !ACCEL_BUILD_TIMER_ON
 		animComputePass->buildCommandBuffer(cmdBuffer);
 		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
 		vkCmdPipelineBarrier(
@@ -834,16 +833,13 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 
 			buildTLAS(cmdBuffer);
 		}
-#endif
-
-#if !TRACE_TIMER_ON
 		/*
 			Dispatch the ray tracing commands
 		*/
 		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
 
 
-		pushConstantData.numPrimitives = model.primitives.count;
+		//pushConstantData.numPrimitives = model.primitives.count;
 		// push constant - vertex/index device addressvkCmdPushConstants(
 		vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
 			VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
@@ -862,7 +858,6 @@ void MyClusteredSkeletalMesh::buildCommandBuffers()
 			width,
 			height,
 			1);
-#endif
 
 		/*
 			Copy ray tracing output to swap chain image
@@ -1077,14 +1072,6 @@ void MyClusteredSkeletalMesh::prepare()
 	buildCommandBuffers();
 
 
-#if ACCEL_BUILD_TIMER_ON
-	for (uint32_t i = 0; i < 3; ++i)
-	{
-		gpuTimers.push_back(std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod));
-		auto& refTimer = gpuTimers.back();
-		refTimer->init();
-	}
-#endif
 	prepared = true;
 }
 
@@ -1125,137 +1112,6 @@ void MyClusteredSkeletalMesh::render()
 
 	uniformData.frame = -1;
 
-#if MEASURE_MODE
-	VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr};
-	static uint32_t frameCount, accFPS = 0;
-	static float accBuildCLASTime, accBuildBLASTime, accBuildTLASTime = 0.f;
-	static float accTraceTime = 0.f;
-
-#if ACCEL_BUILD_TIMER_ON
-	animComputePass->buildCommandBuffer(cmdBuffer);
-	memBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
-	vkCmdPipelineBarrier(
-		cmdBuffer,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-		VK_FLAGS_NONE,
-		1, &memBarrier,
-		0, nullptr,
-		0, nullptr);
-
-	// build or update AS
-	{
-		gpuTimers[0]->reset(cmdBuffer);
-		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
-		buildCLASes(cmdBuffer);
-		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
-
-		accelBuildPipelineBarrier(cmdBuffer);
-
-		gpuTimers[1]->reset(cmdBuffer);
-		gpuTimers[1]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
-		buildClusteredBLASes(cmdBuffer);
-		gpuTimers[1]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
-
-		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
-			VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-			VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
-		vkCmdPipelineBarrier(
-			cmdBuffer,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			VK_FLAGS_NONE,
-			1, &memBarrier,
-			0, nullptr,
-			0, nullptr);
-
-		// blas udpate dispatch commands
-		{
-			ClusteredBlasPushConstantData clusteredBlasPushConstants{};
-			uint32_t numClusteredBlases = model.clusteredGeometryNodes.size();
-			clusteredBlasPushConstants.sumCount = numClusteredBlases;
-			clusteredBlasPushConstants.instanceCount = numClusteredBlases * 1; // not instancing yet
-			clusteredBlasPushConstants.animated = 0;
-			clusteredBlasPushConstants.blasAddresses = clusteredBlasDstAddressBuffer.deviceAddress;
-			clusteredBlasPushConstants.clusteredGeometryDatas = model.geometryNodes.deviceAddress;
-			clusteredBlasPushConstants.asInstances = blasInstancesBuffer.deviceAddress;
-			blasUpdateComputePass->buildCommandBuffer(cmdBuffer, clusteredBlasPushConstants);
-		}
-
-
-		memBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-		memBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-		vkCmdPipelineBarrier(
-			cmdBuffer,
-			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			VK_FLAGS_NONE,
-			1, &memBarrier,
-			0, nullptr,
-			0, nullptr);
-
-		gpuTimers[2]->reset(cmdBuffer);
-		gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
-		buildTLAS(cmdBuffer);
-		gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
-	}
-#endif
-
-#if TRACE_TIMER_ON
-	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
-
-	// push constant - vertex/index device addressvkCmdPushConstants(
-	vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
-		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
-		0, sizeof(PushConstantData), &pushConstantData
-	);
-
-	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
-
-	gpuTimer->reset(cmdBuffer);
-	gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0);
-	VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
-	vkCmdTraceRaysKHR(
-		cmdBuffer,
-		&shaderBindingTables.raygen.stridedDeviceAddressRegion,
-		&shaderBindingTables.miss.stridedDeviceAddressRegion,
-		&shaderBindingTables.hit.stridedDeviceAddressRegion,
-		&emptySbtEntry,
-		width,
-		height,
-		1);
-	gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 1);
-#endif
-	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
-	++frameCount;
-	if (frameCount >= WARMINGUP_FRAME)
-	{
-		accFPS += lastFPS;
-		accBuildCLASTime += gpuTimers[0]->timerResult();
-		accBuildBLASTime += gpuTimers[1]->timerResult();
-		accBuildTLASTime += gpuTimers[2]->timerResult();
-#if TRACE_TIMER_ON
-		accTraceTime += gpuTimer->timerResult();
-#endif
-		if (frameCount == MEASURE_END_FRAME)
-		{
-			float clasAvg = accBuildCLASTime / MEASURE_FRAME_COUNT;
-			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
-			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
-			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
-			std::cout << "With CLAS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
-			std::cout << "Average CLAS Build Time = " << clasAvg << "(ms)\n";
-			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
-			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
-			std::cout << "Average Total AS Build Time = " << clasAvg + blasAvg + tlasAvg << "(ms)\n";
-#if TRACE_TIMER_ON
-			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
-#endif
-			std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
-		}
-	}
-#endif
 	draw();
 }
 

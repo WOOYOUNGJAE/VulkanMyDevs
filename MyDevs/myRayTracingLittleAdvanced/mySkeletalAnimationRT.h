@@ -1,6 +1,4 @@
 #pragma once
-#include <thread>
-
 #include "myAnimComputePass.h"
 #include "myRayTracingLittleAdvanced.h"
 
@@ -128,5 +126,4 @@ public:
 
 	void OnUpdateUIOverlay(vks::UIOverlay* overlay) override;
 
-	std::vector<std::thread> animUpdateThreads;
 };

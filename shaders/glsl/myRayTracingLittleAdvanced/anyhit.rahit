@@ -11,17 +11,17 @@ layout(location = 3) rayPayloadInEXT uint payloadSeed;
 
 void main()
 {
-	Triangle tri = unpackTriangle(gl_PrimitiveID);
-	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
-	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];
-	vec4 color = texture(textures[nonuniformEXT(meshPrimitive.textureIndexBaseColor)], tri.uv);
-
-
-	// If the alpha value of the texture at the current UV coordinates is below a given threshold, we'll ignore this intersection
-	// That way ray traversal will be stopped and the miss shader will be invoked
-	if (color.a < 0.9) {
-		if(rnd(payloadSeed) > color.a) {
-			ignoreIntersectionEXT;
-		}
-	}
+//	Triangle tri = unpackTriangle(gl_PrimitiveID);
+//	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
+//	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];
+//	vec4 color = texture(textures[nonuniformEXT(meshPrimitive.textureIndexBaseColor)], tri.uv);
+//
+//
+//	// If the alpha value of the texture at the current UV coordinates is below a given threshold, we'll ignore this intersection
+//	// That way ray traversal will be stopped and the miss shader will be invoked
+//	if (color.a < 0.9) {
+//		if(rnd(payloadSeed) > color.a) {
+//			ignoreIntersectionEXT;
+//		}
+//	}
 }

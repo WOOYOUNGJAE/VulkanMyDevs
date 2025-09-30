@@ -897,14 +897,8 @@ void MyBakedAnimationRT::prepare()
 	createShaderBindingTables();
 	createDescriptorSets();
 	buildCommandBuffers();
-#if ACCEL_BUILD_TIMER_ON
-	for (uint32_t i = 0; i < 3; ++i)
-	{
-		gpuTimers.push_back(std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod));
-		auto& refTimer = gpuTimers.back();
-		refTimer->init();
-	}
-#endif
+
+
 	prepared = true;
 }
 
@@ -938,114 +932,6 @@ void MyBakedAnimationRT::render()
 
 	updateUniformBuffers();
 	uniformData.frame = -1;
-
-	VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr };
-#if MEASURE_MODE
-
-	static uint32_t frameCount, accFPS = 0;
-	static float accBuildBLASTime, accBuildTLASTime, accTraceTime = 0.f;
-
-#if ACCEL_BUILD_TIMER_ON
-	gpuTimers[2]->reset(cmdBuffer);
-	gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
-	animComputePass->buildCommandBuffer(cmdBuffer, (uint32_t)(accTime * (float)model.animMaxFPS) % (uint32_t)model.animMaxFrame);
-	std::cout << model.animMaxFPS << std::endl;
-	gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
-
-	memBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
-	vkCmdPipelineBarrier(
-		cmdBuffer,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-		VK_FLAGS_NONE,
-		1, &memBarrier,
-		0, nullptr,
-		0, nullptr);
-
-	// build or update AS
-	{
-		gpuTimers[0]->reset(cmdBuffer);
-		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
-		buildBLASes(cmdBuffer);
-		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
-
-		accelBuildPipelineBarrier(cmdBuffer);
-
-		gpuTimers[1]->reset(cmdBuffer);
-		gpuTimers[1]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
-		buildTLAS(cmdBuffer);
-		gpuTimers[1]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
-	}
-#endif
-#if (TRACE_TIMER_ON | FORCE_STATIC_SCENE)
-	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
-
-	// push constant - vertex/index device addressvkCmdPushConstants(
-	vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
-		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
-		0, sizeof(PushConstantData), &pushConstantData
-	);
-
-	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
-
-	gpuTimer->reset(cmdBuffer);
-	gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0);
-	VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
-	vkCmdTraceRaysKHR(
-		cmdBuffer,
-		&shaderBindingTables.raygen.stridedDeviceAddressRegion,
-		&shaderBindingTables.miss.stridedDeviceAddressRegion,
-		&shaderBindingTables.hit.stridedDeviceAddressRegion,
-		&emptySbtEntry,
-		width,
-
-
-		height,
-		1);
-	gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 1);
-#endif
-	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
-	++frameCount;
-	if (frameCount >= WARMINGUP_FRAME)
-	{
-		accFPS += lastFPS;
-#if ACCEL_BUILD_TIMER_ON
-		accBuildBLASTime += gpuTimers[0]->timerResult();
-		accBuildTLASTime += gpuTimers[1]->timerResult();
-#endif
-#if (TRACE_TIMER_ON)
-		accTraceTime += gpuTimer->timerResult();
-#endif
-		if (frameCount == MEASURE_END_FRAME)
-		{
-			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
-			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
-			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
-			std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
-			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
-			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
-			std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
-#if (TRACE_TIMER_ON)
-			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
-#endif
-			std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
-		}
-	}
-#else
-	animComputePass->buildCommandBuffer(cmdBuffer, (uint32_t)accTime % (uint32_t)model.animMaxFrame);
-
-	memBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
-	vkCmdPipelineBarrier(
-		cmdBuffer,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-		VK_FLAGS_NONE,
-		1, &memBarrier,
-		0, nullptr,
-		0, nullptr);
-	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
-#endif
 
 
 	draw();

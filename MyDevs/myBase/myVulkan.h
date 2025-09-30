@@ -99,6 +99,6 @@
 
 // macros
 #define USE_SKINNING 0 // TODO Temp
-#define SKIP_SHADER_COMIPLE 0
+#define SKIP_SHADER_COMIPLE 1
 
 #endif // VULKAN_H_

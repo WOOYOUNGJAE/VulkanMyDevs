@@ -327,8 +327,6 @@ void MyBuildASIndirect::buildTLAS()
 		0.0f, -1.0f, 0.0f, 0.0f,
 		0.0f, 0.0f, 1.0f, 0.0f };
 	VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-	gpuTimer->reset(commandBuffer);
-	gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
 	if (isFirstBuild)
 	{
 		for (auto& blas : staticBLASes)
@@ -442,9 +440,7 @@ void MyBuildASIndirect::buildTLAS()
 		&tlasBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
 
-	gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
-	float tlasBuildingTime = gpuTimer->timerResult();
 
 	// after first build complete
 	if (isFirstBuild)

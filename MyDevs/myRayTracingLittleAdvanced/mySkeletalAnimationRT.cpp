@@ -324,8 +324,6 @@ void MySkeletalAnimationRT::initTLAS()
 
 void MySkeletalAnimationRT::buildBLASes(VkCommandBuffer cmdBuffer)
 {
-	//CPUTimer timer("Build Blas Timer");
-
 	// TODO build Static-Dynamic BLAS Parallelly
 	uint32_t numStaticBlases = staticBLASes.size();
 	uint32_t numDynamicBlases = dynamicBLASes.size(); // for Deformable Mesh
@@ -333,8 +331,6 @@ void MySkeletalAnimationRT::buildBLASes(VkCommandBuffer cmdBuffer)
 	//VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 	const bool isFirstBuild = (numStaticBlases && staticBLASes[0].handle == VK_NULL_HANDLE)
 		|| (numDynamicBlases && dynamicBLASes[0].handle == VK_NULL_HANDLE);
-	//gpuTimer->reset(commandBuffer);
-	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
 
 	// ramda func
 	auto processBLASes = [&](auto& blases, auto& buildInfos, auto& buildingSets) {
@@ -866,7 +862,6 @@ void MySkeletalAnimationRT::loadAssets()
 	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
 
-	animUpdateThreads.resize(model.activeAnimations.size());
 }
 
 void MySkeletalAnimationRT::enableExtensions()
@@ -911,14 +906,7 @@ void MySkeletalAnimationRT::prepare()
 	createShaderBindingTables();
 	createDescriptorSets();
 	buildCommandBuffers();
-#if MEASURE_MODE
-	for (uint32_t i = 0; i < 3; ++i)
-	{
-		gpuTimers.push_back(std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod));
-		auto& refTimer = gpuTimers.back();
-		refTimer->init();
-	}
-#endif
+
 	prepared = true;
 }
 
@@ -947,135 +935,35 @@ void MySkeletalAnimationRT::render()
 		{
 			static int i = 0;
 			static double msCount = 0;
-			++i;
-			myUtils::CPUTimer cpuTimer("CPU anim");
+			//++i;
+			//myUtils::CPUTimer cpuTimer("CPU anim");
 			for (uint32_t animIdx = 0; animIdx < model.activeAnimations.size(); ++animIdx)
 			{
 				myglTF::ActiveAnimation& anim = model.activeAnimations[animIdx];
 				anim.accPlayTime += frameTimer;
 				if (anim.accPlayTime > anim.end)
 					anim.accPlayTime = 0.f;
-				model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
+				//model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 			}
-			cpuTimer.start();
+			//cpuTimer.start();
 
 			model.updateJoints();
 			for (auto& node : model.nodes)
 				model.updateNodeTransforms(node);
 
-			cpuTimer.record();
-			if (i > 50)
-				msCount += cpuTimer.timerResultMilli();
-			if (i > 3050)
-			{
-				std::cout << msCount / 3000.0 << "ms - cpu anim\n";
-			}
+			//cpuTimer.record();
+			//if (i > 50)
+			//	msCount += cpuTimer.timerResultMilli();
+			//if (i > 3050)
+			//{
+			//	std::cout << msCount / 3000.0 << "ms - cpu anim\n";
+			//}
 		}
 	}
 #endif
 
 	updateUniformBuffers();
 	uniformData.frame = -1;
-
-#if MEASURE_MODE
-	VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr };
-
-	static uint32_t frameCount, accFPS = 0;
-	static float accBuildBLASTime, accBuildTLASTime, accAnimTime = 0.f;
-	static float accTraceTime = 0.f;
-
-
-#if ACCEL_BUILD_TIMER_ON
-	gpuTimers[2]->reset(cmdBuffer);
-	gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
-	animComputePass->buildCommandBuffer(cmdBuffer);
-	gpuTimers[2]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
-
-	memBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
-	vkCmdPipelineBarrier(
-		cmdBuffer,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-		VK_FLAGS_NONE,
-		1, &memBarrier,
-		0, nullptr,
-		0, nullptr);
-
-	// build or update AS
-	{
-		gpuTimers[0]->reset(cmdBuffer);
-		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
-		buildBLASes(cmdBuffer);
-		gpuTimers[0]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
-
-		accelBuildPipelineBarrier(cmdBuffer);
-
-		gpuTimers[1]->reset(cmdBuffer);
-		gpuTimers[1]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
-		buildTLAS(cmdBuffer);
-		gpuTimers[1]->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
-	}
-#endif
-#if (TRACE_TIMER_ON | FORCE_STATIC_SCENE)
-	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
-
-	// push constant - vertex/index device addressvkCmdPushConstants(
-	vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
-		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
-		0, sizeof(PushConstantData), &pushConstantData
-	);
-
-	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
-
-	gpuTimer->reset(cmdBuffer);
-	gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0);
-	VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
-	vkCmdTraceRaysKHR(
-		cmdBuffer,
-		&shaderBindingTables.raygen.stridedDeviceAddressRegion,
-		&shaderBindingTables.miss.stridedDeviceAddressRegion,
-		&shaderBindingTables.hit.stridedDeviceAddressRegion,
-		&emptySbtEntry,
-		width,
-
-
-		height,
-		1);
-	gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 1);
-#endif
-	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
-	++frameCount;
-	if (frameCount >= WARMINGUP_FRAME)
-	{
-		accFPS += lastFPS;
-#if ACCEL_BUILD_TIMER_ON
-		accBuildBLASTime += gpuTimers[0]->timerResult();
-		accBuildTLASTime += gpuTimers[1]->timerResult();
-		accAnimTime += gpuTimers[2]->timerResult();
-#endif
-#if (TRACE_TIMER_ON)
-		accTraceTime += gpuTimer->timerResult();
-#endif
-		if (frameCount == MEASURE_END_FRAME)
-		{
-			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
-			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
-			float animAvg = accAnimTime / MEASURE_FRAME_COUNT;
-			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
-			std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
-			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
-			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
-			std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
-			std::cout << "Average Animation Time = " << animAvg << "(ms)\n";
-#if (TRACE_TIMER_ON)
-			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
-#endif
-			std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
-		}
-	}
-
-#endif
 	draw();
 }
 
@@ -1085,7 +973,12 @@ void MySkeletalAnimationRT::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 	{
 		//(overlay->radioButton("Render Texture", (int*)& pushConstantData.renderMode, 0));
 		// 0:Texture 1:Triangle 2:Cluster
+		(overlay->radioButton("Render Texture", (int*)&pushConstantData.renderMode, 0));
 		(overlay->radioButton("Render Triangle", (int*)&pushConstantData.renderMode, 1));
-		(overlay->radioButton("Render Cluster", (int*)&pushConstantData.renderMode, 2));
+	}
+
+	if (overlay->header("Custom Control"))
+	{
+		overlay->sliderFloat("Joint Threshold", &pushConstantData.jointWeightRenderThreshold, 0.f, 1.f);
 	}
 }

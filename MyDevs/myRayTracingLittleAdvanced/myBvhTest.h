@@ -1,11 +1,11 @@
 #pragma once
-#include "myHitCountBasedBlasBuilding.h"
+#include "myRayTracingLittleAdvanced.h"
 #include "myAnimComputePass.h"
 
 /**
  * If Timer On, build "build accel" command each frame in render() func
  */
-class MyHCBTriangle : public MyVulkanRTBase
+class MyBvhTest : public MyVulkanRTBase
 {
 private:
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
@@ -75,10 +75,10 @@ public: // TLAS
 	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
 
 	myglTF::ModelRT model;
- 
+
 public:
-	MyHCBTriangle();
-	~MyHCBTriangle() override;
+	MyBvhTest();
+	~MyBvhTest() override;
 
 	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo, VkBufferUsageFlagBits usageFlag);
 

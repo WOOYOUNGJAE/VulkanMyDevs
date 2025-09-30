@@ -7,7 +7,7 @@
  * 3==skeletalAnimationRT
  * 4==bakedAnimationRT
  */
-#define RT_PROJECT_VERSION 3
+#define RT_PROJECT_VERSION 5
 
 #if (RT_PROJECT_VERSION == 0)
 #include "myMultiBLAS.h"
@@ -29,6 +29,10 @@ myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLo
 #include "myBakedAnimationRT.h"
 myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::GeometryNodePerMesh);
 #define RT_CLASS MyBakedAnimationRT
+#elif (RT_PROJECT_VERSION == 5)
+#include "myBvhTest.h"
+myglTF::FileLoadingFlags g_loadingFlag = myglTF::FileLoadingFlags(myglTF::FileLoadingFlags::ClusteredTriangleBLAS);
+#define RT_CLASS MyBvhTest
 #endif
 
 RT_CLASS* runInstance;

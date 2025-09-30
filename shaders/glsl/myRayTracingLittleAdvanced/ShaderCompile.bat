@@ -57,7 +57,7 @@ for %%F in (*) do (
     )
 )
 
-pause
+@REM pause
 :: Summary
 if !COMPILED_FILES! equ 0 (
     echo No shader files found to compile.

@@ -112,10 +112,6 @@ public: // CLAS
 
 
 	myglTF::ModelRT model;
-#if ACCEL_BUILD_TIMER_ON
-private:
-	std::vector<std::unique_ptr<GPUTimer>> gpuTimers;
-#endif
 public:
 	MyClusteredSkeletalMesh();
 	~MyClusteredSkeletalMesh() override;

@@ -1,4 +1,4 @@
-/*
+	/*
 * Vulkan Example - Scene rendering
 *
 * Copyright (C) 2020-2023 by Sascha Willems - www.saschawillems.de
@@ -11,14 +11,18 @@
 * This sample comes with a tutorial, see the README.md in this folder
 */
 
-#include "myHCBTriangle.h"
+#include "myBvhTest.h"
 #include "myIncludesCPUGPU.h"
 #include "myUtils.h"
+#include <nvToolsExt.h>
 
 
-MyHCBTriangle::MyHCBTriangle()
+#define BLAS_PER_CLUSTER 1
+#define GEOMETRY_PER_CLUSTER !BLAS_PER_CLUSTER
+
+MyBvhTest::MyBvhTest()
 {
-	title = "MyHCBTriangle (" + std::to_string(width) + "x" + std::to_string(height) + ")";
+	title = "MyBvhTest (" + std::to_string(width) + "x" + std::to_string(height) + ")";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
 	camera.setRotation(glm::vec3(-10.0f, -3.0f, 0.0f));
@@ -30,7 +34,7 @@ MyHCBTriangle::MyHCBTriangle()
 	enabledFeatures.shaderInt64 = VK_TRUE;
 }
 
-MyHCBTriangle::~MyHCBTriangle()
+MyBvhTest::~MyBvhTest()
 {
 	if (device) {
 		// release compute pipeline
@@ -79,7 +83,7 @@ MyHCBTriangle::~MyHCBTriangle()
 	}
 }
 
-void MyHCBTriangle::createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure,
+void MyBvhTest::createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure,
 	VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo, VkBufferUsageFlagBits usageFlag)
 {
 	VkBufferCreateInfo bufferCreateInfo{};
@@ -101,7 +105,7 @@ void MyHCBTriangle::createAccelerationStructureBuffer(AccelerationStructure& acc
 	VK_CHECK_RESULT(vkBindBufferMemory(device, accelerationStructure.buffer, accelerationStructure.memory, 0));
 }
 
-void MyHCBTriangle::initBLASes()
+void MyBvhTest::initBLASes()
 {
 	// Use transform matrices from the glTF nodes
 	std::vector<VkTransformMatrixKHR> transformMatrices{}; // per node
@@ -132,16 +136,25 @@ void MyHCBTriangle::initBLASes()
 	for (uint32_t meshIdx = 0; meshIdx < model.clusteredGeometryNodes.size(); ++meshIdx)
 	{
 		const ClusteredGeometryNodeRT& refGeometryNode = model.clusteredGeometryNodes[meshIdx];
-		const myglTF::ModelRT::PerMeshClustersBuildData& perMeshClusterData = model.perMeshClustersBuildDatas[meshIdx];	
+		const myglTF::ModelRT::PerMeshClustersBuildData& perMeshClusterData = model.perMeshClustersBuildDatas[meshIdx];
+		VkDeviceSize vertexStride = sizeof(myglTF::VertexSkinning);
 
 		// per cluster
+#if BLAS_PER_CLUSTER
 		for (uint32_t i = 0; i < perMeshClusterData.clustersCPU.size(); ++i)
 		{
 			// empalce back and get reference - for avoiding dangling pointer due to moving array;
 			PerBLASBuildInfo& refPerBlasBuildInfo = dynamicPerBlasBuildInfos.emplace_back(PerBLASBuildInfo{});
-			VkDeviceSize vertexStride = sizeof(myglTF::VertexSkinning);
 			std::vector<uint32_t> maxPrimitiveCounts{};
 			const ClusterRT& cluster = perMeshClusterData.clustersCPU[i];
+#elif GEOMETRY_PER_CLUSTER
+		// empalce back and get reference - for avoiding dangling pointer due to moving array;
+		PerBLASBuildInfo& refPerBlasBuildInfo = dynamicPerBlasBuildInfos.emplace_back(PerBLASBuildInfo{});
+		std::vector<uint32_t> maxPrimitiveCounts{};
+		for (uint32_t i = 0; i < perMeshClusterData.clustersCPU.size(); ++i)
+		{
+			const ClusterRT& cluster = perMeshClusterData.clustersCPU[i];
+#endif
 
 			// Build
 			// One geometry per glTF node, so we can index materials using gl_GeometryIndexEXT
@@ -151,7 +164,7 @@ void MyHCBTriangle::initBLASes()
 			VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
 
 			vertexBufferDeviceAddress.deviceAddress = refGeometryNode.vertexBufferDeviceAddress; // all scene vertices
-			indexBufferDeviceAddress.deviceAddress	= refGeometryNode.indexBufferDeviceAddress + (perMeshClusterData.indexStartOffset + cluster.firstTriangle * 3) * sizeof(uint32_t);
+			indexBufferDeviceAddress.deviceAddress = refGeometryNode.indexBufferDeviceAddress + (perMeshClusterData.indexStartOffset + cluster.firstTriangle * 3) * sizeof(uint32_t);
 			transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + meshIdx * sizeof(VkTransformMatrixKHR); // but this mat is identity
 
 			// gl_GeometryIndexEXT
@@ -176,7 +189,7 @@ void MyHCBTriangle::initBLASes()
 			buildRangeInfo.primitiveCount = cluster.numTriangles;
 			buildRangeInfo.transformOffset = 0;
 			refPerBlasBuildInfo.buildRangeInfos.push_back(buildRangeInfo);
-
+#if BLAS_PER_CLUSTER
 			// Get size info
 			VkAccelerationStructureBuildGeometryInfoKHR& accelerationStructureBuildGeometryInfo = refPerBlasBuildInfo.asBuildGeometryInfo;
 			accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
@@ -204,9 +217,38 @@ void MyHCBTriangle::initBLASes()
 			refPerBlasBuildInfo.blasScratchSizeMax = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
 			dynamicBLASes.push_back(blas);
 		}
-		
-
 	}
+#elif GEOMETRY_PER_CLUSTER
+		}
+		// Get size info
+		VkAccelerationStructureBuildGeometryInfoKHR& accelerationStructureBuildGeometryInfo = refPerBlasBuildInfo.asBuildGeometryInfo;
+		accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+		accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+#if FORCE_STATIC_SCENE
+		accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+#else
+		accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+#endif
+		accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refPerBlasBuildInfo.asGeometries.size());
+		accelerationStructureBuildGeometryInfo.pGeometries = refPerBlasBuildInfo.asGeometries.data();
+
+		VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
+		accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+		vkGetAccelerationStructureBuildSizesKHR(
+			device,
+			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+			&accelerationStructureBuildGeometryInfo,
+			maxPrimitiveCounts.data(),
+			&accelerationStructureBuildSizesInfo);
+		refPerBlasBuildInfo.asSize = accelerationStructureBuildSizesInfo.accelerationStructureSize;
+
+		AccelerationStructure blas{};
+		MyVulkanRTBase::createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
+		refPerBlasBuildInfo.blasScratchSizeMax = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
+		dynamicBLASes.push_back(blas);
+	}
+#endif
+
 	auto updateDeviceAddresses = [&](auto& blasArray)
 		{
 			for (auto& blas : blasArray)
@@ -217,7 +259,7 @@ void MyHCBTriangle::initBLASes()
 	updateDeviceAddresses(dynamicBLASes);
 }
 
-void MyHCBTriangle::initTLAS()
+void MyBvhTest::initTLAS()
 {
 	VkTransformMatrixKHR transformMatrix = {
 		   1.0f, 0.0f, 0.0f, 0.0f,
@@ -299,7 +341,7 @@ void MyHCBTriangle::initTLAS()
 	tlasScratchBuffer = createScratchBuffer(tlasScratchSize);
 }
 
-void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
+void MyBvhTest::buildBLASes(VkCommandBuffer cmdBuffer)
 {
 	//CPUTimer timer("Build Blas Timer");
 
@@ -359,13 +401,14 @@ void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
 	// dynamic blas
 	if (numDynamicBlases)
 	{
+		if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 		vkCmdBuildAccelerationStructuresKHR(
 			cmdBuffer,
 			numDynamicBlases,
 			dynamicBlasBuildingSets.buildGeometryInfos.data(),
 			dynamicBlasBuildingSets.buildRangeInfosArray.data());
+		if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	}
-	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 
 	// static blas
 	if (numStaticBlases)
@@ -375,11 +418,10 @@ void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
 			numStaticBlases,
 			staticBlasBuildingSets.buildGeometryInfos.data(),
 			staticBlasBuildingSets.buildRangeInfosArray.data());
-
 	}
 }
 
-void MyHCBTriangle::hcbBuildBLASes(VkCommandBuffer cmdBuffer)
+void MyBvhTest::hcbBuildBLASes(VkCommandBuffer cmdBuffer)
 {
 	//CPUTimer timer("Build Blas Timer");
 	uint32_t numStaticBlases = staticBLASes.size();
@@ -473,7 +515,7 @@ void MyHCBTriangle::hcbBuildBLASes(VkCommandBuffer cmdBuffer)
 	++readyCount;
 }
 
-void MyHCBTriangle::buildTLAS(VkCommandBuffer cmdBuffer)
+void MyBvhTest::buildTLAS(VkCommandBuffer cmdBuffer)
 {
 	const bool isFirstBuild = (TLAS.handle == VK_NULL_HANDLE);
 	//VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -513,11 +555,13 @@ void MyHCBTriangle::buildTLAS(VkCommandBuffer cmdBuffer)
 	// Build the acceleration structure on the device via a one-time command buffer submission
 	// Some implementations may support acceleration structure building on the host (VkPhysicalDeviceAccelerationStructureFeaturesKHR->accelerationStructureHostCommands), but we prefer device builds
 
+	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	vkCmdBuildAccelerationStructuresKHR(
 		cmdBuffer,
 		1,
 		&tlasBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
+	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 
 
 	// after first build complete
@@ -530,7 +574,7 @@ void MyHCBTriangle::buildTLAS(VkCommandBuffer cmdBuffer)
 	}
 }
 
-void MyHCBTriangle::createShaderBindingTables()
+void MyBvhTest::createShaderBindingTables()
 {
 	const uint32_t handleSize = rayTracingPipelineProperties.shaderGroupHandleSize;
 	const uint32_t handleSizeAligned = vks::tools::alignedSize(rayTracingPipelineProperties.shaderGroupHandleSize, rayTracingPipelineProperties.shaderGroupHandleAlignment);
@@ -551,14 +595,14 @@ void MyHCBTriangle::createShaderBindingTables()
 	memcpy(shaderBindingTables.hit.mapped, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize);
 }
 
-void MyHCBTriangle::createComputePipeline()
+void MyBvhTest::createComputePipeline()
 {
 	animComputePass = std::make_unique<MyAnimComputePass>(device);
 	animComputePass->createDescriptorSets(model);
-	animComputePass->createPipeline(getShadersPath() + "myHitCountBasedBlasBuilding/anim.comp.spv");
+	animComputePass->createPipeline(getShadersPath() + "myRayTracingLittleAdvanced/anim.comp.spv");
 }
 
-void MyHCBTriangle::createRayTracingPipeline()
+void MyBvhTest::createRayTracingPipeline()
 {
 	const uint32_t imageCount = static_cast<uint32_t>(model.textures.size());
 
@@ -575,10 +619,8 @@ void MyHCBTriangle::createRayTracingPipeline()
 		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 4),
 		// Binding 5: All Primtivies SSBO.
 		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 5),
-		// Binding 6: All Clusters SSBO.
-		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 6),
-		// Binding 7: All images used by the glTF model
-		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 7, imageCount),
+		// Binding 6: All images used by the glTF model
+		vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, 6, imageCount),
 	};
 
 
@@ -587,7 +629,6 @@ void MyHCBTriangle::createRayTracingPipeline()
 	setLayoutBindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
 	setLayoutBindingFlags.bindingCount = setLayoutBindings.size();
 	std::vector<VkDescriptorBindingFlagsEXT> descriptorBindingFlags = {
-		0,
 		0,
 		0,
 		0,
@@ -633,7 +674,7 @@ void MyHCBTriangle::createRayTracingPipeline()
 
 	// Miss group
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "myHitCountBasedBlasBuilding/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
@@ -643,14 +684,14 @@ void MyHCBTriangle::createRayTracingPipeline()
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		shaderGroups.push_back(shaderGroup);
 		// Second shader for shadows
-		shaderStages.push_back(loadShader(getShadersPath() + "myHitCountBasedBlasBuilding/shadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/shadow.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroups.push_back(shaderGroup);
 	}
 
 	// Closest hit group for doing texture lookups
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "myHitCountBasedBlasBuilding/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
@@ -658,7 +699,7 @@ void MyHCBTriangle::createRayTracingPipeline()
 		shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		// This group also uses an anyhit shader for doing transparency (see anyhit.rahit for details)
-		shaderStages.push_back(loadShader(getShadersPath() + "myHitCountBasedBlasBuilding/anyhit.rahit.spv", VK_SHADER_STAGE_ANY_HIT_BIT_KHR));
+		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/anyhit.rahit.spv", VK_SHADER_STAGE_ANY_HIT_BIT_KHR));
 		shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
 		shaderGroups.push_back(shaderGroup);
 	}
@@ -679,7 +720,7 @@ void MyHCBTriangle::createRayTracingPipeline()
 	VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &rtPipeline));
 }
 
-void MyHCBTriangle::createDescriptorSets()
+void MyBvhTest::createDescriptorSets()
 {
 	uint32_t imageCount = static_cast<uint32_t>(model.textures.size());
 	std::vector<VkDescriptorPoolSize> poolSizes = {
@@ -689,8 +730,7 @@ void MyHCBTriangle::createDescriptorSets()
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }, // Binding 4: Geometry node information SSBO
 		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}, // Binding 5 : All Mesh Primitives
-		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}, // Binding 6 : Cluster Data
-		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(model.textures.size()) },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(model.textures.size()) }
 	};
 
 	VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 1);
@@ -731,9 +771,7 @@ void MyHCBTriangle::createDescriptorSets()
 		// Binding 4: Geometry node information SSBO
 		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &model.geometryNodes.descriptor),
 		// Binding 5 : All Mesh Primitives
-		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &model.primitives.descriptor),
-		// Binding 6 : Cluster Data
-		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6, &model.clusters.descriptor)
+		vks::initializers::writeDescriptorSet(rtDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &model.primitives.descriptor)
 	};
 
 	// Image descriptors for the image array
@@ -748,7 +786,7 @@ void MyHCBTriangle::createDescriptorSets()
 
 	VkWriteDescriptorSet writeDescriptorImgArray{};
 	writeDescriptorImgArray.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	writeDescriptorImgArray.dstBinding = 7;
+	writeDescriptorImgArray.dstBinding = 6;
 	writeDescriptorImgArray.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	writeDescriptorImgArray.descriptorCount = imageCount;
 	writeDescriptorImgArray.dstSet = rtDescriptorSet;
@@ -758,7 +796,7 @@ void MyHCBTriangle::createDescriptorSets()
 	vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
-void MyHCBTriangle::createUniformBuffer()
+void MyBvhTest::createUniformBuffer()
 {
 	VK_CHECK_RESULT(vulkanDevice->createBuffer(
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -771,7 +809,7 @@ void MyHCBTriangle::createUniformBuffer()
 	updateUniformBuffers();
 }
 
-void MyHCBTriangle::handleResize()
+void MyBvhTest::handleResize()
 {
 	// Recreate image
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -782,7 +820,7 @@ void MyHCBTriangle::handleResize()
 	resized = false;
 }
 
-void MyHCBTriangle::buildCommandBuffers()
+void MyBvhTest::buildCommandBuffers()
 {
 	if (resized)
 	{
@@ -797,7 +835,13 @@ void MyHCBTriangle::buildCommandBuffers()
 	{
 		VkCommandBuffer cmdBuffer = drawCmdBuffers[i];
 		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
+#if MEASURE_MODE
+		gpuTimer->reset(cmdBuffer);
+#endif
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		animComputePass->buildCommandBuffer(cmdBuffer);
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
 		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
 		vkCmdPipelineBarrier(
 			cmdBuffer,
@@ -816,6 +860,32 @@ void MyHCBTriangle::buildCommandBuffers()
 
 			buildTLAS(cmdBuffer);
 		}
+
+		/*
+			Dispatch the ray tracing commands
+		*/
+		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
+
+		// push constant - vertex/index device addressvkCmdPushConstants(
+		vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
+			VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
+			0, sizeof(PushConstantData), &pushConstantData
+		);
+
+		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
+
+		VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+		vkCmdTraceRaysKHR(
+			cmdBuffer,
+			&shaderBindingTables.raygen.stridedDeviceAddressRegion,
+			&shaderBindingTables.miss.stridedDeviceAddressRegion,
+			&shaderBindingTables.hit.stridedDeviceAddressRegion,
+			&emptySbtEntry,
+			width,
+			height,
+			1);
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
 
 		/*
 			Copy ray tracing output to swap chain image
@@ -867,7 +937,7 @@ void MyHCBTriangle::buildCommandBuffers()
 	}
 }
 
-void MyHCBTriangle::updateUniformBuffers()
+void MyBvhTest::updateUniformBuffers()
 {
 	uniformData.projInverse = glm::inverse(camera.matrices.perspective);
 	uniformData.viewInverse = glm::inverse(camera.matrices.view);
@@ -879,7 +949,7 @@ void MyHCBTriangle::updateUniformBuffers()
 	memcpy(uniformBuffer.mapped, &uniformData, sizeof(uniformData));
 }
 
-void MyHCBTriangle::getEnabledFeatures()
+void MyBvhTest::getEnabledFeatures()
 {
 	// Enable features required for ray tracing using feature chaining via pNext		
 	enabledBufferDeviceAddresFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
@@ -904,7 +974,7 @@ void MyHCBTriangle::getEnabledFeatures()
 	enabledFeatures.samplerAnisotropy = VK_TRUE;
 }
 
-void MyHCBTriangle::loadAssets()
+void MyBvhTest::loadAssets()
 {
 	//model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Timmy.gltf", vulkanDevice, queue, g_loadingFlag);
@@ -912,24 +982,27 @@ void MyHCBTriangle::loadAssets()
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 }
-void MyHCBTriangle::enableExtensions()
+void MyBvhTest::enableExtensions()
 {
 	MyVulkanRTBase::enableExtensions();
 }
 
-void MyHCBTriangle::prepare()
+void MyBvhTest::prepare()
 {
 	MyVulkanRTBase::prepare();
+	// make timer
+	gpuTimer = std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod, 4 * 2);
+	gpuTimer->init();
 #if MEASURE_MODE
 #if defined(_WIN32)
 	setupConsole("Vulkan example");
 #endif
 #endif
 #if _DEBUG & !SKIP_SHADER_COMIPLE  // compile shaders
-	std::string batchPath = getShadersPath() + "MyHCBTriangle/ShaderCompile.bat";
+	std::string batchPath = getShadersPath() + "myRayTracingLittleAdvanced/ShaderCompile.bat";
 	system(batchPath.c_str());
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
@@ -945,7 +1018,8 @@ void MyHCBTriangle::prepare()
 	initBLASes();
 	initTLAS();
 
-	hcbBuildBLASes(accelBuildCmdBuffer);
+	//hcbBuildBLASes(accelBuildCmdBuffer);
+	buildBLASes(accelBuildCmdBuffer);
 	accelBuildPipelineBarrier(accelBuildCmdBuffer);
 	buildTLAS(accelBuildCmdBuffer);
 	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, queue);
@@ -958,10 +1032,11 @@ void MyHCBTriangle::prepare()
 	createDescriptorSets();
 	buildCommandBuffers();
 
+
 	prepared = true;
 }
 
-void MyHCBTriangle::draw()
+void MyBvhTest::draw()
 {
 	VulkanExampleBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
@@ -970,7 +1045,7 @@ void MyHCBTriangle::draw()
 	VulkanExampleBase::submitFrame();
 }
 
-void MyHCBTriangle::render()
+void MyBvhTest::render()
 {
 	if (!prepared)
 		return;
@@ -990,7 +1065,7 @@ void MyHCBTriangle::render()
 			if (anim.accPlayTime > anim.end)
 				anim.accPlayTime = 0.f;
 			//myUtils::CPUTimer timer(true);
-			//model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
+			model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 			//timer.record(true);
 		}
 		model.updateJoints();
@@ -1004,9 +1079,40 @@ void MyHCBTriangle::render()
 	uniformData.frame = -1;
 
 	draw();
+#if MEASURE_MODE
+	static uint32_t frameCount, accFPS = 0;
+	static float accBuildBLASTime, accBuildTLASTime, accAnimTime = 0.f;
+	static float accTraceTime = 0.f;
+
+	++frameCount;
+	if (frameCount >= WARMINGUP_FRAME && frameCount <= MEASURE_END_FRAME)
+	{
+		accFPS += lastFPS;
+		const std::vector<float> gpuTimerResult = gpuTimer->timerResult();
+		accAnimTime		 += gpuTimerResult[0];
+		accBuildBLASTime += gpuTimerResult[1];
+		accBuildTLASTime += gpuTimerResult[2];
+		accTraceTime	 += gpuTimerResult[3];
+
+		if (frameCount == MEASURE_END_FRAME)
+		{
+			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
+			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
+			float animAvg = accAnimTime / MEASURE_FRAME_COUNT;
+			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
+			std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
+			std::cout << "Average Animation Time = " << animAvg << "(ms)\n";
+			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
+			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
+			std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
+			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
+			std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
+		}
+	}
+#endif
 }
 
-void MyHCBTriangle::OnUpdateUIOverlay(vks::UIOverlay* overlay)
+void MyBvhTest::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 {
 	if (overlay->header("Visibility"))
 	{

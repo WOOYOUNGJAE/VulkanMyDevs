@@ -13,9 +13,6 @@
 #include "myIncludesCPUGPU.h"
 
 #define FORCE_STATIC_SCENE 0
-#define ACCEL_BUILD_TIMER_ON (MEASURE_MODE & 1) // MeasureMode Must be ON 
-#define TRACE_TIMER_ON (ACCEL_BUILD_TIMER_ON & 1) // AccelBuildTimer Must be ON
-#define ANIM_TIMER_ON 1
 struct ScratchBuffer
 {
 	uint64_t deviceAddress = 0;
@@ -88,16 +85,18 @@ public:
 	private:
 		VkDevice device = VK_NULL_HANDLE;
 		VkQueryPool timeStampQueryPool = VK_NULL_HANDLE;
-		uint32_t queryCount = 2; // before after
-		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+		uint32_t curQueryIndex = 0;
+		uint32_t queryCount; // before after
+		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
 		float timestampPeriodDeviceLimit = 0.f;
+		std::vector<float> timerResults;
 	public:
 		~GPUTimer()
 		{
 			vkDestroyQueryPool(device, timeStampQueryPool, nullptr);
 		}
 		GPUTimer() = delete;
-		GPUTimer(VkDevice inDevice, float inTimestampPeriodDeviceLimit) : device(inDevice), timestampPeriodDeviceLimit(inTimestampPeriodDeviceLimit) {}
+		GPUTimer(VkDevice inDevice, float inTimestampPeriodDeviceLimit, uint32_t qeuryCount) : device(inDevice), timestampPeriodDeviceLimit(inTimestampPeriodDeviceLimit), queryCount(qeuryCount) { timerResults.resize(queryCount / 2);}
 		void init()
 		{
 			VkQueryPoolCreateInfo queryPoolInfo{};
@@ -108,29 +107,36 @@ public:
 		}
 		void reset(VkCommandBuffer cmdBuffer)
 		{
+			curQueryIndex = 0;
 			vkCmdResetQueryPool(cmdBuffer, timeStampQueryPool, 0, queryCount);
-		}
-		void record(VkCommandBuffer cmdBuffer, VkPipelineStageFlagBits pipelineStageFlag, uint32_t queryIndex = 0)
-		{
-			vkCmdWriteTimestamp(cmdBuffer, pipelineStageFlag, timeStampQueryPool, queryIndex);
 		}
 
 		/**
-		 * @return -1 if timer not ready
+		 * @note If NOT MEASURE_MODE, Do Nothing.
 		 */
-		float timerResult()
+		void record(VkCommandBuffer cmdBuffer, VkPipelineStageFlagBits pipelineStageFlag)
 		{
-			float result = -1.f;
-			uint64_t timeStampResult[4]{}; // query0(result, availability), query1(result, availability)
-			vkGetQueryPoolResults(device, timeStampQueryPool, 0, queryCount, sizeof(timeStampResult),
-				timeStampResult, sizeof(uint64_t) * 2, queryFlag);
+#if MEASURE_MODE
+			vkCmdWriteTimestamp(cmdBuffer, pipelineStageFlag, timeStampQueryPool, curQueryIndex++);
+#endif
+		}
 
-			if (timeStampResult[1] && timeStampResult[3]) // availability
+		/**
+		 * @return 0 if timer not ready
+		 */
+		const std::vector<float>& timerResult()
+		{
+			curQueryIndex = 0;
+			std::vector<uint64_t> timeStampResults(queryCount, 0);
+			vkGetQueryPoolResults(device, timeStampQueryPool, 0, queryCount, sizeof(uint64_t) * queryCount,
+				timeStampResults.data(), sizeof(uint64_t), queryFlag);
+
+			for (uint32_t i = 0; i < queryCount / 2; ++i) // (start, end, start, end, ,,,)
 			{
-				result = float(timeStampResult[2] - timeStampResult[0]) * timestampPeriodDeviceLimit / (1000000.0f);
+				timerResults[i] = float(timeStampResults[i * 2 + 1] - timeStampResults[i * 2]) * timestampPeriodDeviceLimit / (1000000.0f);
 			}
-
-			return result;
+			
+			return timerResults;
 		}
 	};
 	std::unique_ptr<GPUTimer> gpuTimer;
