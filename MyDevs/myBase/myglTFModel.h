@@ -88,7 +88,7 @@ namespace myglTF
 		VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 		uint64_t deviceAddress = 0;
 		void* mapped;
-	}UniformBufferSet, MeshUniformBuffer, RepresentingBuffer;
+	}UniformBufferSet, MeshUniformBuffer, ModelCombinedBuffer;
 
 	/*
 		glTF texture loading class
@@ -169,13 +169,13 @@ namespace myglTF
 
 		std::vector<Primitive*> primitives;
 		std::string name;
-
+		uint32_t numVertices = 0;
 		MeshUniformBuffer uniformBuffer;
 
 		struct UniformBlock {
 			glm::mat4 matrix;
 			glm::mat4 jointMatrix[MAX_JOINTS]{};
-			float jointcount{ 0 };
+			//float jointcount{ 0 };
 		} uniformBlock;
 
 		/**
@@ -305,6 +305,9 @@ namespace myglTF
 	{
 		glm::vec4 joint0;
 		glm::vec4 weight0;
+#if CUSTOM_VERTEX
+		glm::uvec4 customData4; // [meshID, primitiveIdInMesh, 0, 0]
+#endif
 	};
 
 	enum FileLoadingFlags {
@@ -320,7 +323,8 @@ namespace myglTF
 		GeometryNodePerMesh = 0x000000100, // New Style
 		MakeClusters = 0x000000200, // Just make clusters. decide usage for clusterdTriangleBLAS or ClusteredBLAS
 		ClusteredTriangleBLAS = (MakeClusters | 0x000000400), // for Clustered Triangle Base Mesh, No CLAS
-		ClusteredBLAS = (MakeClusters | 0x000000800), // for CLAS
+		ClusteredBLAS = (MakeClusters | 0x000000800), // for CLAS nv Extensions
+		CombinedMeshBuffer = 0x000001000, // for make mesh's buffer(joint matrices) combined
 	};
 
 	// descriptorset bind num into pipeline
@@ -358,13 +362,18 @@ namespace myglTF
 			VkDescriptorBufferInfo descriptor{};
 		}Vertices, Indices, ClusterVertices, ClusterIndices, ClusterBBoxes, Clusters, GeometryNodes, Primitives;
 		void CleanBufferMemory(BUFFER_TAG& bufferAndMemory);
+
+#pragma region Buffers
 		Vertices vertices{};
 		Vertices deformingVertices{}; // for deforming vertex buffer. If skeletal mesh, "vertices" is t-pose
 		Indices indices{};
 		GeometryNodes geometryNodes{}; // GeometryNode type and the buffer size are already determined at creation.
 		Primitives primitives; // for multi blas
 		// Used only if model needs only single representing uniform data
-		RepresentingBuffer representingBuffer{}; // this can be root node buffer or something else(bakedAnimiData,,).
+		ModelCombinedBuffer representingBuffer{}; // this can be root node buffer or something else(bakedAnimiData,,).
+		ModelCombinedBuffer combinedMeshBuffer{}; // combined all mesh's uniform buffer
+#pragma endregion Buffers
+
 		struct UniformData
 		{
 			glm::mat4 matrix; // root model matrix
@@ -480,6 +489,7 @@ namespace myglTF
 		void updateNodeTransforms(); // Legacy - Sascha's Style (BAD)
 		void updateJoints();
 		void updateNodeTransforms(Node* pNode);
+		void updateCombinedMeshBuffer();
 		Node* findNode(Node* parent, uint32_t index);
 		Node* nodeFromIndex(uint32_t index);
 		void prepareNodeDescriptor(myglTF::Node* node, VkDescriptorSetLayout descriptorSetLayout);

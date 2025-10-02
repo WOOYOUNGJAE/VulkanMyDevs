@@ -508,7 +508,7 @@ void myglTF::Node::update()
 				jointMat = inverseTransform * jointMat;
 				mesh->uniformBlock.jointMatrix[i] = jointMat;
 			}
-			mesh->uniformBlock.jointcount = (float)skin->joints.size();
+			//mesh->uniformBlock.jointcount = (float)skin->joints.size();
 			memcpy(mesh->uniformBuffer.mapped, &mesh->uniformBlock, sizeof(mesh->uniformBlock));
 
 		}
@@ -689,6 +689,12 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 
 myglTF::ModelRT::~ModelRT()
 {
+	if (combinedMeshBuffer.buffer)
+	{
+		vkDestroyBuffer(device->logicalDevice, combinedMeshBuffer.buffer, nullptr);
+		vkFreeMemory(device->logicalDevice, combinedMeshBuffer.memory, nullptr);
+	}
+
 	CleanBufferMemory(primitives);
 	CleanBufferMemory(geometryNodes);
 
@@ -740,7 +746,7 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 	newNode->name = node.name;
 	newNode->skinIndex = node.skin;
 	newNode->matrix = glm::mat4(1.0f);
-
+	uint32_t numMeshVertices = 0;
 	// Generate local node matrix
 	glm::vec3 translation = glm::vec3(0.0f);
 	if (node.translation.size() == 3) {
@@ -773,6 +779,8 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 
 	// Node contains mesh data
 	if (node.mesh > -1) {
+		static uint32_t meshID = 0;
+		uint32_t primitiveIDInMesh = 0;
 		const tinygltf::Mesh mesh = model.meshes[node.mesh];
 		bool hasSkin = false;
 		Mesh* newMesh = new Mesh(device, newNode->matrix);
@@ -891,6 +899,10 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 						uint8_t* ptr = (uint8_t*)bufferJoints;
 						static_cast<VertexSkinning*>(vert)->joint0 = glm::vec4(glm::make_vec4(&ptr[v * 4]));
 						static_cast<VertexSkinning*>(vert)->weight0 = glm::vec4(glm::make_vec4(&bufferWeights[v * 4]));
+#if CUSTOM_VERTEX
+						static_cast<VertexSkinning*>(vert)->customData4.x = meshID;
+						static_cast<VertexSkinning*>(vert)->customData4.y = primitiveIDInMesh;
+#endif
 					}
 					vertices.push_back(vert);
 				}
@@ -941,9 +953,13 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 			newPrimitive->vertexCount = vertexCount;
 			newPrimitive->setDimensions(posMin, posMax);
 			newMesh->primitives.push_back(newPrimitive);
+			++primitiveIDInMesh;
+			numMeshVertices += vertexCount;
 		}
+		++meshID;
 		/*If has Skin, can decide wheater to create uniform buffer*/
 		newMesh->createUniformBuffer(hasSkin);
+		newMesh->numVertices = numMeshVertices;
 		newNode->mesh = newMesh;
 		linearMeshes.push_back(newMesh);
 	}
@@ -1185,6 +1201,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	const bool bMakeClusters = fileLoadingFlags & myglTF::FileLoadingFlags::MakeClusters;
 	const bool bClusteredTriangleBLAS = fileLoadingFlags & myglTF::FileLoadingFlags::ClusteredTriangleBLAS;
 	const bool bClusteredBLAS = fileLoadingFlags & (myglTF::FileLoadingFlags::ClusteredBLAS | ClusteredTriangleBLAS /*TODO TEMP*/);
+	const bool bCombinedMeshBuffer = fileLoadingFlags & myglTF::FileLoadingFlags::CombinedMeshBuffer;
 
 	auto getBufferDeviceAddress = [&](VkBuffer buffer)
 	{
@@ -1235,6 +1252,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			const tinygltf::Node node = gltfModel.nodes[scene.nodes[i]];
 			loadNode(nullptr, node, scene.nodes[i], gltfModel, tempIndicesCPU, tempVerticesCPU, scale);
 		}
+
 		loadSkins(gltfModel);
 
 		
@@ -1259,12 +1277,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		updateJoints();
 		for (auto& node : nodes)
 			updateNodeTransforms(node);
-		// Initial pose
-		//for (auto node : linearNodes) {
-		//	if (preTransform == false && node->mesh) {
-		//		node->update();
-		//	}
-		//}
+
 	}
 	else {
 		vks::tools::exitFatal("Could not load glTF file \"" + filename + "\": " + error, -1);
@@ -1637,11 +1650,20 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			clusterBufferSize, &clusters.buffer, &clusters.memory, transferQueue, tempClusters.data(), (void**)&clusterViewer);
 		clusters.descriptor = { clusters.buffer, 0, clusterBufferSize };
 	}
+	if (bCombinedMeshBuffer)
+	{
+		VkDeviceSize bufferSize = linearMeshes.size() * sizeof(Mesh::UniformBlock);
+		device->CreateBuffer_HostVisible(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			bufferSize, &combinedMeshBuffer.buffer, &combinedMeshBuffer.memory, true, nullptr, &combinedMeshBuffer.mapped);
+		combinedMeshBuffer.descriptor = { combinedMeshBuffer.buffer, 0, bufferSize };
+
+		updateCombinedMeshBuffer();
+	}
 	// Setup descriptors
 	uint32_t uboCount{ 0 };
 	uint32_t imageCount{ 0 };
 	// Case : each mesh has its descriptor
-	const bool hasMultipleUbo = (preTransform == false);
+	const bool hasMultipleUbo = (preTransform == false) || bCombinedMeshBuffer == false;
 	if (hasMultipleUbo)
 	{
 		if (isBakedAnimation)
@@ -1665,7 +1687,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		}
 	}
 	std::vector<VkDescriptorPoolSize> poolSizes;
-	VkDescriptorType modelDescriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	VkDescriptorType modelDescriptorType = bCombinedMeshBuffer ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	poolSizes.push_back(VkDescriptorPoolSize{ modelDescriptorType, uboCount });
 		if (imageCount > 0) {
 		if (descriptorBindingFlags & DescriptorBindingFlags::ImageBaseColor) {
@@ -1769,6 +1791,27 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 					vkUpdateDescriptorSets(device->logicalDevice, 1, &writeDescriptorSet, 0, nullptr);
 				}
+			}
+			else if (bCombinedMeshBuffer)
+			{
+				// allocate descriptor
+				VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
+				descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+				descriptorSetAllocInfo.descriptorPool = descriptorPool;
+				descriptorSetAllocInfo.pSetLayouts = &descriptorSetLayoutModel;
+				descriptorSetAllocInfo.descriptorSetCount = 1;
+				VK_CHECK_RESULT(vkAllocateDescriptorSets(device->logicalDevice, &descriptorSetAllocInfo, &combinedMeshBuffer.descriptorSet));
+
+				// update
+				VkWriteDescriptorSet writeDescriptorSet{};
+				writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+				writeDescriptorSet.descriptorCount = 1;
+				writeDescriptorSet.dstSet = combinedMeshBuffer.descriptorSet;
+				writeDescriptorSet.dstBinding = 0;
+				writeDescriptorSet.pBufferInfo = &combinedMeshBuffer.descriptor;
+
+				vkUpdateDescriptorSets(device->logicalDevice, 1, &writeDescriptorSet, 0, nullptr);
 			}
 			else
 			{
@@ -1935,7 +1978,7 @@ void myglTF::ModelRT::updateNodeTransforms(Node* pNode)
 				glm::mat4 jointMat = jointMatrices[i] * pNode->skin->inverseBindMatrices[i];
 				pNode->mesh->uniformBlock.jointMatrix[i] = jointMat;
 			}
-			pNode->mesh->uniformBlock.jointcount = (float)pNode->skin->joints.size();
+			//pNode->mesh->uniformBlock.jointcount = (float)pNode->skin->joints.size();
 			memcpy(pNode->mesh->uniformBuffer.mapped, &pNode->mesh->uniformBlock, sizeof(pNode->mesh->uniformBlock));
 
 		}
@@ -1946,6 +1989,14 @@ void myglTF::ModelRT::updateNodeTransforms(Node* pNode)
 
 	for (auto& child : pNode->children) {
 		updateNodeTransforms(child);
+	}
+}
+void myglTF::ModelRT::updateCombinedMeshBuffer()
+{
+	constexpr uint64_t stride = sizeof(Mesh::UniformBlock);
+	for (uint32_t i = 0; i < linearMeshes.size(); ++i)
+	{
+		memcpy((uint8_t*)combinedMeshBuffer.mapped + stride * i, &linearMeshes[i]->uniformBlock, stride);
 	}
 }
 

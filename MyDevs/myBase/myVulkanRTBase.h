@@ -107,8 +107,10 @@ public:
 		}
 		void reset(VkCommandBuffer cmdBuffer)
 		{
+#if MEASURE_MODE
 			curQueryIndex = 0;
 			vkCmdResetQueryPool(cmdBuffer, timeStampQueryPool, 0, queryCount);
+#endif
 		}
 
 		/**

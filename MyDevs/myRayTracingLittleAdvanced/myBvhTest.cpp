@@ -19,6 +19,7 @@
 
 #define BLAS_PER_CLUSTER 1
 #define GEOMETRY_PER_CLUSTER !BLAS_PER_CLUSTER
+#define BINDLESS_SKINNING 0
 
 MyBvhTest::MyBvhTest()
 {
@@ -197,7 +198,10 @@ void MyBvhTest::initBLASes()
 #if FORCE_STATIC_SCENE
 			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 #else
-			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
+			//accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+			//accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+
 #endif
 			accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refPerBlasBuildInfo.asGeometries.size());
 			accelerationStructureBuildGeometryInfo.pGeometries = refPerBlasBuildInfo.asGeometries.data();
@@ -597,9 +601,17 @@ void MyBvhTest::createShaderBindingTables()
 
 void MyBvhTest::createComputePipeline()
 {
+#if BINDLESS_SKINNING
+	animBindlessPass = std::make_unique<MyBindlessAnimComputePass>(device);
+	animBindlessPass->createDescriptorSets(model);
+	animBindlessPass->createPipeline(getShadersPath() + "myRayTracingLittleAdvanced/animBindless.comp.spv");
+#else
 	animComputePass = std::make_unique<MyAnimComputePass>(device);
 	animComputePass->createDescriptorSets(model);
 	animComputePass->createPipeline(getShadersPath() + "myRayTracingLittleAdvanced/anim.comp.spv");
+#endif
+	
+
 }
 
 void MyBvhTest::createRayTracingPipeline()
@@ -729,7 +741,7 @@ void MyBvhTest::createDescriptorSets()
 		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 }, // Binding 2: Uniform data
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 }, // Binding 4: Geometry node information SSBO
-		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}, // Binding 5 : All Mesh Primitives
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}, // Binding 5 : All Mesh Primitives
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(model.textures.size()) }
 	};
 
@@ -835,11 +847,14 @@ void MyBvhTest::buildCommandBuffers()
 	{
 		VkCommandBuffer cmdBuffer = drawCmdBuffers[i];
 		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
-#if MEASURE_MODE
 		gpuTimer->reset(cmdBuffer);
-#endif
+
 		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+#if BINDLESS_SKINNING
+		animBindlessPass->buildCommandBuffer(cmdBuffer);
+#else
 		animComputePass->buildCommandBuffer(cmdBuffer);
+#endif
 		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
 		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
@@ -976,6 +991,10 @@ void MyBvhTest::getEnabledFeatures()
 
 void MyBvhTest::loadAssets()
 {
+#if BINDLESS_SKINNING
+	g_loadingFlag = (myglTF::FileLoadingFlags)(uint64_t)(g_loadingFlag | myglTF::FileLoadingFlags::CombinedMeshBuffer);
+#endif
+
 	//model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Timmy.gltf", vulkanDevice, queue, g_loadingFlag);
 
@@ -1071,7 +1090,9 @@ void MyBvhTest::render()
 		model.updateJoints();
 		for (auto& node : model.nodes)
 			model.updateNodeTransforms(node);
-
+#if BINDLESS_SKINNING
+		model.updateCombinedMeshBuffer();
+#endif
 	}
 #endif
 

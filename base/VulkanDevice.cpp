@@ -522,6 +522,7 @@ namespace vks
 				void* mapped;
 				VK_CHECK_RESULT(vkMapMemory(logicalDevice, *memory, 0, size, 0, &mapped));
 				memcpy(mapped, data, size);
+				vkUnmapMemory(logicalDevice, *memory);
 			}
 			// If host coherency hasn't been requested, do a manual flush to make writes visible
 			if (isHostCoherent == false)
@@ -532,8 +533,10 @@ namespace vks
 				mappedRange.size = size;
 				vkFlushMappedMemoryRanges(logicalDevice, 1, &mappedRange);
 			}
-			if (ppMappedPtr == nullptr)
-				vkUnmapMemory(logicalDevice, *memory);
+		}
+		else if (ppMappedPtr) // no copy, just mapping. unmap outside
+		{
+			VK_CHECK_RESULT(vkMapMemory(logicalDevice, *memory, 0, size, 0, ppMappedPtr));
 		}
 
 		// Attach the memory to the buffer object

@@ -25,12 +25,15 @@ struct Triangle {
 
 // Todo change to specialization
 #ifdef USE_SKINNING
-#define NUM_VEC4_FROM_VERTEX_SIZE 6
-#define VERTEX_SIZE 96
+#if CUSTOM_VERTEX
+#define VERTEX_SIZE 112
 #else
-#define NUM_VEC4_FROM_VERTEX_SIZE 4
+#define VERTEX_SIZE 96
+#endif
+#else
 #define VERTEX_SIZE 64
 #endif
+#define NUM_VEC4_FROM_VERTEX_SIZE (VERTEX_SIZE / 16)
 
 
 #define INDEX_TYPE_SIZE 4
@@ -75,9 +78,9 @@ Triangle unpackTriangle(uint primitiveID) {
 	vec3 barycentricCoords = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
 	tri.uv = tri.vertices[0].uv * barycentricCoords.x + tri.vertices[1].uv * barycentricCoords.y + tri.vertices[2].uv * barycentricCoords.z;
 	tri.normal = tri.vertices[0].normal * barycentricCoords.x + tri.vertices[1].normal * barycentricCoords.y + tri.vertices[2].normal * barycentricCoords.z;
-
+#ifdef USE_SKINNING
 	tri.joint0 = (tri.vertices[0].joint0 * barycentricCoords.x + tri.vertices[1].joint0 * barycentricCoords.y + tri.vertices[2].joint0 * barycentricCoords.z);// / 3.f;
 	tri.weight0 = (tri.vertices[0].weight0 * barycentricCoords.x + tri.vertices[1].weight0 * barycentricCoords.y + tri.vertices[2].weight0 * barycentricCoords.z);// / 3.f;
-
+#endif
 	return tri;
 }

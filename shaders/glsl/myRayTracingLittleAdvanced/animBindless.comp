@@ -7,20 +7,18 @@
 
 #include "../../../MyDevs/myBase/myIncludesCPUGPU.h"
 
-#if CUSTOM_VERTEX
 #define VERTEX_SIZE 112
-#else
-#define VERTEX_SIZE 96
-#endif
 #define NUM_VEC4_FROM_VERTEX_SIZE (VERTEX_SIZE / 16)
+
+// Specialization Constant
+layout(constant_id = 0) const uint32_t NUM_MESHES = 1;
+
 
 layout(buffer_reference, scalar) buffer Vertices {vec4 v[]; };
 layout(push_constant) uniform pushConstant {
 	uint64_t vertexBuffer;
-	uint32_t vertexStartOffset; // from total scene vertices
-	uint32_t numVertices;
+	uint32_t numVertices; // total
 } pushConstantData;
-
 
 struct JointData 
 {
@@ -28,26 +26,33 @@ struct JointData
 	mat4 jointMatrices[64*4];
 };
 
-layout(binding = 0, set = 0, scalar) uniform UniformData
+layout(binding = 0, set = 0, scalar) buffer StorageData
 {
-	JointData jointData;
-}uniformData;
+	JointData jointData[];
+}storageData;
 
 layout(binding = 1, set = 1, scalar) buffer DeformedVertices
 {
 	vec4 v[];
 }deformedVertices;
+layout(binding = 2, set = 1, scalar) uniform UniformData
+{
+	uvec4 numMeshVertices[6];
+//	uvec4 numMeshVertices[NUM_MESHES];
+}uniformData;
 
 layout(local_size_x = SKINNING_WORK_GROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
-void main()
+void main()	
 {
 	uint32_t threadIdxGlobal = gl_GlobalInvocationID.x;
 	if (threadIdxGlobal > pushConstantData.numVertices)
 		return;
+	Vertices tPoseVertices = Vertices(pushConstantData.vertexBuffer);	
+	uint32_t meshID = floatBitsToUint(tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 6].x);
+//	uint32_t numMeshVertices = uniformData.numMeshVertices[meshID].x;
 
-	uint32_t vertexStartOffset = pushConstantData.vertexStartOffset;
-	uint64_t vertexDeviceStartOffset = vertexStartOffset * VERTEX_SIZE;
-	Vertices tPoseVertices = Vertices(pushConstantData.vertexBuffer + vertexDeviceStartOffset);	
+
+	JointData jointData = storageData.jointData[meshID];
 	
 	vec4 vertexPos = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 0];
 	vec4 vertexNorm = vec4(0);
@@ -57,7 +62,6 @@ void main()
 	vec4 vertexJoint0 = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 4];
 	vec4 vertexWeight0 = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 5];
 
-	JointData jointData = uniformData.jointData;
 	mat4 skinMat = 
 		vertexWeight0.x * jointData.jointMatrices[int(vertexJoint0.x)] +
 		vertexWeight0.y * jointData.jointMatrices[int(vertexJoint0.y)] +
@@ -71,9 +75,9 @@ void main()
 
 	// write into ssbo
 	// pos
-	deformedVertices.v[(vertexStartOffset + threadIdxGlobal) * NUM_VEC4_FROM_VERTEX_SIZE + 0].xyz = deformedPos;
+	deformedVertices.v[(threadIdxGlobal) * NUM_VEC4_FROM_VERTEX_SIZE + 0].xyz = deformedPos;
 	// normal
-	deformedVertices.v[(vertexStartOffset + threadIdxGlobal) * NUM_VEC4_FROM_VERTEX_SIZE + 0].w = deformedNorm.x;
-	deformedVertices.v[(vertexStartOffset + threadIdxGlobal) * NUM_VEC4_FROM_VERTEX_SIZE + 1].xy = deformedNorm.yz;
+	deformedVertices.v[(threadIdxGlobal) * NUM_VEC4_FROM_VERTEX_SIZE + 0].w = deformedNorm.x;
+	deformedVertices.v[(threadIdxGlobal) * NUM_VEC4_FROM_VERTEX_SIZE + 1].xy = deformedNorm.yz;
 
 }

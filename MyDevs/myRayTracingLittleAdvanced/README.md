@@ -201,6 +201,44 @@ nvidia gpu는 asIndirectBuild를 지원하지 않는다는 것을 알게 되어 
 Legacy code - [myBuildASIndirect.cpp](myBuildASIndirect.cpp)
 
 # 5. BVH Test
+## AS Build Flag Test
+참고 자료 : https://developer.nvidia.com/blog/rtx-best-practices/
+1. Method A : `PREFER_FAST_BUILD`
+	* Refit 허용 X, BVH Rebuild에 최적화 된 구조
+	* ex) 파티클과 같이 지역 변형이 적고 크게 이동하는 경우
+2. Method B : `PREFER_FAST_BUILD` | `ALLOW_UPDATE`
+	* BVH Rebuild는 A보다 느리지만 Refit 허용
+	* ex) Ray 교차할 확률이 비교적 적은 Low-LOD의 오브젝트
+3. Method C : `PREFER_FAST_TRACE` | `ALLOW_UPDATE`
+	* AS Update 옵션 중 가장 빠른 Trace 연산, 업데이트는 가장 느림.
+	* ex) Ray 교차할 확률이 비교적 많은 High-LOD의 오브젝트
+
+### Single BLAS Mesh vs Cluster BLAS Mesh A,B,C 테스트
+* Single BLAS Mesh는 mesh를 하나의 BLAS로 만드는 기존 방식
+* Cluster BLAS Mesh는 mesh를 클러스터링 후 각 클러스터를 BLAS화 한 방식
+
+**Single BLAS Mesh**
+| 항목 | **A** | **B** | **C** |
+| :---: | :---: | :---: | :---: |
+| BLAS Build Time |  (ms) | (ms)| (ms) |
+| TLAS Build Time |  (ms) | (ms)| (ms) |
+| **Total AS Build Time** |  (ms) | (ms)| (ms) |
+| **Tracing Time** |  (ms) | (ms)| (ms) |
+| **FPS** |  fps ( ms) | fps ( ms)  |
+
+**Cluster BLAS Mesh**
+| 항목 | **A** | **B** | **C** |
+| :---: | :---: | :---: | :---: |
+| BLAS Build Time | 0.392371 (ms) | 0.394766 (ms)| (ms) |
+| TLAS Build Time | 0.0234598 (ms) | 0.0285396 (ms)| (ms) |
+| **Total AS Build Time** | 0.41583 (ms) | 0.423305 (ms)| (ms) |
+| **Tracing Time** | 0.678512 (ms) | 0.688143 (ms)| (ms) |
+| **FPS** |  150.155fps (6.65978 ms) | 158.04fps (6.32751 ms)  |
+
+
+
+
+
 ## blas per cluster vs geometry per cluster
 
 

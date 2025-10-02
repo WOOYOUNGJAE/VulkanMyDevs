@@ -71,6 +71,7 @@ public: // TLAS
 
 	// Compute Pipeline
 	std::unique_ptr<MyAnimComputePass> animComputePass;
+	std::unique_ptr<MyBindlessAnimComputePass> animBindlessPass;
 	VkPipeline computePipeline{ VK_NULL_HANDLE };
 	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
 

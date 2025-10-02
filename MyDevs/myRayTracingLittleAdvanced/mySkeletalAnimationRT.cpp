@@ -199,7 +199,9 @@ void MySkeletalAnimationRT::initBLASes()
 #if FORCE_STATIC_SCENE
 			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 #else
-			accelerationStructureBuildGeometryInfo.flags = isDeformable ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR
+				accelerationStructureBuildGeometryInfo.flags = isDeformable ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR
+			//accelerationStructureBuildGeometryInfo.flags = isDeformable ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR
+			//accelerationStructureBuildGeometryInfo.flags = isDeformable ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR
 				: VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 #endif
 			accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refPerBlasBuildInfo.asGeometries.size());
@@ -217,7 +219,6 @@ void MySkeletalAnimationRT::initBLASes()
 
 			AccelerationStructure blas{};
 			MyVulkanRTBase::createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
-			// TODO: if static -> fix to buildScratchSize?
 			refPerBlasBuildInfo.blasScratchSizeMax = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
 			if (isDeformable)
 			{
@@ -378,11 +379,13 @@ void MySkeletalAnimationRT::buildBLASes(VkCommandBuffer cmdBuffer)
 	// dynamic blas
 	if (numDynamicBlases)
 	{
+		if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 		vkCmdBuildAccelerationStructuresKHR(
 			cmdBuffer,
 			numDynamicBlases,
 			dynamicBlasBuildingSets.buildGeometryInfos.data(),
 			dynamicBlasBuildingSets.buildRangeInfosArray.data());
+		if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	}
 	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 
@@ -438,12 +441,13 @@ void MySkeletalAnimationRT::buildTLAS(VkCommandBuffer cmdBuffer)
 	// Build the acceleration structure on the device via a one-time command buffer submission
 	// Some implementations may support acceleration structure building on the host (VkPhysicalDeviceAccelerationStructureFeaturesKHR->accelerationStructureHostCommands), but we prefer device builds
 
+	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	vkCmdBuildAccelerationStructuresKHR(
 		cmdBuffer,
 		1,
 		&tlasBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
-
+	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 
 	// after first build complete
 	if (isFirstBuild)
@@ -610,7 +614,7 @@ void MySkeletalAnimationRT::createDescriptorSets()
 		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 },
-		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(model.textures.size()) }
 	};
 
@@ -716,8 +720,12 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 	{
 		VkCommandBuffer cmdBuffer = drawCmdBuffers[i];
 		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
-#if !(ACCEL_BUILD_TIMER_ON | FORCE_STATIC_SCENE)
+		gpuTimer->reset(cmdBuffer);
+
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		animComputePass->buildCommandBuffer(cmdBuffer);
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
 		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
 		vkCmdPipelineBarrier(
 			cmdBuffer,
@@ -736,9 +744,6 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 
 			buildTLAS(cmdBuffer);
 		}
-#endif
-
-#if !(TRACE_TIMER_ON)
 		/*
 			Dispatch the ray tracing commands
 		*/
@@ -753,6 +758,7 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
 
 		VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
 		vkCmdTraceRaysKHR(
 			cmdBuffer,
 			&shaderBindingTables.raygen.stridedDeviceAddressRegion,
@@ -762,7 +768,7 @@ void MySkeletalAnimationRT::buildCommandBuffers()
 			width,
 			height,
 			1);
-#endif
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
 		/*
 			Copy ray tracing output to swap chain image
 		*/
@@ -857,9 +863,9 @@ void MySkeletalAnimationRT::loadAssets()
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
 
 }
@@ -872,6 +878,9 @@ void MySkeletalAnimationRT::enableExtensions()
 void MySkeletalAnimationRT::prepare()
 {
 	MyVulkanRTBase::prepare();
+	// make timer
+	gpuTimer = std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod, 4 * 2);
+	gpuTimer->init();
 #if MEASURE_MODE
 #if defined(_WIN32)
 	setupConsole("Vulkan example");
@@ -943,7 +952,7 @@ void MySkeletalAnimationRT::render()
 				anim.accPlayTime += frameTimer;
 				if (anim.accPlayTime > anim.end)
 					anim.accPlayTime = 0.f;
-				//model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
+				model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 			}
 			//cpuTimer.start();
 
@@ -965,6 +974,39 @@ void MySkeletalAnimationRT::render()
 	updateUniformBuffers();
 	uniformData.frame = -1;
 	draw();
+
+#if MEASURE_MODE
+	static uint32_t frameCount, accFPS = 0;
+	static float accBuildBLASTime, accBuildTLASTime, accAnimTime = 0.f;
+	static float accTraceTime = 0.f;
+
+	++frameCount;
+	if (frameCount >= WARMINGUP_FRAME && frameCount <= MEASURE_END_FRAME)
+	{
+		accFPS += lastFPS;
+		const std::vector<float> gpuTimerResult = gpuTimer->timerResult();
+		accAnimTime += gpuTimerResult[0];
+		accBuildBLASTime += gpuTimerResult[1];
+		accBuildTLASTime += gpuTimerResult[2];
+		accTraceTime += gpuTimerResult[3];
+
+		if (frameCount == MEASURE_END_FRAME)
+		{
+			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
+			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
+			float animAvg = accAnimTime / MEASURE_FRAME_COUNT;
+			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
+			std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
+			std::cout << "Average Animation Time = " << animAvg << "(ms)\n";
+			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
+			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
+			std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
+			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
+			std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
+		}
+	}
+#endif
+
 }
 
 void MySkeletalAnimationRT::OnUpdateUIOverlay(vks::UIOverlay* overlay)

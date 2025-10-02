@@ -26,7 +26,7 @@ public:
 	VkPipeline pipeline{};
 public:
 	MyComputePass(VkDevice device) : device(device){}
-	~MyComputePass();
+	virtual ~MyComputePass();
 	/**
 	 * @param shaderFileName Full Shader Path
 	 */

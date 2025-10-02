@@ -30,7 +30,7 @@ class MyMeshShader : public VulkanExampleBase
 {
 public:
 	//VulkanglTFScene glTFScene; // materials contain pipeline
-	myglTF::Model model;
+	myglTF::ModelRT model;
 	VkPipeline globalPipeline;
 
 	struct ShaderData {

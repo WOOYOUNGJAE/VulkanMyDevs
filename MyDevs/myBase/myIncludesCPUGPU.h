@@ -23,7 +23,13 @@
 
 #define WAVE_SIZE 32 // warp sizes
 #define WORK_GROUP_SIZE 128 // thread block size
+#define SKINNING_WORK_GROUP_SIZE 32 // thread block size
 #define MAX_JOINTS 256
+
+// Options
+//#define INDIRECT_SKINNING 1
+#define CUSTOM_VERTEX 1
+//#define BINDLESS_SKINNING 0
 
 #ifdef __cplusplus
 #include <glm/glm.hpp>

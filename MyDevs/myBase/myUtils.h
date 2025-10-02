@@ -104,19 +104,21 @@ namespace myUtils
 		* This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 		*/
 
-		void cmdBeginLabel(VkCommandBuffer command_buffer, const char* label_name, std::vector<float> color)
+		void cmdBeginLabel(VkCommandBuffer command_buffer, const char* label_name, float r, float g, float b)
 		{
+			float color[4] = { r, g, b, 1.f };
 			VkDebugUtilsLabelEXT label = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
 			label.pLabelName = label_name;
-			memcpy(label.color, color.data(), sizeof(float) * 4);
+			memcpy(label.color, color, sizeof(float) * 4);
 			vkCmdBeginDebugUtilsLabelEXT(command_buffer, &label);
 		}
 
-		void cmdInsertLabel(VkCommandBuffer command_buffer, const char* label_name, std::vector<float> color)
+		void cmdInsertLabel(VkCommandBuffer command_buffer, const char* label_name, float r, float g, float b)
 		{
+			float color[4] = { r, g, b, 1.f };
 			VkDebugUtilsLabelEXT label = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
 			label.pLabelName = label_name;
-			memcpy(label.color, color.data(), sizeof(float) * 4);
+			memcpy(label.color, color, sizeof(float) * 4);
 			vkCmdInsertDebugUtilsLabelEXT(command_buffer, &label);
 		}
 
@@ -129,19 +131,21 @@ namespace myUtils
 		// Labels consist of a name and an optional color
 		// How or if these are diplayed depends on the debugger used (RenderDoc e.g. displays both)
 
-		void queueBeginLabel(VkQueue queue, const char* label_name, std::vector<float> color)
+		void queueBeginLabel(VkQueue queue, const char* label_name, float r, float g, float b)
 		{
+			float color[4] = { r, g, b, 1.f };
 			VkDebugUtilsLabelEXT label = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
 			label.pLabelName = label_name;
-			memcpy(label.color, color.data(), sizeof(float) * 4);
+			memcpy(label.color, color, sizeof(float) * 4);
 			vkQueueBeginDebugUtilsLabelEXT(queue, &label);
 		}
 
-		void queueInsertLabel(VkQueue queue, const char* label_name, std::vector<float> color)
+		void queueInsertLabel(VkQueue queue, const char* label_name, float r, float g, float b)
 		{
+			float color[4] = { r, g, b, 1.f };
 			VkDebugUtilsLabelEXT label = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
 			label.pLabelName = label_name;
-			memcpy(label.color, color.data(), sizeof(float) * 4);
+			memcpy(label.color, color, sizeof(float) * 4);
 			vkQueueInsertDebugUtilsLabelEXT(queue, &label);
 		}
 
