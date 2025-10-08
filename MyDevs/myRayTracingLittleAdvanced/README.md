@@ -20,6 +20,11 @@ Keyword : goemetry node in RT
 
 <img src="../images/MultiBLAS_model.jpg" height="256px">
 
+gltf 모델은 Node-Mesh-Primitive 라는 계층을 가지는데,\
+예를 들어 그림처럼 사람이 하나의 Mesh로 표현되면 머리, 몸통, 다리는 하위 계층의 Primitive로 존재한다.\
+이번에 시도해본 Multi BLAS 구조는 하나의 gltf Mesh가 하나의 BLAS가 되고, 하위의 gltf Primitive는 하나의 BLAS Geometry(BLAS 하위)가 된다.
+
+
 ### ray와 교차한 삼각형이 buffer을 찾아가는 과정
 ```glsl
 // simplified code
@@ -130,8 +135,7 @@ void Node::update()
 ```
 - 위 코드는 Sacha의 Node Update 코드인데 두 가지 문제가 있다.
 ### 문제 1 : Tree 구조의 이점을 살리지 못한 Joint Node 업데이트
-일반적으로 joint(bone) 업데이트는 Top-Down 방식으로 부모 노드의 Matrix에 현재 노드의 Matrix를 곱하여 누적한다.\
-이로서 부모 노드에서의 연산을 반복하지 않아도 된다.
+joint(bone) 업데이트는 보통 Top-Down 방식으로 부모 노드의 Matrix에 현재 노드의 Matrix를 곱하여 누적함으로써 자식에서 반복을 피한다.
 그러나 Sascha 코드의 경우 모든 Joint들을 순회하며 부모 노드까지 Down-Top 방향으로 Matrix를 업데이트한다.\
 updateJoints() 함수를 추가하여 이를 개선하였다.
 ```c++
@@ -152,7 +156,7 @@ void updateJoints(glm::mat4 parentMatrix, std::array<glm::mat4, MAX_JOINTS>& joi
 
 gltf 모델은 다수의 Mesh가 하나의 Skin을 공유할 수 있다.\
 따라서 여러 Mesh들이 공유하는 Skin의 Joint들을 1회 업데이트 후 이것을 활용하면 되는데\
-Sascha 코드의 경우 Skin을 가지는 Mesh에 대해 모든 Joint Matrix를 업데이트 하도록 되어 있다. 문제1에서 언급한 Down-Top 형식으로 말이다.\
+Sascha 코드의 경우 Skin을 가지는 Mesh에 대해 모든 Joint Matrix를 업데이트 하도록 되어 있다.\
 이를 Skin을 가지는 Mesh의 경우 Skin 고유의 JointMatrix 배열을 찾아서 활용하도록 하였다.
 
 ```c++
@@ -201,7 +205,7 @@ nvidia gpu는 asIndirectBuild를 지원하지 않는다는 것을 알게 되어 
 Legacy code - [myBuildASIndirect.cpp](myBuildASIndirect.cpp)
 
 # 5. BVH Test
-## AS Build Flag Test
+## BLAS Build Flag Test
 참고 자료 : https://developer.nvidia.com/blog/rtx-best-practices/
 1. Method A : `PREFER_FAST_BUILD`
 	* Refit 허용 X, BVH Rebuild에 최적화 된 구조
@@ -213,33 +217,53 @@ Legacy code - [myBuildASIndirect.cpp](myBuildASIndirect.cpp)
 	* AS Update 옵션 중 가장 빠른 Trace 연산, 업데이트는 가장 느림.
 	* ex) Ray 교차할 확률이 비교적 많은 High-LOD의 오브젝트
 
+보통 동적 물체에는 B가 가장 많이 사용된다.
+
 ### Single BLAS Mesh vs Cluster BLAS Mesh A,B,C 테스트
-* Single BLAS Mesh는 mesh를 하나의 BLAS로 만드는 기존 방식
-* Cluster BLAS Mesh는 mesh를 클러스터링 후 각 클러스터를 BLAS화 한 방식
+<img src="../images/single_blas_mesh_and_cluster_blas_mesh.jpg" height="256px">
 
-**Single BLAS Mesh**
+
+* Single BLAS Mesh는 mesh를 하나의 BLAS로 만드는 기존 방식 (좌)
+* Cluster BLAS Mesh는 mesh를 클러스터링 후 각 클러스터를 BLAS화 한 방식 (우)
+
+
+**Single BLAS Mesh (8 Models)**
 | 항목 | **A** | **B** | **C** |
 | :---: | :---: | :---: | :---: |
-| BLAS Build Time |  (ms) | (ms)| (ms) |
-| TLAS Build Time |  (ms) | (ms)| (ms) |
-| **Total AS Build Time** |  (ms) | (ms)| (ms) |
-| **Tracing Time** |  (ms) | (ms)| (ms) |
-| **FPS** |  fps ( ms) | fps ( ms)  |
+| BLAS Build Time | 0.681594 (ms) | 0.68151 (ms)| 0.825989 (ms) |
+| TLAS Build Time | 0.0135525 (ms) | 0.0134731 (ms)| 0.0138656 (ms) |
+| **Total AS Build Time** | 0.695147 (ms) | 0.694984 (ms)| 0.839855 (ms) |
+| **Tracing Time** | 0.573494 (ms) | 0.570867 (ms)| 0.570171 (ms) |
+| **FPS** | 145.803fps (6.85856 ms) | 145.888fps (6.85457 ms) |
+<small>**Num BLASes**: **36**</small>
 
-**Cluster BLAS Mesh**
+> Single BLAS 같은 경우 A,B는 사실상 같게 나왔고, C는 BLAS 빌드 시간이 증가했을 뿐 Tracing에서도 이점은 없었다.\
+삼각형 개수가 더 많은 모델에 적용해야 이점이 있을 것으로 보인다.
+
+**Cluster BLAS Mesh (8 Models)**
+
+
 | 항목 | **A** | **B** | **C** |
 | :---: | :---: | :---: | :---: |
-| BLAS Build Time | 0.392371 (ms) | 0.394766 (ms)| (ms) |
-| TLAS Build Time | 0.0234598 (ms) | 0.0285396 (ms)| (ms) |
-| **Total AS Build Time** | 0.41583 (ms) | 0.423305 (ms)| (ms) |
-| **Tracing Time** | 0.678512 (ms) | 0.688143 (ms)| (ms) |
-| **FPS** |  150.155fps (6.65978 ms) | 158.04fps (6.32751 ms)  |
+| BLAS Build Time | 0.380535 (ms) | 0.388019 (ms)| 9.20738 (ms) |
+| TLAS Build Time | 0.0235938 (ms) | 0.0236705 (ms)| 0.0238507 (ms) |
+| **Total AS Build Time** | 0.404129 (ms) | 0.41169 (ms)| 9.23123 (ms) |
+| **Tracing Time** | 0.694935 (ms) | 0.694623 (ms)| 0.55975 (ms) |
+| **FPS** |  148.291fps (6.74348 ms) | 148.944fps (6.71394 ms) | 62.7536fps (15.9353 ms) |
+<small>**Num BLASes**: **2127**</small>
 
+> A가 B보다 빌드 시간이 미세하게 빠른 것을 확인할 수 있고,\
+C의 경우 삼각형의 개수는 같지만 리빌드해야 하는 BLAS 자체의 개수가 증가하여 BLAS 빌드 시간이 눈에 띄게 증가한 것을 볼 수 있다. 
+
+<small>**Num Vertices**: **9,285**</small>\
+<small>**Num Triangles**: **17,916**</small>\
+<small>**Num Joints**: **168**</small>
 
 
 
 
 ## blas per cluster vs geometry per cluster
+<!-- <img src="../images/" height="256px"> -->
 
 
 

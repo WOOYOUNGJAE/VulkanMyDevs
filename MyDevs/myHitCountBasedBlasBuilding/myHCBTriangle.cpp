@@ -359,13 +359,14 @@ void MyHCBTriangle::buildBLASes(VkCommandBuffer cmdBuffer)
 	// dynamic blas
 	if (numDynamicBlases)
 	{
+		if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 		vkCmdBuildAccelerationStructuresKHR(
 			cmdBuffer,
 			numDynamicBlases,
 			dynamicBlasBuildingSets.buildGeometryInfos.data(),
 			dynamicBlasBuildingSets.buildRangeInfosArray.data());
+		if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	}
-	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 
 	// static blas
 	if (numStaticBlases)
@@ -386,8 +387,7 @@ void MyHCBTriangle::hcbBuildBLASes(VkCommandBuffer cmdBuffer)
 	uint32_t numDynamicBlases = dynamicBLASes.size(); // for Deformable Mesh
 
 	//VkCommandBuffer commandBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-	const bool isFirstBuild = (numStaticBlases && staticBLASes[0].handle == VK_NULL_HANDLE)
-		|| (numDynamicBlases && dynamicBLASes[0].handle == VK_NULL_HANDLE);
+	const bool isFirstBuild = (numDynamicBlases && dynamicBLASes[0].handle == VK_NULL_HANDLE);
 	//gpuTimer->reset(commandBuffer);
 	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0);
 
@@ -437,7 +437,7 @@ void MyHCBTriangle::hcbBuildBLASes(VkCommandBuffer cmdBuffer)
 	};
 
 	// static blas
-	processBLASes(staticBLASes, staticPerBlasBuildInfos, staticBlasBuildingSets);
+	//processBLASes(staticBLASes, staticPerBlasBuildInfos, staticBlasBuildingSets);
 	// dynamic blas
 	ASBuildSets tempBuildSets{};
 	tempBuildSets.buildRangeInfosArray.reserve(dynamicBlasBuildingSets.buildRangeInfosArray.size());
@@ -450,26 +450,18 @@ void MyHCBTriangle::hcbBuildBLASes(VkCommandBuffer cmdBuffer)
 
 
 	// dynamic blas
-	if (numDynamicBlases)
+	uint32_t curInfoCount = refDynamicBlasBuildSets.buildGeometryInfos.size();
+	if (curInfoCount)
 	{
+		if (!isFirstBuild) gpuTimerRunEachFrame->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 		vkCmdBuildAccelerationStructuresKHR(
 			cmdBuffer,
-			refDynamicBlasBuildSets.buildGeometryInfos.size(),
+			curInfoCount,
 			refDynamicBlasBuildSets.buildGeometryInfos.data(),
 			refDynamicBlasBuildSets.buildRangeInfosArray.data());
+		if (!isFirstBuild) gpuTimerRunEachFrame->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	}
-	//gpuTimer->record(commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 1);
 
-	// static blas
-	if (numStaticBlases)
-	{
-		vkCmdBuildAccelerationStructuresKHR(
-			cmdBuffer,
-			numStaticBlases,
-			staticBlasBuildingSets.buildGeometryInfos.data(),
-			staticBlasBuildingSets.buildRangeInfosArray.data());
-
-	}
 	++readyCount;
 }
 
@@ -513,11 +505,13 @@ void MyHCBTriangle::buildTLAS(VkCommandBuffer cmdBuffer)
 	// Build the acceleration structure on the device via a one-time command buffer submission
 	// Some implementations may support acceleration structure building on the host (VkPhysicalDeviceAccelerationStructureFeaturesKHR->accelerationStructureHostCommands), but we prefer device builds
 
+	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	vkCmdBuildAccelerationStructuresKHR(
 		cmdBuffer,
 		1,
 		&tlasBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
+	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 
 
 	// after first build complete
@@ -797,7 +791,12 @@ void MyHCBTriangle::buildCommandBuffers()
 	{
 		VkCommandBuffer cmdBuffer = drawCmdBuffers[i];
 		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
+		gpuTimer->reset(cmdBuffer);
+
+		/*gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		animComputePass->buildCommandBuffer(cmdBuffer);
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
 		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
 		vkCmdPipelineBarrier(
 			cmdBuffer,
@@ -806,16 +805,42 @@ void MyHCBTriangle::buildCommandBuffers()
 			VK_FLAGS_NONE,
 			1, &memBarrier,
 			0, nullptr,
-			0, nullptr);
+			0, nullptr);*/
 
 		// build or update AS
 		{
-			buildBLASes(cmdBuffer);
+			//buildBLASes(cmdBuffer);
+			//hcbBuildBLASes(cmdBuffer);
 
-			accelBuildPipelineBarrier(cmdBuffer);
+			//accelBuildPipelineBarrier(cmdBuffer);
 
 			buildTLAS(cmdBuffer);
 		}
+		/*
+			Dispatch the ray tracing commands
+		*/
+		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
+
+		// push constant - vertex/index device addressvkCmdPushConstants(
+		vkCmdPushConstants(cmdBuffer, rtPipelineLayout,
+			VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
+			0, sizeof(PushConstantData), &pushConstantData
+		);
+
+		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
+
+		VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+		vkCmdTraceRaysKHR(
+			cmdBuffer,
+			&shaderBindingTables.raygen.stridedDeviceAddressRegion,
+			&shaderBindingTables.miss.stridedDeviceAddressRegion,
+			&shaderBindingTables.hit.stridedDeviceAddressRegion,
+			&emptySbtEntry,
+			width,
+			height,
+			1);
+		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
 
 		/*
 			Copy ray tracing output to swap chain image
@@ -906,14 +931,8 @@ void MyHCBTriangle::getEnabledFeatures()
 
 void MyHCBTriangle::loadAssets()
 {
-	//model.loadFromFile(getAssetPath() + "models/CesiumMan/glTF/CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Timmy.gltf", vulkanDevice, queue, g_loadingFlag);
-
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene1.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 void MyHCBTriangle::enableExtensions()
 {
@@ -923,6 +942,11 @@ void MyHCBTriangle::enableExtensions()
 void MyHCBTriangle::prepare()
 {
 	MyVulkanRTBase::prepare();
+	// make timer
+	gpuTimer = std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod, 2 * 2);
+	gpuTimer->init();
+	gpuTimerRunEachFrame = std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod, 2 * 2);
+	gpuTimerRunEachFrame->init();
 #if MEASURE_MODE
 #if defined(_WIN32)
 	setupConsole("Vulkan example");
@@ -990,7 +1014,7 @@ void MyHCBTriangle::render()
 			if (anim.accPlayTime > anim.end)
 				anim.accPlayTime = 0.f;
 			//myUtils::CPUTimer timer(true);
-			//model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
+			model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 			//timer.record(true);
 		}
 		model.updateJoints();
@@ -1003,7 +1027,66 @@ void MyHCBTriangle::render()
 	updateUniformBuffers();
 	uniformData.frame = -1;
 
+	VkCommandBuffer cmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr };
+
+	gpuTimerRunEachFrame->reset(cmdBuffer);
+
+	gpuTimerRunEachFrame->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+	animComputePass->buildCommandBuffer(cmdBuffer);
+	gpuTimerRunEachFrame->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+	memBarrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
+	vkCmdPipelineBarrier(
+		cmdBuffer,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+		VK_FLAGS_NONE,
+		1, &memBarrier,
+		0, nullptr,
+		0, nullptr);
+
+	// build or update AS
+	myUtils::CPUTimer timer(true);
+	hcbBuildBLASes(cmdBuffer);
+	timer.record(true);
+
+	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
+
 	draw();
+
+#if MEASURE_MODE
+	static uint32_t frameCount, accFPS = 0;
+	static float accBuildBLASTime, accBuildTLASTime, accAnimTime = 0.f;
+	static float accTraceTime = 0.f;
+
+	++frameCount;
+	if (frameCount >= WARMINGUP_FRAME && frameCount <= MEASURE_END_FRAME)
+	{
+		accFPS += lastFPS;
+		const std::vector<float> gpuTimerResult = gpuTimer->timerResult();
+		const std::vector<float> gpuTimerRunEachFrameResult = gpuTimerRunEachFrame->timerResult();
+		accAnimTime		 += gpuTimerRunEachFrameResult[0];
+		accBuildBLASTime += gpuTimerRunEachFrameResult[1];
+		accBuildTLASTime += gpuTimerResult[0];
+		accTraceTime	 += gpuTimerResult[1];
+
+		if (frameCount == MEASURE_END_FRAME)
+		{
+			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
+			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
+			float animAvg = accAnimTime / MEASURE_FRAME_COUNT;
+			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
+			std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
+			std::cout << "Average Animation Time = " << animAvg << "(ms)\n";
+			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
+			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
+			std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
+			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
+			std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
+		}
+	}
+#endif
 }
 
 void MyHCBTriangle::OnUpdateUIOverlay(vks::UIOverlay* overlay)

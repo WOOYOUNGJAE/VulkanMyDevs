@@ -29,9 +29,10 @@ void main()
 	
 
 
-	Triangle tri = unpackTriangle(instanceID, clusterID, primitiveID);
-	GeometryNode geometryNode = geometryNodes.nodes[0];
-	sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID].triangleHitMask |= (1 << primitiveID);
+//	Triangle tri = unpackTriangle(instanceID, clusterID, primitiveID);
+//	GeometryNode geometryNode = geometryNodes.nodes[instanceID];
+//	sceneClusters.clusters[geometryNode.clusterStartOffset + clusterID].triangleHitMask |= (1 << primitiveID);
+	sceneClusters.clusters[instanceID].triangleHitMask |= (1 << primitiveID);
 
 ////	MeshPrimitive meshPrimitive = meshPrimitives.primitives[1];
 //	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];

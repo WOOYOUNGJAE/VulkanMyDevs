@@ -19,12 +19,15 @@ struct Triangle {
 
 // Todo change to specialization
 #ifdef USE_SKINNING
-#define NUM_VEC4_FROM_VERTEX_SIZE 6
-#define VERTEX_SIZE 96
+#if CUSTOM_VERTEX
+#define VERTEX_SIZE 112
 #else
-#define NUM_VEC4_FROM_VERTEX_SIZE 4
+#define VERTEX_SIZE 96
+#endif
+#else
 #define VERTEX_SIZE 64
 #endif
+#define NUM_VEC4_FROM_VERTEX_SIZE (VERTEX_SIZE / 16)
 
 
 #define INDEX_TYPE_SIZE 4

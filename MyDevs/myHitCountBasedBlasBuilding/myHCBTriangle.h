@@ -75,7 +75,7 @@ public: // TLAS
 	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
 
 	myglTF::ModelRT model;
- 
+	std::unique_ptr<GPUTimer> gpuTimerRunEachFrame;
 public:
 	MyHCBTriangle();
 	~MyHCBTriangle() override;

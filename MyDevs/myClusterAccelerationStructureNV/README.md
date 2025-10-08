@@ -8,14 +8,14 @@ Keyword : Cluster Acceleration Structure
 # 1. Cluster Acceleration Structure [(link)](./myClusterAccelerationStructureNV.cpp)
 <img src="../images/MyClusterAccelerationStructure.jpg" height="256px">
 
-
-
 ## Description
+Nvidia의 Cluster Acceleration Structure Extension 적용
 
-## 1. CLAS Transform
-### 기존의 gltf Raytracing 같은 경우
-1. node의 transfrom을 vertex position에 선반영할지
-2. acceleration structure을 빌드할 때 input transform matrix에 입력할지
+## CLAS Transform
+### 기존의 Raytracing 같은 경우
+Node의 Transform을
+1. vertex position에 선반영할지
+2. acceleration structure을 빌드할 때 input transform에 입력할지
 
 두 가지 옵션이 있었다. 그러나
 
