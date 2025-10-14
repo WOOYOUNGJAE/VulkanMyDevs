@@ -22,6 +22,7 @@ struct GeometryNode {
 	uint32_t indexStartOffset; // from scene's total Index buffer
 	// primitive contains material info
 	uint32_t primitiveStartOffset;
+	float blasBuildTime;
 };
 layout(binding = 4, set = 0) buffer GeometryNodes { GeometryNode nodes[]; } geometryNodes;
 

@@ -46,6 +46,9 @@
 #include "nvcluster/nvcluster.h"
 #include "nvcluster/nvcluster_storage.hpp"
 
+#define WATCH_AABB 0
+#define WATCH_GEOMETRYNODE 1
+
 struct meshopt_Meshlet;
 namespace myglTF
 {
@@ -359,6 +362,7 @@ namespace myglTF
 			VkBuffer buffer = VK_NULL_HANDLE;
 			VkDeviceMemory memory = VK_NULL_HANDLE;
 			uint64_t deviceAddress = 0;
+			VkDeviceSize size = 0;
 			VkDescriptorBufferInfo descriptor{};
 		}Vertices, Indices, ClusterVertices, ClusterIndices, ClusterBBoxes, Clusters, GeometryNodes, Primitives;
 		void CleanBufferMemory(BUFFER_TAG& bufferAndMemory);
@@ -401,8 +405,10 @@ namespace myglTF
 		} dimensions;
 #pragma region Cluster
 		// cluster build config
-		inline static constexpr uint32_t clusterTrianglesMax	= 64*2;
-		inline static constexpr uint32_t clusterVerticesMax		= 64*2;
+		//inline static constexpr uint32_t clusterTrianglesMax	= 64 / 4;
+		//inline static constexpr uint32_t clusterVerticesMax		= 64 * 2;
+		inline static constexpr uint32_t clusterTrianglesMax = 64 * 2;
+		inline static constexpr uint32_t clusterVerticesMax = 64 * 2;
 		// struct for geometry node used for both cpu and shader
 		std::vector<ClusteredGeometryNodeRT> clusteredGeometryNodes; // per mesh
 		// per mesh
@@ -422,7 +428,21 @@ namespace myglTF
 			ClusterIndices clusterIndicesGPU{};
 			ClusterBBoxes clusterBBoxesGPU{};
 			Clusters clustersGPU{};
+
+#if WATCH_AABB
+			// for test deformation
+			std::vector<float> aabbChangeRatios;
+#endif
 		};
+#if WATCH_AABB
+		Vertices verticesHostVisible{};
+		VertexSkinning* vertexPositionViewer;
+#endif
+
+#if WATCH_GEOMETRYNODE
+		GeometryNodePerMeshRT* geometryNodeViewer;
+#endif
+
 		std::vector<PerMeshClustersBuildData> perMeshClustersBuildDatas;
 		Clusters clusters{}; // all scene's clusters
 		//uint32_t clusterTrianglesMax = 64;
@@ -440,7 +460,9 @@ namespace myglTF
 		ClusterRT* clusterViewer;
 
 		void initClusters(std::vector<uint32_t>& originalIndices, const std::vector<glm::vec3>& vertexPositions, PerMeshClustersBuildData& perMeshClustersBuildData, const uint32_t firstIndexGlobalOffset);
+		void updateClustersAABB(VkQueue transferQueue);
 #pragma endregion Cluster
+		void updateGeometryNode(float* blasBuildTimes, uint32_t numBLASes);
 
 		void bakeAnimations();
 		bool isBakedAnimation = false;

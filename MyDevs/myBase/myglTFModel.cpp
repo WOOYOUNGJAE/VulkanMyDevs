@@ -10,6 +10,8 @@ uint32_t myglTF::ModelRT::descriptorBindingFlags = myglTF::DescriptorBindingFlag
 
 #include "meshoptimizer.h"
 
+static std::vector<std::pair<uint32_t, uint32_t>> arrange_ClusterID; // <vertexArrange, ClusterID>
+static uint64_t globalClusterIdx;
 
 void myglTF::Texture::updateDescriptor()
 {
@@ -602,7 +604,7 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 				cluster.numTriangles = static_cast<uint16_t>(meshlet.triangle_count);
 				cluster.numVertices = static_cast<uint16_t>(meshlet.vertex_count);
 				cluster.firstLocalIndex = meshlet.triangle_offset;
-				cluster.firstLocalVertex   = meshlet.vertex_offset;
+				cluster.firstLocalVertex = meshlet.vertex_offset;
 
 				// fill histogram thing
 				++clusterTriangleHistogram[cluster.numTriangles];
@@ -685,6 +687,98 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 			}
 		}
 	}
+}
+
+void myglTF::ModelRT::updateClustersAABB(VkQueue transferQueue)
+{
+#if WATCH_AABB
+	VkCommandBuffer copyCmd = device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	VkBufferCopy copyRegion = {};
+	copyRegion.size = vertices.size;
+	vkCmdCopyBuffer(copyCmd, vertices.buffer, verticesHostVisible.buffer, 1, &copyRegion);
+	device->flushCommandBuffer(copyCmd, transferQueue, true);
+
+
+	for (auto& perMeshClusterData : perMeshClustersBuildDatas)
+	{
+		assert(perMeshClusterData.clustersCPU.size());
+		for (uint32_t clusterIdx = 0; clusterIdx < perMeshClusterData.clustersCPU.size(); ++clusterIdx)
+		{
+			BBox prevBBox = perMeshClusterData.clusterBBoxesCPU[clusterIdx];
+
+			ClusterRT& cluster = perMeshClusterData.clustersCPU[clusterIdx];
+			BBox curBBox = { {FLT_MAX, FLT_MAX, FLT_MAX}, {-FLT_MAX, -FLT_MAX, -FLT_MAX} };
+			for (uint32_t vertexLocalIdx = 0; vertexLocalIdx < cluster.numVertices; ++vertexLocalIdx)
+			{
+				uint32_t  vertexGlobalIdx = perMeshClusterData.clusterVerticesCPU[cluster.firstLocalVertex + vertexLocalIdx];
+				glm::vec3 pos = vertexPositionViewer[vertexGlobalIdx].pos;
+
+				curBBox.min = glm::min(curBBox.min, pos);
+				curBBox.max = glm::max(curBBox.max, pos);
+			}
+
+			glm::vec3 oldSize = prevBBox.max - prevBBox.min;
+			glm::vec3 newSize = curBBox.max - curBBox.min;
+
+
+
+			perMeshClusterData.clusterBBoxesCPU[clusterIdx] = curBBox;
+		}
+	}
+#endif
+}
+
+void myglTF::ModelRT::updateGeometryNode(float* blasBuildTimes, uint32_t numBLASes)
+{
+#if WATCH_GEOMETRYNODE
+
+	//static bool done = false;
+	//static uint32_t globalRangeMin = 0xffff, globalRangeMax = 0;
+	//if (!done)
+	//{
+	//	for (auto& perMeshClusterData : perMeshClustersBuildDatas)
+	//	{
+	//		assert(perMeshClusterData.clustersCPU.size());
+	//		for (uint32_t clusterIdx = 0; clusterIdx < perMeshClusterData.clustersCPU.size(); ++clusterIdx)
+	//		{
+	//			uint32_t curVertexMin = 0xffff, curVertexMax = 0;
+	//			ClusterRT& cluster = perMeshClusterData.clustersCPU[clusterIdx];
+	//			for (uint32_t vertexLocalIdx = 0; vertexLocalIdx < cluster.numVertices; ++vertexLocalIdx)
+	//			{
+	//				uint32_t  vertexGlobalIdx = perMeshClusterData.clusterVerticesCPU[cluster.firstLocalVertex + vertexLocalIdx];
+	//				curVertexMin = std::min(curVertexMin, vertexGlobalIdx);
+	//				curVertexMax = std::max(curVertexMax, vertexGlobalIdx);
+	//			}
+	//			arrange_ClusterID.push_back(std::make_pair(curVertexMax - curVertexMin, globalClusterIdx++));
+
+	//			globalRangeMin = std::min(globalRangeMin, curVertexMax - curVertexMin);
+	//			globalRangeMax = std::max(globalRangeMax, curVertexMax - curVertexMin);
+	//		}
+	//	}
+	//	//std::sort(arrange_ClusterID.begin(), arrange_ClusterID.end(), [](std::pair<uint32_t, uint32_t>& a, std::pair<uint32_t, uint32_t>& b)
+	//	//	{
+	//	//		return a.first < b.first;
+	//	//	});
+	//	//for (auto& data : arrange_ClusterID)
+	//	//{
+	//	//	std::cout << data.first << " " << data.second << std::endl;
+	//	//}
+	//}
+	//done = true;
+	//for (int i = 0; i < numBLASes; ++i)
+	//{
+	//	geometryNodeViewer[i].customData = (float)(arrange_ClusterID[i].first - globalRangeMin) / (float)(globalRangeMax - globalRangeMin);
+	//}
+
+
+	float timeMin = *std::min_element(blasBuildTimes, blasBuildTimes + numBLASes);
+	float timeMax = *std::max_element(blasBuildTimes, blasBuildTimes + numBLASes);
+	float minToMax = timeMax - timeMin;
+	for (int i = 0; i < numBLASes; ++i)
+	{
+		geometryNodeViewer[i].customData = (blasBuildTimes[i] - timeMin) / minToMax;
+	}
+#endif
 }
 
 myglTF::ModelRT::~ModelRT()
@@ -1408,6 +1502,9 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 			std::move(refPerMeshClustersData.clustersCPU.begin(), refPerMeshClustersData.clustersCPU.end(), std::back_inserter(tempClusters));
 
+#if WATCH_AABB
+			refPerMeshClustersData.aabbChangeRatios.resize(numClusters);
+#endif
 
 			// TODO Not Use Yet
 			//// Create Buffer & Memery
@@ -1440,6 +1537,18 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			//refPerMeshClustersData.clustersGPU.descriptor = { refPerMeshClustersData.clustersGPU.buffer, 0, clusterBufferSize };
 		}
 		clusters.count = m_numTotalClusters;
+
+		//std::vector<uint32_t> nums;
+		//for (auto& mesh : perMeshClustersBuildDatas)
+		//{
+		//	for (auto& cluster : mesh.clustersCPU)
+		//	{
+		//		nums.push_back(cluster.numTriangles);
+		//	}
+		//}
+		//std::sort(nums.begin(), nums.end());
+		//for (auto num : nums)
+		//	std::cout << num << " ";
 	}
 
 	// Create Vertex/Index Buffer (After Cluster created)
@@ -1453,19 +1562,36 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		//VkBufferUsageFlagBits additionalFlag = VkBufferUsageFlagBits(isSkinningModel ? VK_BUFFER_USAGE_STORAGE_BUFFER_BIT : 0);
 
 
-		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			vertexBufferSize, &vertices.buffer, &vertices.memory, transferQueue, vertexBufferByte.data());
 		vertices.deviceAddress = getBufferDeviceAddress(vertices.buffer);
+		vertices.size = vertexBufferSize;
 		//myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)vertices.buffer, "Model Vertex Buffer");
+#if WATCH_AABB
+		device->CreateBuffer_HostVisible(VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			vertexBufferSize, &verticesHostVisible.buffer, &verticesHostVisible.memory, transferQueue, vertexBufferByte.data(), (void**)&vertexPositionViewer);
+		
+		/*device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			vertexBufferSize, &vertices.buffer, &vertices.memory, transferQueue, vertexBufferByte.data());
+		vertices.deviceAddress = getBufferDeviceAddress(vertices.buffer);
+
+		device->CreateBuffer_HostVisible(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+			| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+			,
+			vertexBufferSize, &vertices.buffer, &vertices.memory, transferQueue, vertexBufferByte.data(), (void**)&vertexPositionViewer);*/
+		//myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)vertices.buffer, "Model Vertex Buffer");
+#endif
 
 
 		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			indexBufferSize, &indices.buffer, &indices.memory, transferQueue, tempIndicesCPU.data());
+		indices.size = indexBufferSize;
 
 		if (isSkinningModel)
 		{
 			device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 				vertexBufferSize, &deformingVertices.buffer, &deformingVertices.memory, transferQueue, vertexBufferByte.data());
+			deformingVertices.size = vertexBufferSize;
 			//myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)deformingVertices.buffer, "Model Deforming Vertex Buffer");
 
 			deformingVertices.descriptor = { deformingVertices.buffer, 0, vertexBufferSize };
@@ -1614,9 +1740,14 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			geometryNodesData = static_cast<void*>(clusteredGeometryNodes.data());
 		}
 
+#if WATCH_GEOMETRYNODE
+		device->CreateBuffer_HostVisible(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			geometryNodeBufferSize, &geometryNodes.buffer, &geometryNodes.memory, transferQueue, geometryNodesData, (void**)&geometryNodeViewer);
+#else
 		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			geometryNodeBufferSize, &geometryNodes.buffer, &geometryNodes.memory, transferQueue, geometryNodesData);
-
+#endif
+		geometryNodes.size = geometryNodeBufferSize;
 
 		// Create Descriptor Info for Raytracing
 		{
@@ -1642,6 +1773,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			primitiveBufferSize, &primitives.buffer, &primitives.memory, transferQueue, tempClusteredPrimitives.data());
 		primitives.count = tempClusteredPrimitives.size();
+		primitives.size = primitiveBufferSize;
 		primitives.descriptor = { primitives.buffer, 0, primitiveBufferSize };
 
 		assert(clusters.count > 0);

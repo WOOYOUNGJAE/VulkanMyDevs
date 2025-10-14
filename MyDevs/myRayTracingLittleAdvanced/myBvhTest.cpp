@@ -14,12 +14,13 @@
 #include "myBvhTest.h"
 #include "myIncludesCPUGPU.h"
 #include "myUtils.h"
-#include <nvToolsExt.h>
+//#include <nvToolsExt.h>
 
 
 #define BLAS_PER_CLUSTER 1
 #define GEOMETRY_PER_CLUSTER !BLAS_PER_CLUSTER
 #define BINDLESS_SKINNING 0
+static int fixedBlasNum;
 
 MyBvhTest::MyBvhTest()
 {
@@ -106,7 +107,144 @@ void MyBvhTest::createAccelerationStructureBuffer(AccelerationStructure& acceler
 	VK_CHECK_RESULT(vkBindBufferMemory(device, accelerationStructure.buffer, accelerationStructure.memory, 0));
 }
 
-void MyBvhTest::initBLASes()
+void MyBvhTest::initTriangleBLASes()
+{// Use transform matrices from the glTF nodes
+	std::vector<VkTransformMatrixKHR> transformMatrices{}; // per node
+	for (auto node : model.linearNodes) {
+		if (node->mesh)
+		{
+			for (auto primitive : node->mesh->primitives) {
+				if (primitive->indexCount > 0) {
+					VkTransformMatrixKHR transformMatrix{};
+					//auto m = glm::mat3x4(glm::transpose(node->getMatrix()));
+					//auto m = glm::mat3x4(glm::transpose(node->getMatrix()));
+					auto m = glm::mat3x4(1.f);
+					memcpy(&transformMatrix, (void*)&m, sizeof(glm::mat3x4));
+					transformMatrices.push_back(transformMatrix);
+				}
+			}
+		}
+	}
+
+	// Transform buffer
+	VK_CHECK_RESULT(vulkanDevice->createBuffer(
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		&transformBuffer,
+		static_cast<uint32_t>(transformMatrices.size()) * sizeof(VkTransformMatrixKHR),
+		transformMatrices.data()));
+
+	uint32_t nodeIdx = 0u; // node containing mesh
+	for (auto node : model.linearNodes)
+	{
+		if (node->mesh)
+		{
+			const bool isDeformable = node->skin; // isDynamicBlas?
+			VkBuffer vertexBuffer = VK_NULL_HANDLE;
+			if (isDeformable)
+			{
+				vertexBuffer = model.deformingVertices.buffer;
+				dynamicPerBlasBuildInfos.push_back(PerBLASBuildInfo{});
+			}
+			else
+			{
+				vertexBuffer = model.vertices.buffer;
+				staticPerBlasBuildInfos.push_back(PerBLASBuildInfo{});
+			}
+
+			// avoid dangling pointer due to moving array;
+			PerBLASBuildInfo& refPerBlasBuildInfo = isDeformable ? dynamicPerBlasBuildInfos.back() : staticPerBlasBuildInfos.back();
+			VkDeviceSize vertexStride = isDeformable ? sizeof(myglTF::VertexSkinning) : sizeof(myglTF::VertexSimple);
+
+			const myglTF::Mesh* mesh = node->mesh;
+			// Build
+			// One geometry per glTF node, so we can index materials using gl_GeometryIndexEXT
+			std::vector<uint32_t> maxPrimitiveCounts{};
+			//std::vector<VkAccelerationStructureBuildRangeInfoKHR*> pBuildRangeInfos{};
+
+			for (auto primitive : mesh->primitives) {
+				if (primitive->indexCount > 0) {
+					VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
+					VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
+					VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
+
+					vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(vertexBuffer);// +primitive->firstVertex * sizeof(vkglTF::Vertex);
+					indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(model.indices.buffer) + primitive->firstIndex * sizeof(uint32_t);
+					transformBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) + nodeIdx++ * sizeof(VkTransformMatrixKHR);
+
+					VkAccelerationStructureGeometryKHR asGeometry{}; // per gltf primitive
+					asGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+					asGeometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+					asGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+					asGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+					asGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
+					asGeometry.geometry.triangles.maxVertex = primitive->vertexCount + 1;
+					asGeometry.geometry.triangles.vertexStride = vertexStride;
+					asGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+					asGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
+					asGeometry.geometry.triangles.transformData = transformBufferDeviceAddress;
+					refPerBlasBuildInfo.asGeometries.push_back(asGeometry);
+					maxPrimitiveCounts.push_back(primitive->indexCount / 3);
+
+					VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
+					buildRangeInfo.firstVertex = 0;
+					buildRangeInfo.primitiveOffset = 0; // primitive->firstIndex * sizeof(uint32_t);
+					buildRangeInfo.primitiveCount = primitive->indexCount / 3;
+					buildRangeInfo.transformOffset = 0;
+					refPerBlasBuildInfo.buildRangeInfos.push_back(buildRangeInfo);
+				}
+			}
+
+			// Get size info
+			VkAccelerationStructureBuildGeometryInfoKHR& accelerationStructureBuildGeometryInfo = refPerBlasBuildInfo.asBuildGeometryInfo;
+			accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+			accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+#if FORCE_STATIC_SCENE
+			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+#else
+			//accelerationStructureBuildGeometryInfo.flags = isDeformable ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR
+			accelerationStructureBuildGeometryInfo.flags = isDeformable ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR
+				//accelerationStructureBuildGeometryInfo.flags = isDeformable ? VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR
+				: VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+#endif
+			accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refPerBlasBuildInfo.asGeometries.size());
+			accelerationStructureBuildGeometryInfo.pGeometries = refPerBlasBuildInfo.asGeometries.data();
+
+			VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
+			accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+			vkGetAccelerationStructureBuildSizesKHR(
+				device,
+				VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+				&accelerationStructureBuildGeometryInfo,
+				maxPrimitiveCounts.data(),
+				&accelerationStructureBuildSizesInfo);
+			refPerBlasBuildInfo.asSize = accelerationStructureBuildSizesInfo.accelerationStructureSize;
+
+			AccelerationStructure blas{};
+			MyVulkanRTBase::createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
+			refPerBlasBuildInfo.blasScratchSizeMax = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
+			if (isDeformable)
+			{
+				dynamicBLASes.push_back(blas);
+			}
+			else
+			{
+				staticBLASes.push_back(blas);
+			}
+		}
+	}
+	auto updateDeviceAddresses = [&](auto& blasArray)
+		{
+			for (auto& blas : blasArray)
+			{
+				blas.deviceAddress = getBufferDeviceAddress(blas.buffer);
+			}
+		};
+	updateDeviceAddresses(staticBLASes);
+	updateDeviceAddresses(dynamicBLASes);
+}
+
+void MyBvhTest::initClusterBLASes()
 {
 	// Use transform matrices from the glTF nodes
 	std::vector<VkTransformMatrixKHR> transformMatrices{}; // per node
@@ -199,8 +337,8 @@ void MyBvhTest::initBLASes()
 			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 #else
 			//accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
-			//accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
-			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+			accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+			//accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
 
 #endif
 			accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refPerBlasBuildInfo.asGeometries.size());
@@ -405,13 +543,39 @@ void MyBvhTest::buildBLASes(VkCommandBuffer cmdBuffer)
 	// dynamic blas
 	if (numDynamicBlases)
 	{
-		if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		/*if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 		vkCmdBuildAccelerationStructuresKHR(
 			cmdBuffer,
 			numDynamicBlases,
 			dynamicBlasBuildingSets.buildGeometryInfos.data(),
 			dynamicBlasBuildingSets.buildRangeInfosArray.data());
-		if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);*/
+
+		//// shuffle order
+		//std::vector<int> indices(numDynamicBlases);
+		//std::iota(indices.begin(), indices.end(), 0);
+		//std::shuffle(indices.begin(), indices.end(), std::mt19937(std::random_device{}()));	
+		//for (int i : indices)
+		//{
+		//	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		//	vkCmdBuildAccelerationStructuresKHR(
+		//		cmdBuffer,
+		//		1,
+		//		dynamicBlasBuildingSets.buildGeometryInfos.data() + i,
+		//		dynamicBlasBuildingSets.buildRangeInfosArray.data() + i);
+		//	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		//}
+
+		for (int i = 0; i < numDynamicBlases; ++i)
+		{
+			if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+			vkCmdBuildAccelerationStructuresKHR(
+				cmdBuffer,
+				1,
+				dynamicBlasBuildingSets.buildGeometryInfos.data() + i,
+				dynamicBlasBuildingSets.buildRangeInfosArray.data() + i);
+			if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		}
 	}
 
 	// static blas
@@ -559,13 +723,13 @@ void MyBvhTest::buildTLAS(VkCommandBuffer cmdBuffer)
 	// Build the acceleration structure on the device via a one-time command buffer submission
 	// Some implementations may support acceleration structure building on the host (VkPhysicalDeviceAccelerationStructureFeaturesKHR->accelerationStructureHostCommands), but we prefer device builds
 
-	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+	//if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	vkCmdBuildAccelerationStructuresKHR(
 		cmdBuffer,
 		1,
 		&tlasBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
-	if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+	//if (!isFirstBuild) gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 
 
 	// after first build complete
@@ -849,13 +1013,13 @@ void MyBvhTest::buildCommandBuffers()
 		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
 		gpuTimer->reset(cmdBuffer);
 
-		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		//gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 #if BINDLESS_SKINNING
 		animBindlessPass->buildCommandBuffer(cmdBuffer);
 #else
 		animComputePass->buildCommandBuffer(cmdBuffer);
 #endif
-		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		//gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
 		VkMemoryBarrier memBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR };
 		vkCmdPipelineBarrier(
@@ -890,7 +1054,7 @@ void MyBvhTest::buildCommandBuffers()
 		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipelineLayout, 0, 1, &rtDescriptorSet, 0, 0);
 
 		VkStridedDeviceAddressRegionKHR emptySbtEntry = {};
-		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+		//gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
 		vkCmdTraceRaysKHR(
 			cmdBuffer,
 			&shaderBindingTables.raygen.stridedDeviceAddressRegion,
@@ -900,7 +1064,7 @@ void MyBvhTest::buildCommandBuffers()
 			width,
 			height,
 			1);
-		gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+		//gpuTimer->record(cmdBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
 
 		/*
 			Copy ray tracing output to swap chain image
@@ -995,8 +1159,8 @@ void MyBvhTest::loadAssets()
 	g_loadingFlag = (myglTF::FileLoadingFlags)(uint64_t)(g_loadingFlag | myglTF::FileLoadingFlags::CombinedMeshBuffer);
 #endif
 
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 void MyBvhTest::enableExtensions()
 {
@@ -1006,9 +1170,6 @@ void MyBvhTest::enableExtensions()
 void MyBvhTest::prepare()
 {
 	MyVulkanRTBase::prepare();
-	// make timer
-	gpuTimer = std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod, 4 * 2);
-	gpuTimer->init();
 #if MEASURE_MODE
 #if defined(_WIN32)
 	setupConsole("Vulkan example");
@@ -1023,13 +1184,20 @@ void MyBvhTest::prepare()
 	pushConstantData.indexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
 	pushConstantData.vertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
 
+	fixedBlasNum = model.m_numTotalClusters;
+
+	// make timer
+	gpuTimer = std::make_unique<GPUTimer>(device, deviceProperties.limits.timestampPeriod, (/*4*/ fixedBlasNum) * 2);
+	gpuTimer->init();
 	//createComputePipeline();
 
 	// Create the acceleration structures used to render the ray traced scene
 	VkCommandBuffer accelBuildCmdBuffer = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
-	initBLASes();
+	initClusterBLASes();
+	//initTriangleBLASes();
 	initTLAS();
+
 
 	//hcbBuildBLASes(accelBuildCmdBuffer);
 	buildBLASes(accelBuildCmdBuffer);
@@ -1093,6 +1261,7 @@ void MyBvhTest::render()
 	updateUniformBuffers();
 	uniformData.frame = -1;
 
+	model.updateClustersAABB(queue);
 	draw();
 #if MEASURE_MODE
 	static uint32_t frameCount, accFPS = 0;
@@ -1100,31 +1269,75 @@ void MyBvhTest::render()
 	static float accTraceTime = 0.f;
 
 	++frameCount;
+	static bool blasInfoViewerInited = false;
+	int totalClusters = model.m_numTotalClusters;
+	static std::vector<float> blasBuildTimes;
+	if (!blasInfoViewerInited)
+		blasBuildTimes.resize(totalClusters, 0.f);
+	blasInfoViewerInited = true;
+
+	//static float blasBuildTimes[fixedBlasNum];
 	if (frameCount >= WARMINGUP_FRAME && frameCount <= MEASURE_END_FRAME)
 	{
 		accFPS += lastFPS;
 		const std::vector<float> gpuTimerResult = gpuTimer->timerResult();
-		accAnimTime		 += gpuTimerResult[0];
+		/*accAnimTime		 += gpuTimerResult[0];
 		accBuildBLASTime += gpuTimerResult[1];
 		accBuildTLASTime += gpuTimerResult[2];
-		accTraceTime	 += gpuTimerResult[3];
+		accTraceTime	 += gpuTimerResult[3];*/
+
+		for (int i = 0; i < totalClusters; ++i)
+		{
+			blasBuildTimes[i] += gpuTimerResult[i];
+		}
 
 		if (frameCount == MEASURE_END_FRAME)
 		{
-			float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
-			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
-			float animAvg = accAnimTime / MEASURE_FRAME_COUNT;
-			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
-			std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
-			std::cout << "Average Animation Time = " << animAvg << "(ms)\n";
-			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
-			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
-			std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
-			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
-			std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
+			//std::vector<std::pair<std::pair<uint32_t, uint32_t>, float>> clusterBlasBuildInfos; // <<numTri, numVert>, buildTime>
+			//for (int i = 0; i < totalClusters; ++i)
+			//{
+			//	const auto& cluster = model.tempClusters[i];
+			//	clusterBlasBuildInfos.emplace_back(std::make_pair(std::make_pair(cluster.numTriangles, cluster.numVertices), blasBuildTimes[i]));
+			//}
+
+			// [<<numTri, numVert>, buildTime>]
+			//std::sort(clusterBlasBuildInfos.begin(), clusterBlasBuildInfos.end(),
+			//	[](const std::pair<std::pair<uint32_t, uint32_t>, float>& a, std::pair<std::pair<uint32_t, uint32_t>, float>& b)
+			//	{
+			//		return a.second < b.second;
+
+			//		if (a.first.first != b.first.first)
+			//			return a.first.first < b.first.first;
+			//		return a.first.second < b.first.second;
+			//	});
+			//for (const auto& pair : clusterBlasBuildInfos)
+			//{
+			//	if (pair.first.first < 120) continue;
+			//	std::cout << "[" << pair.first.first << ", " << pair.first.second << ", " << pair.second / MEASURE_FRAME_COUNT << "]\n";
+			//}
+
+			//std::sort(blasBuildTimes.begin(), blasBuildTimes.end());
+			//for (int i = 0; i < totalClusters; ++i)
+			//{
+			//	std::cout << blasBuildTimes[i] / MEASURE_FRAME_COUNT << ", ";
+			//}
+
+			//float blasAvg = accBuildBLASTime / MEASURE_FRAME_COUNT;
+			//float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
+			//float animAvg = accAnimTime / MEASURE_FRAME_COUNT;
+			//float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
+			//std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
+			//std::cout << "Average Animation Time = " << animAvg << "(ms)\n";
+			//std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
+			//std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
+			//std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
+			//std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
+			//std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
 		}
+		model.updateGeometryNode(blasBuildTimes.data(), totalClusters);
 	}
 #endif
+
 }
 
 void MyBvhTest::OnUpdateUIOverlay(vks::UIOverlay* overlay)

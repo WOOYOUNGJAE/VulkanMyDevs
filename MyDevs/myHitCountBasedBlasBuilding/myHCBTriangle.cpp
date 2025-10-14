@@ -1047,9 +1047,9 @@ void MyHCBTriangle::render()
 		0, nullptr);
 
 	// build or update AS
-	myUtils::CPUTimer timer(true);
+	//myUtils::CPUTimer timer(true);
 	hcbBuildBLASes(cmdBuffer);
-	timer.record(true);
+	//timer.record(true);
 
 	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
 

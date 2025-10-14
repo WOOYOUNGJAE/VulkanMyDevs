@@ -88,7 +88,8 @@ public:
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/
 	// Only Called once after model loaded
-	void initBLASes();
+	void initTriangleBLASes();
+	void initClusterBLASes();
 	void initTLAS();
 
 	void buildBLASes(VkCommandBuffer cmdBuffer); // not HCB, same as normal building

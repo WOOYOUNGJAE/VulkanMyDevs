@@ -11,7 +11,17 @@ layout(location = 0) rayPayloadInEXT vec3 hitValue;
 void main()
 {
 
-	Triangle tri = unpackTriangle(gl_PrimitiveID);
+
+	uint primitiveID = gl_PrimitiveID;
+	uint geometryID = gl_GeometryIndexEXT;
+//	uint clusterID = gl_GeometryIndexEXT; // or gl_InstanceID;
+	uint instanceID = gl_InstanceID;
+	Triangle tri = unpackTriangle(primitiveID);
+
+	GeometryNode geometryNode = geometryNodes.nodes[instanceID];
+	hitValue = vec3(geometryNode.blasBuildTime ,geometryNode.blasBuildTime  ,geometryNode.blasBuildTime  ); return;
+//	hitValue = vec3(geometryNode.blasBuildTime ,0 ,0 ); return;
+
 
 #if JOINT_RENDER
 	const float f = pushData.jointWeightRenderThreshold;
@@ -24,14 +34,25 @@ void main()
 		hitValue = vec3(1,1,0);return;
 	}
 #endif
-
-	uint primitiveID = gl_PrimitiveID;
-	uint clusterID = gl_GeometryIndexEXT; // or gl_InstanceID;
-	uint instanceID = gl_InstanceID;
-
-//	if (pushData.baseData.renderMode == 1)
+			uint h = instanceID * 1664525u + 1013904223u;
+		hitValue = vec3(
+			float((h >>  0) & 0xFF),
+			float((h >>  8) & 0xFF),
+			float((h >> 16) & 0xFF)
+		) / 255.0 * 0.3 + 0.5;
+		return;
+	if (pushData.baseData.renderMode == 1)
 	{
-
+		uint h = primitiveID * 1664525u + 1013904223u;
+		hitValue = vec3(
+			float((h >>  0) & 0xFF),
+			float((h >>  8) & 0xFF),
+			float((h >> 16) & 0xFF)
+		) / 255.0 * 0.3 + 0.5;
+		return;
+	}
+	else if (pushData.baseData.renderMode == 2)
+	{
 		uint h = instanceID * 1664525u + 1013904223u;
 		hitValue = vec3(
 			float((h >>  0) & 0xFF),
@@ -43,9 +64,9 @@ void main()
 	
 
 
-	GeometryNode geometryNode = geometryNodes.nodes[gl_InstanceID];
+//	GeometryNode geometryNode = geometryNodes.nodes[instanceID];
 //	MeshPrimitive meshPrimitive = meshPrimitives.primitives[1];
-	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + gl_GeometryIndexEXT];
+	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + geometryID];
 		
 //	hitValue = vec3(float(meshPrimitive.textureIndexBaseColor) / 100.f);return;
 	if (nonuniformEXT(meshPrimitive.textureIndexBaseColor) == -1)

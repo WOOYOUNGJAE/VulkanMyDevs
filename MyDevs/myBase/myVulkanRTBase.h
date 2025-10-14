@@ -87,7 +87,7 @@ public:
 		VkQueryPool timeStampQueryPool = VK_NULL_HANDLE;
 		uint32_t curQueryIndex = 0;
 		uint32_t queryCount; // before after
-		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
 		float timestampPeriodDeviceLimit = 0.f;
 		std::vector<float> timerResults;
 	public:
@@ -102,7 +102,7 @@ public:
 			VkQueryPoolCreateInfo queryPoolInfo{};
 			queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 			queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-			queryPoolInfo.queryCount = queryCount; // before-after
+			queryPoolInfo.queryCount = queryCount;
 			VK_CHECK_RESULT(vkCreateQueryPool(device, &queryPoolInfo, nullptr, &timeStampQueryPool));
 		}
 		void reset(VkCommandBuffer cmdBuffer)
@@ -124,18 +124,21 @@ public:
 		}
 
 		/**
-		 * @return 0 if timer not ready
+		 * @return -FLT_MAX if timer not ready
 		 */
 		const std::vector<float>& timerResult()
 		{
 			curQueryIndex = 0;
-			std::vector<uint64_t> timeStampResults(queryCount, 0);
-			vkGetQueryPoolResults(device, timeStampQueryPool, 0, queryCount, sizeof(uint64_t) * queryCount,
-				timeStampResults.data(), sizeof(uint64_t), queryFlag);
+			std::vector<uint64_t> timeStampResults(queryCount * 2, 0);
+			vkGetQueryPoolResults(device, timeStampQueryPool, 0, queryCount, sizeof(uint64_t) * queryCount * 2,
+				timeStampResults.data(), sizeof(uint64_t) * 2, queryFlag);
 
 			for (uint32_t i = 0; i < queryCount / 2; ++i) // (start, end, start, end, ,,,)
 			{
-				timerResults[i] = float(timeStampResults[i * 2 + 1] - timeStampResults[i * 2]) * timestampPeriodDeviceLimit / (1000000.0f);
+				if (timeStampResults[i * 4 + 1] && timeStampResults[i * 4 + 3])
+					timerResults[i] = float(timeStampResults[i * 4 + 2] - timeStampResults[i * 4 + 0]) * timestampPeriodDeviceLimit / (1'000'000.0f);
+				else
+					timerResults[i] = -FLT_MAX;
 			}
 			
 			return timerResults;
