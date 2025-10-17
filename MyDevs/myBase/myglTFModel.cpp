@@ -1372,12 +1372,49 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		for (auto& node : nodes)
 			updateNodeTransforms(node);
 
+		// Caculate Scene Bounding Box in WorldSpace, with considering skinning
+		for (const auto& node : linearNodes)
+		{
+			if (node->mesh)
+			{
+				for (const Primitive* primitive : node->mesh->primitives) 
+				{
+					for (uint32_t i = 0; i < primitive->vertexCount; i++) 
+					{
+						glm::vec3 vLocalPos = tempVerticesCPU[primitive->firstVertex + i]->pos;
+						glm::vec3 vWorldPos{};
+						if (node->skin)
+						{
+							const VertexSkinning* castedVertex = static_cast<VertexSkinning*>(tempVerticesCPU[primitive->firstVertex + i]);
+							const glm::vec4 vertexJoints = castedVertex->joint0;
+							const glm::vec4 vertexWeights = castedVertex->weight0;
+							const glm::mat4* jointMatrices = node->mesh->uniformBlock.jointMatrix;
+							glm::mat4 skinMat =
+								vertexWeights.x * jointMatrices[int(vertexJoints.x)] +
+								vertexWeights.y * jointMatrices[int(vertexJoints.y)] +
+								vertexWeights.z * jointMatrices[int(vertexJoints.z)] +
+								vertexWeights.w * jointMatrices[int(vertexJoints.w)];
+
+							vWorldPos = (node->mesh->uniformBlock.matrix * skinMat * glm::vec4(vLocalPos, 1.f));
+						}
+						else
+						{
+							vWorldPos = node->mesh->uniformBlock.matrix * glm::vec4(vLocalPos, 1.f);
+						}
+
+						sceneBBox.min = glm::min(sceneBBox.min, vWorldPos);
+						sceneBBox.max = glm::max(sceneBBox.max, vWorldPos);
+					}
+				}
+			}			
+		}
 	}
 	else {
 		vks::tools::exitFatal("Could not load glTF file \"" + filename + "\": " + error, -1);
 		return;
 	}
-
+	std::cout << sceneBBox.max.x << " " << sceneBBox.max.y << " " << sceneBBox.max.z << " \n";
+	std::cout << sceneBBox.min.x << " " << sceneBBox.min.y << " " << sceneBBox.min.z << " \n";
 	// Pre-Calculations for requested features
 	if ((fileLoadingFlags & FileLoadingFlags::PreTransformVertices) || (fileLoadingFlags & FileLoadingFlags::PreMultiplyVertexColors) || (fileLoadingFlags & FileLoadingFlags::FlipY)) {
 
@@ -1550,6 +1587,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		//for (auto num : nums)
 		//	std::cout << num << " ";
 	}
+
 
 	// Create Vertex/Index Buffer (After Cluster created)
 	{

@@ -464,28 +464,22 @@ namespace myglTF
 #pragma endregion Cluster
 		void updateGeometryNode(float* blasBuildTimes, uint32_t numBLASes);
 
+		// bake animation (test)
 		void bakeAnimations();
 		bool isBakedAnimation = false;
 		float animMaxFrame = 0;
 		float animMaxTime = 0;
 		float samplingRate = FLT_MAX; // min second interval between samples
 		uint32_t animMaxFPS = 0;
-		///** DELETE
-		// * @accessing example 
-		// * glm::mat4[64 * 4] curJointMats = jointMats[curTime + startOffsets[curVertex.joint0]]
-		// */
-		//struct BakedAnimations
-		//{
-		//	std::vector<glm::mat4>			worldMats;	  // num: (animFps * animDuration) * allAnims
-		//	std::vector<glm::mat4[64 * 4]>	jointMats{};  // num: (animFps * animDuration) * allAnims
-		//	std::vector<uint32_t>			durations; // num: all Joints
-		//};
 		struct BakedAnimation // num : skinnedMesh * maxTime
 		{
 			glm::mat4 jointMats[64 * 4]{}; // num: (animFps * animDuration) * allAnims
 		};
 		std::vector<BakedAnimation> bakedAnimations;
 		std::vector<UniformBufferSet> bakedUniformBuffers;
+
+		// scene
+		BBox sceneBBox;
 
 		bool metallicRoughnessWorkflow = true;
 		bool buffersBound = false;
