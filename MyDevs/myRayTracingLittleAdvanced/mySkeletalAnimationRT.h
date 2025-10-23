@@ -1,6 +1,7 @@
 #pragma once
 #include "myAnimComputePass.h"
 #include "myRayTracingLittleAdvanced.h"
+#include "openCubeMesh.h"
 
 /**
  * If Timer On, build "build accel" command each frame in render() func
@@ -50,7 +51,14 @@ public: // TLAS
 		ShaderBindingTable hit;
 	} shaderBindingTables;
 
+	std::unique_ptr<OpenCubeMesh> openCubeMesh;
+
 	vks::Texture2D texture;
+
+	struct SpecialzationData
+	{
+		glm::vec3 lightPos;
+	}specializationData{};
 
 	struct UniformData {
 		glm::mat4 viewInverse;
@@ -62,6 +70,8 @@ public: // TLAS
 	struct PushConstantData : PushConstantDataBase
 	{
 		float jointWeightRenderThreshold = 0.f;
+
+		glm::vec4 cubeColor;
 	}pushConstantData;
 
 	// RT Pipeline

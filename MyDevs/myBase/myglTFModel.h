@@ -48,7 +48,6 @@
 
 #define WATCH_AABB 0
 #define WATCH_GEOMETRYNODE 1
-
 struct meshopt_Meshlet;
 namespace myglTF
 {
@@ -309,7 +308,7 @@ namespace myglTF
 		glm::vec4 joint0;
 		glm::vec4 weight0;
 #if CUSTOM_VERTEX
-		glm::uvec4 customData4; // [meshID, primitiveIdInMesh, 0, 0]
+		glm::vec4 customData4; // [meshID, primitiveIdInMesh, 0, 0]
 #endif
 	};
 

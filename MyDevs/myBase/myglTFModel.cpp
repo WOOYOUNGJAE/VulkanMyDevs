@@ -874,7 +874,6 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 	// Node contains mesh data
 	if (node.mesh > -1) {
 		static uint32_t meshID = 0;
-		uint32_t primitiveIDInMesh = 0;
 		const tinygltf::Mesh mesh = model.meshes[node.mesh];
 		bool hasSkin = false;
 		Mesh* newMesh = new Mesh(device, newNode->matrix);
@@ -995,7 +994,6 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 						static_cast<VertexSkinning*>(vert)->weight0 = glm::vec4(glm::make_vec4(&bufferWeights[v * 4]));
 #if CUSTOM_VERTEX
 						static_cast<VertexSkinning*>(vert)->customData4.x = meshID;
-						static_cast<VertexSkinning*>(vert)->customData4.y = primitiveIDInMesh;
 #endif
 					}
 					vertices.push_back(vert);
@@ -1047,7 +1045,6 @@ void myglTF::ModelRT::loadNode(myglTF::Node* parent, const tinygltf::Node& node,
 			newPrimitive->vertexCount = vertexCount;
 			newPrimitive->setDimensions(posMin, posMax);
 			newMesh->primitives.push_back(newPrimitive);
-			++primitiveIDInMesh;
 			numMeshVertices += vertexCount;
 		}
 		++meshID;
@@ -1347,6 +1344,26 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			loadNode(nullptr, node, scene.nodes[i], gltfModel, tempIndicesCPU, tempVerticesCPU, scale);
 		}
 
+#if CUSTOM_VERTEX
+		// assign primitiveIndexInMesh
+		{
+			for (uint32_t meshIdx = 0; meshIdx < linearMeshes.size(); ++meshIdx)
+			{
+				for (uint32_t primitiveID = 0; primitiveID < linearMeshes[meshIdx]->primitives.size(); ++primitiveID)
+				{
+					const auto& primitive = linearMeshes[meshIdx]->primitives[primitiveID];
+					for (uint32_t v = primitive->firstVertex; v < primitive->firstVertex + primitive->vertexCount; ++v)
+					{
+						VertexSkinning* castedVertex = static_cast<VertexSkinning*>(tempVerticesCPU[v]);
+						castedVertex->customData4.x = meshIdx;
+						castedVertex->customData4.y = primitiveID;
+					}
+				}
+			}
+			
+		}
+#endif
+
 		loadSkins(gltfModel);
 
 		
@@ -1475,6 +1492,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 		memcpy(&vertexBufferByte[byteOffset], vertex, vertexSize);
 		byteOffset += vertexSize;
 	}
+
 
 	// reorder index array for better cache hit
 	//meshopt_optimizeVertexCache(tempIndicesCPU.data(), tempIndicesCPU.data(), tempIndicesCPU.size(), tempVerticesCPU.size());
@@ -1635,7 +1653,6 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			deformingVertices.descriptor = { deformingVertices.buffer, 0, vertexBufferSize };
 		}
 	}
-
 	// Process Raytracing Geometrynode per primitive or mesh
 	uint32_t primitiveStartOffset = 0;
 	uint32_t vertexStartOffset = 0;
@@ -1700,6 +1717,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 				geometryNode.vertexBufferDeviceAddress = vertexBaseDeviceAddress;
 				geometryNode.indexBufferDeviceAddress = indexBaseDeviceAddress;
 				geometryNode.triangleStartOffset = indexStartOffset / 3;
+				geometryNode.primitiveStartOffset = primitiveStartOffset;
 				uint32_t vertexCountInMesh = 0u;
 				uint32_t IndexCountInMesh = 0u;
 				for (const auto& primitive : node->mesh->primitives)
@@ -1859,7 +1877,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 	std::vector<VkDescriptorPoolSize> poolSizes;
 	VkDescriptorType modelDescriptorType = bCombinedMeshBuffer ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	poolSizes.push_back(VkDescriptorPoolSize{ modelDescriptorType, uboCount });
-		if (imageCount > 0) {
+	if (imageCount > 0) {
 		if (descriptorBindingFlags & DescriptorBindingFlags::ImageBaseColor) {
 			poolSizes.push_back({ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageCount });
 		}

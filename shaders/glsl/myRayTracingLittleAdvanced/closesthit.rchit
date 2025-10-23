@@ -1,46 +1,26 @@
-/* Copyright (c) 2023, Sascha Willems
- *
- * SPDX-License-Identifier: MIT
- *
- */
 #version 460
+
 #define JOINT_RENDER 0
 #include "shaderInclude.glsl"
+// Specialization Constant
+//layout(constant_id = 0) const uint32_t NUM_STATIC_INSTANCE = 0;
+const vec3 POINT_LIGHT_COLOR = vec3(0.9f, 0.95f, 1.f);
+layout(constant_id = 0) const float POINT_LIGHT0_POS_X = 0.f;
+layout(constant_id = 1) const float POINT_LIGHT0_POS_Y = -2.2f;
+layout(constant_id = 2) const float POINT_LIGHT0_POS_Z = 0.f;
+
+
 layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
 void main()
 {
-
-
 	uint primitiveID = gl_PrimitiveID;
 	uint geometryID = gl_GeometryIndexEXT;
 //	uint clusterID = gl_GeometryIndexEXT; // or gl_InstanceID;
 	uint instanceID = gl_InstanceID;
-	Triangle tri = unpackTriangle(primitiveID);
-
-	GeometryNode geometryNode = geometryNodes.nodes[instanceID];
-	hitValue = vec3(geometryNode.blasBuildTime ,geometryNode.blasBuildTime  ,geometryNode.blasBuildTime  ); return;
-//	hitValue = vec3(geometryNode.blasBuildTime ,0 ,0 ); return;
+	uint customID = gl_InstanceCustomIndexEXT; // Instanced from Which BLAS?
 
 
-#if JOINT_RENDER
-	const float f = pushData.jointWeightRenderThreshold;
-	if (tri.weight0.x > f || tri.weight0.y > f || tri.weight0.z > f || tri.weight0.w > f)
-	{
-		hitValue = vec3(1,0,1);return;
-	}
-	else
-	{
-		hitValue = vec3(1,1,0);return;
-	}
-#endif
-			uint h = instanceID * 1664525u + 1013904223u;
-		hitValue = vec3(
-			float((h >>  0) & 0xFF),
-			float((h >>  8) & 0xFF),
-			float((h >> 16) & 0xFF)
-		) / 255.0 * 0.3 + 0.5;
-		return;
 	if (pushData.baseData.renderMode == 1)
 	{
 		uint h = primitiveID * 1664525u + 1013904223u;
@@ -61,37 +41,60 @@ void main()
 		) / 255.0 * 0.3 + 0.5;
 		return;
 	}
-	
 
-
-//	GeometryNode geometryNode = geometryNodes.nodes[instanceID];
-//	MeshPrimitive meshPrimitive = meshPrimitives.primitives[1];
-	MeshPrimitive meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + geometryID];
-		
-//	hitValue = vec3(float(meshPrimitive.textureIndexBaseColor) / 100.f);return;
-	if (nonuniformEXT(meshPrimitive.textureIndexBaseColor) == -1)
+	vec3 epsilonDir;
+	vec3 worldRayDir = gl_WorldRayDirectionEXT;
+	if (customID == 0xff) // cube (or special static mesh)
 	{
-		hitValue = vec3(1,1,0);return;
+		hitValue = pushData.cubeColor.rgb;;
+		epsilonDir = -worldRayDir;
 	}
+	else
+	{
+		MeshPrimitive meshPrimitive;
+#if CLUSTER_BLAS
+		GeometryNode geometryNode = geometryNodes.nodes[customID];
+		ClusterRT cluster = sceneClusters.clusters[instanceID];
+		Triangle tri = unpackTriangle(geometryNode, cluster, primitiveID);
+		meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + tri.vertices[0].customData4.y];
+#else
+		GeometryNode geometryNode = geometryNodes.nodes[instanceID];
+		meshPrimitive = meshPrimitives.primitives[geometryNode.primitiveStartOffset + geometryID];
+		Triangle tri = unpackTriangle(geometryNode, meshPrimitive, primitiveID);
+#endif
 
-	vec3 color = texture(textures[nonuniformEXT(meshPrimitive.textureIndexBaseColor)], tri.uv).rgb;
-	if (meshPrimitive.textureIndexOcclusion > -1) {
-		float occlusion = texture(textures[nonuniformEXT(meshPrimitive.textureIndexOcclusion)], tri.uv).r;
-		color *= occlusion;
-	}
+		epsilonDir = tri.normal;
+		if (nonuniformEXT(meshPrimitive.textureIndexBaseColor) == -1)
+		{
+			hitValue = vec3(1,1,1);
+		}
+		else
+		{
+			vec3 color = texture(textures[nonuniformEXT(meshPrimitive.textureIndexBaseColor)], tri.uv).rgb;
+			if (meshPrimitive.textureIndexOcclusion > -1) {
+				float occlusion = texture(textures[nonuniformEXT(meshPrimitive.textureIndexOcclusion)], tri.uv).r;
+				color *= occlusion;
+			}
+			hitValue = color;
+		}
+	}	
 
-	hitValue = color;
 
 	// Shadow casting
+	float epsilon = 0.01;
+	vec3 origin = gl_WorldRayOriginEXT + worldRayDir * gl_HitTEXT + epsilonDir * epsilon;
+	vec3 lightPos = vec3(POINT_LIGHT0_POS_X, POINT_LIGHT0_POS_Y, POINT_LIGHT0_POS_Z);
+	vec3 lightVector = (lightPos - origin);
+	float tmax = length(lightVector);
+	lightVector = normalize(lightVector);
 	float tmin = 0.001;
-	float tmax = 10000.0;
-	float epsilon = 0.001;
-	vec3 origin = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT + tri.normal * epsilon;
-	shadowed = true;  
-	vec3 lightVector = vec3(-5.0, -2.5, -5.0);
+
 	// Trace shadow ray and offset indices to match shadow hit/miss shader group indices
-//	traceRayEXT(topLevelAS, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 1, origin, tmin, lightVector, tmax, 2);
-//	if (shadowed) {
-//		hitValue *= 0.7;
-//	}
+	shadowed = true;	
+	traceRayEXT(topLevelAS, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT, 0xFF, 0, 0, 1, origin, tmin, lightVector, tmax, 2);
+	if (shadowed) {
+		hitValue *= 0.7;
+	}
+	else
+		hitValue *= POINT_LIGHT_COLOR;
 }

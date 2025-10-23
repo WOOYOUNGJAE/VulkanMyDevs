@@ -146,6 +146,7 @@ public:
 	};
 	std::unique_ptr<GPUTimer> gpuTimer;
 
+	VkDeviceSize totalBlasSize = 0;
 	
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = VK_NULL_HANDLE;
 	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = VK_NULL_HANDLE;
@@ -182,7 +183,7 @@ public:
 
 	virtual void enableExtensions();
 	virtual void prepare();
-	
+
 protected:
 	myUtils::GPUDebug* pGpuDebug;
 	typedef MainRendererPushConstantData PushConstantDataBase;

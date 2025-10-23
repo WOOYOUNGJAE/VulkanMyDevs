@@ -39,6 +39,7 @@ if not exist "!GLSLC!" (
 set "SHADER_EXTENSIONS=.rgen .rmiss .rchit .rahit .vert .frag .comp .geom .tesc .tese .task .mesh"
 set "COMPILED_FILES=0"
 
+
 for %%F in (*) do (
     :: Get the file extension
     set "EXT=%%~xF"
@@ -57,7 +58,37 @@ for %%F in (*) do (
     )
 )
 
+ 
+
+
+:: Compile with Macros
+set "DEFAULT_MACROS=USE_SKINNING CUSTOM_VERTEX"
+set "OPTIONAL_MACROS=CLUSTER_BLAS"
+set "SHADERS=closesthit.rchit"
+
+for %%S in (%SHADERS%) do (
+    set "DEFS="
+    for %%M in (%DEFAULT_MACROS%) do (
+        set "DEFS=!DEFS! -D%%M=1"
+    )
+
+    for %%O in (%OPTIONAL_MACROS%) do (
+        for %%V in (0 1) do (
+            echo Compiling %%S with macros: !DEFS! -D%%O=%%V
+            "!GLSLC!" --target-env=!TARGET_ENV! --target-spv=spv1.4 "%%S" -o "%%~nS_%%O%%V.spv" ^
+                !DEFS! -D%%O=%%V
+            if !ERRORLEVEL! equ 0 (
+                echo Successfully compiled %%S with %%O=%%V
+                set /a COMPILED_FILES+=1
+            ) else (
+                echo Error: Failed to compile %%S with %%O=%%V
+            )
+        )
+    )
+)
+
 pause
+
 :: Summary
 if !COMPILED_FILES! equ 0 (
     echo No shader files found to compile.

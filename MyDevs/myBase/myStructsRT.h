@@ -20,7 +20,7 @@ struct GeometryNodePerMeshRT
 	// primitive contains material info
 	// Access like AllPrimitives[primitiveStartOffset + gl_GeometryIndexEXT]
 	uint32_t primitiveStartOffset;
-	float customData;// TODO FFFFF TEMPTTTT
+	float customData;// padding
 };
 
 struct MeshPrimitive

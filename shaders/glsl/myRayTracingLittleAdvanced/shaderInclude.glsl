@@ -16,17 +16,27 @@ layout(binding = 3, set = 0) uniform sampler2D image;
 
 #include "../../../MyDevs/myBase/myIncludesCPUGPU.h"
 
-
-struct GeometryNode {
+#if CLUSTER_BLAS
+#define GeometryNode ClusteredGeometryData
+layout(binding = 6, set = 0) buffer Clusters { ClusterRT clusters[]; } sceneClusters;
+layout(binding = 7, set = 0) uniform sampler2D textures[];
+#else
+struct GeometryNode 
+{
 	uint32_t vertexStartOffset; // from scene's total vertex buffer
 	uint32_t indexStartOffset; // from scene's total Index buffer
 	// primitive contains material info
 	uint32_t primitiveStartOffset;
-	float blasBuildTime;
+	uint32_t padding0;
 };
+layout(binding = 6, set = 0) uniform sampler2D textures[];
+#endif
+
 layout(binding = 4, set = 0) buffer GeometryNodes { GeometryNode nodes[]; } geometryNodes;
 
-
+#if CLUSTER_BLAS
+#define MeshPrimitive ClusteredMeshPrimitive
+#else
 struct MeshPrimitive
 {
 	uint32_t vertexStartOffsetInMesh;
@@ -34,21 +44,23 @@ struct MeshPrimitive
 	int32_t textureIndexBaseColor;
 	int32_t textureIndexOcclusion;
 };
+#endif
 layout(binding = 5, set = 0) buffer MeshPrimitives { MeshPrimitive primitives[]; } meshPrimitives;
-layout(binding = 6, set = 0) uniform sampler2D textures[];
 
 struct PushConstantData
 {
 	MainRendererPushConstantData baseData;
 #if JOINT_RENDER
 	float jointWeightRenderThreshold;
+#else
+	float customData;
 #endif
+	vec4 cubeColor;
 };
 
 layout(push_constant) uniform pushConstant {
 	PushConstantData pushData;
 };
 
-#define USE_SKINNING
 #include "bufferreferences.glsl"
 #include "geometrytypes.glsl"

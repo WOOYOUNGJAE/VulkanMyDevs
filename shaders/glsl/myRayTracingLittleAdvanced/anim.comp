@@ -50,7 +50,7 @@ void main()
 	Vertices tPoseVertices = Vertices(pushConstantData.vertexBuffer + vertexDeviceStartOffset);	
 	
 	vec4 vertexPos = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 0];
-	vec4 vertexNorm = vec4(0);
+	vec4 vertexNorm;
 	vertexNorm.x = vertexPos.w;
 	vertexPos.w = 1.f;
 	vertexNorm.yz = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 1].xy;
@@ -66,8 +66,9 @@ void main()
 
 //	vec3 deformedPos = (skinMat * vertexPos).xyz;
 	// bindSpace -> JointRoot(Mesh's Local) -> Mesh's World
-	vec3 deformedPos = (jointData.matrix * skinMat * vertexPos).xyz;
-	vec3 deformedNorm = (transpose(inverse(skinMat)) * vertexNorm).xyz; 
+	mat4 bindToWorld = jointData.matrix * skinMat;
+	vec3 deformedPos = (bindToWorld * vertexPos).xyz;
+	vec3 deformedNorm = (transpose(inverse(bindToWorld)) * vertexNorm).xyz; 
 
 	// write into ssbo
 	// pos

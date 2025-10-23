@@ -23,9 +23,11 @@ MySkeletalAnimationRT::MySkeletalAnimationRT()
 	title = "MySkeletalAnimationRT";
 	camera.type = Camera::CameraType::firstperson;
 	camera.setPerspective(60.0f, (float)width / (float)height, 0.1f, 512.0f);
+	camera.setTranslation(glm::vec3(-0.069f, 1.725f, -2.4f));
+	camera.setRotation(glm::vec3(-17.f, -1.f, 0.f));
+
 	camera.setRotation(glm::vec3(-10.0f, -3.0f, 0.0f));
 	camera.setTranslation(glm::vec3(0.0f, 1.3f, -3.7f));
-
 	enableExtensions();
 
 	// Buffer device address requires the 64-bit integer feature to be enabled
@@ -130,6 +132,66 @@ void MySkeletalAnimationRT::initBLASes()
 		&transformBuffer,
 		static_cast<uint32_t>(transformMatrices.size()) * sizeof(VkTransformMatrixKHR),
 		transformMatrices.data()));
+
+	// custom mesh
+	if (openCubeMesh)
+	{
+		VkBuffer vertexBuffer = openCubeMesh->vertexBuffer.buffer;
+		VkBuffer indexBuffer = openCubeMesh->indexBuffer.buffer;
+		uint32_t primitiveCount = openCubeMesh->indexBuffer.count / 3;
+		VkDeviceSize vertexStride = sizeof(glm::vec3); // position
+		PerBLASBuildInfo& refPerBlasBuildInfo = staticPerBlasBuildInfos.emplace_back(PerBLASBuildInfo{});
+		std::vector<uint32_t> maxPrimitiveCounts{}; //
+
+		VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{.deviceAddress = getBufferDeviceAddress(vertexBuffer) };
+		VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{.deviceAddress = getBufferDeviceAddress(indexBuffer) };
+		VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{.deviceAddress = getBufferDeviceAddress(transformBuffer.buffer) };
+
+		VkAccelerationStructureGeometryKHR asGeometry{}; // per gltf primitive
+		asGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+		asGeometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+		asGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+		asGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+		asGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
+		asGeometry.geometry.triangles.maxVertex = openCubeMesh->vertexBuffer.count;
+		asGeometry.geometry.triangles.vertexStride = vertexStride;
+		asGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT16;
+		asGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
+		asGeometry.geometry.triangles.transformData = transformBufferDeviceAddress;
+		refPerBlasBuildInfo.asGeometries.push_back(asGeometry);
+		maxPrimitiveCounts.push_back(primitiveCount);
+
+		VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
+		buildRangeInfo.firstVertex = 0;
+		buildRangeInfo.primitiveOffset = 0;
+		buildRangeInfo.primitiveCount = primitiveCount;
+		buildRangeInfo.transformOffset = 0;
+		refPerBlasBuildInfo.buildRangeInfos.push_back(buildRangeInfo);
+
+		// Get size info
+		VkAccelerationStructureBuildGeometryInfoKHR& accelerationStructureBuildGeometryInfo = refPerBlasBuildInfo.asBuildGeometryInfo;
+		accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+		accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+		accelerationStructureBuildGeometryInfo.geometryCount = static_cast<uint32_t>(refPerBlasBuildInfo.asGeometries.size());
+		accelerationStructureBuildGeometryInfo.pGeometries = refPerBlasBuildInfo.asGeometries.data();
+
+		VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
+		accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+		vkGetAccelerationStructureBuildSizesKHR(
+			device,
+			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+			&accelerationStructureBuildGeometryInfo,
+			maxPrimitiveCounts.data(),
+			&accelerationStructureBuildSizesInfo);
+		refPerBlasBuildInfo.asSize = accelerationStructureBuildSizesInfo.accelerationStructureSize;
+
+		AccelerationStructure blas{};
+		MyVulkanRTBase::createAccelerationStructureBuffer(blas, accelerationStructureBuildSizesInfo);
+		refPerBlasBuildInfo.blasScratchSizeMax = std::max(accelerationStructureBuildSizesInfo.buildScratchSize, accelerationStructureBuildSizesInfo.updateScratchSize);
+
+		staticBLASes.push_back(blas);
+	}
 
 	uint32_t nodeIdx = 0u; // node containing mesh
 	for (auto node : model.linearNodes)
@@ -248,17 +310,6 @@ void MySkeletalAnimationRT::initTLAS()
 		   0.0f, -1.0f, 0.0f, 0.0f,
 		   0.0f, 0.0f, 1.0f, 0.0f };
 
-	for (auto& blas : staticBLASes)
-	{
-		VkAccelerationStructureInstanceKHR blasInstance{};
-		blasInstance.transform = transformMatrix;
-		blasInstance.instanceCustomIndex = 0;
-		blasInstance.mask = 0xFF;
-		blasInstance.instanceShaderBindingTableRecordOffset = 0;
-		blasInstance.flags = 0;
-		blasInstance.accelerationStructureReference = blas.deviceAddress;
-		blasInstances.push_back(blasInstance);
-	}
 	for (auto& blas : dynamicBLASes)
 	{
 		VkAccelerationStructureInstanceKHR blasInstance{};
@@ -270,6 +321,18 @@ void MySkeletalAnimationRT::initTLAS()
 		blasInstance.accelerationStructureReference = blas.deviceAddress;
 		blasInstances.push_back(blasInstance);
 	}
+	for (auto& blas : staticBLASes)
+	{
+		VkAccelerationStructureInstanceKHR blasInstance{};
+		blasInstance.transform = transformMatrix;
+		blasInstance.instanceCustomIndex = 0xff;
+		blasInstance.mask = 0xFF;
+		blasInstance.instanceShaderBindingTableRecordOffset = 0;
+		blasInstance.flags = 0;
+		blasInstance.accelerationStructureReference = blas.deviceAddress;
+		blasInstances.push_back(blasInstance);
+	}
+
 	blasInstances.shrink_to_fit();
 
 	uint32_t numBlasInstances = blasInstances.size();
@@ -472,7 +535,7 @@ void MySkeletalAnimationRT::createShaderBindingTables()
 	createShaderBindingTable(shaderBindingTables.raygen, 1);
 	createShaderBindingTable(shaderBindingTables.miss, 2);
 	createShaderBindingTable(shaderBindingTables.hit, 1);
-
+	
 	// Copy handles
 	memcpy(shaderBindingTables.raygen.mapped, shaderHandleStorage.data(), handleSize);
 	// We are using two miss shaders, so we need to get two handles for the miss shader binding table
@@ -543,7 +606,7 @@ void MySkeletalAnimationRT::createRayTracingPipeline()
 		Setup ray tracing shader groups
 	*/
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-
+	VkSpecializationMapEntry* specializationEntries = nullptr;
 	// Ray generation group
 	{
 		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
@@ -576,7 +639,25 @@ void MySkeletalAnimationRT::createRayTracingPipeline()
 
 	// Closest hit group for doing texture lookups
 	{
-		shaderStages.push_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
+		VkPipelineShaderStageCreateInfo& shaderStage = shaderStages.emplace_back(loadShader(getShadersPath() + "myRayTracingLittleAdvanced/closesthit_CLUSTER_BLAS0.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
+
+		uint32_t numEntries = sizeof(SpecialzationData) / sizeof(float);
+		specializationEntries = new VkSpecializationMapEntry[numEntries]{};
+		for (uint32_t i = 0; i < numEntries; ++i)
+		{
+			specializationEntries[i].size = sizeof(float);
+			specializationEntries[i].constantID = i;
+			specializationEntries[i].offset = sizeof(float) * i;
+		}
+		VkSpecializationInfo specializationInfo
+		{
+			.mapEntryCount = numEntries,
+			.pMapEntries = specializationEntries,
+			.dataSize = sizeof(SpecialzationData),
+			.pData = &specializationData
+		};
+		shaderStage.pSpecializationInfo = &specializationInfo;
+
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
@@ -603,6 +684,8 @@ void MySkeletalAnimationRT::createRayTracingPipeline()
 	rayTracingPipelineCI.layout = rtPipelineLayout;
 
 	VK_CHECK_RESULT(vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rayTracingPipelineCI, nullptr, &rtPipeline));
+
+	delete[] specializationEntries; specializationEntries = nullptr;
 }
 
 void MySkeletalAnimationRT::createDescriptorSets()
@@ -859,8 +942,11 @@ void MySkeletalAnimationRT::getEnabledFeatures()
 void MySkeletalAnimationRT::loadAssets()
 {
 	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
-
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\Scene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Models\\Ninja_Dancing0.gltf", vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(SCENE_LOCAL_PATH("Ninja"), vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(SCENE_LOCAL_PATH("Scene8"), vulkanDevice, queue, g_loadingFlag);
 }
 
 void MySkeletalAnimationRT::enableExtensions()
@@ -885,8 +971,19 @@ void MySkeletalAnimationRT::prepare()
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
 	loadAssets();
+	// after asset loaded, create cube, considering min/max
+	openCubeMesh = std::make_unique<OpenCubeMesh>();
+	openCubeMesh->init(model.sceneBBox.min, model.sceneBBox.max, vulkanDevice, queue);
+	glm::vec3 cubeCenter = (openCubeMesh->worldMin + openCubeMesh->worldMax) * 0.5f;
+	specializationData.lightPos.x = cubeCenter.x;
+	//specializationData.lightPos.y = -(openCubeMesh->worldMax.y - 1e-5f);
+	specializationData.lightPos.y = -(openCubeMesh->worldMax.y - 0.001);
+	specializationData.lightPos.z = -cubeCenter.z;
+
 	pushConstantData.indexBufferDeviceAddress = getBufferDeviceAddress(model.indices.buffer);
 	pushConstantData.vertexBufferDeviceAddress = getBufferDeviceAddress(model.vertices.buffer);
+	pushConstantData.cubeColor = openCubeMesh->color;
+
 
 	//createComputePipeline();
 
@@ -900,6 +997,16 @@ void MySkeletalAnimationRT::prepare()
 	accelBuildPipelineBarrier(accelBuildCmdBuffer);
 	buildTLAS(accelBuildCmdBuffer);
 	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, queue);
+
+	// Calc Acceleration Structure Size
+	for (const auto& info : dynamicPerBlasBuildInfos)
+		totalBlasSize += info.asSize;
+	std::cout << "Acceleration Sturcture Info\n";
+	std::cout << "Num Blases : " << dynamicBLASes.size() << "\n";
+	std::cout << "BLASes Size : " << totalBlasSize / 1024.0 << " KB\n";
+	std::cout << "TLAS Size : " << tlasSize / 1024.0 << " KB\n";
+	std::cout << "Total AS Size : " << (totalBlasSize + tlasSize) / 1024.0 << " KB\n";
+	std::cout << "=================================\n";
 
 	createComputePipeline();
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -989,13 +1096,25 @@ void MySkeletalAnimationRT::render()
 			float tlasAvg = accBuildTLASTime / MEASURE_FRAME_COUNT;
 			float animAvg = accAnimTime / MEASURE_FRAME_COUNT;
 			float fpsAvg = (float)accFPS / MEASURE_FRAME_COUNT;
-			std::cout << "With Traditional AS, Measured Frame Count: " << MEASURE_FRAME_COUNT << "\n";
-			std::cout << "Average Animation Time = " << animAvg << "(ms)\n";
-			std::cout << "Average BLAS Build Time = " << blasAvg << "(ms)\n";
-			std::cout << "Average TLAS Build Time = " << tlasAvg << "(ms)\n";
-			std::cout << "Average Total AS Build Time = " << blasAvg + tlasAvg << "(ms)\n";
-			std::cout << "Average Tracing Time = " << accTraceTime / MEASURE_FRAME_COUNT << "(ms)\n";
-			std::cout << "Average FPS = " << fpsAvg << "fps (" << 1000.f / fpsAvg << " ms)\n";
+			printf("With Cluster BLAS, Measured Frame Count: %d\n", MEASURE_FRAME_COUNT);
+			printf("Average Animation Time = %.3f (ms)\n", animAvg);
+			printf("Average BLAS Build Time = %.3f (ms)\n", blasAvg);
+			printf("Average TLAS Build Time = %.3f (ms)\n", tlasAvg);
+			printf("Average Total AS Build Time = %.3f (ms)\n", blasAvg + tlasAvg);
+			printf("Average Tracing Time = %.3f (ms)\n", accTraceTime / MEASURE_FRAME_COUNT);
+			printf("Average FPS = %.3f fps (%.3f ms)\n", fpsAvg, 1000.f / fpsAvg);
+			printf("=================================\n");
+			printf("Excel\n");
+			printf("%.1f\n%.1f\n%.3f\n%.3f\n%.3f\n%.3f\n%.3f\n",
+				totalBlasSize / 1024.0,
+				(totalBlasSize + tlasSize) / 1024.0,
+				blasAvg,
+				blasAvg + tlasAvg,
+				accTraceTime / MEASURE_FRAME_COUNT,
+				fpsAvg,
+				1000.f / fpsAvg
+			);
+			printf("=================================\n");
 		}
 	}
 #endif
@@ -1012,8 +1131,8 @@ void MySkeletalAnimationRT::OnUpdateUIOverlay(vks::UIOverlay* overlay)
 		(overlay->radioButton("Render Triangle", (int*)&pushConstantData.renderMode, 1));
 	}
 
-	if (overlay->header("Custom Control"))
-	{
-		overlay->sliderFloat("Joint Threshold", &pushConstantData.jointWeightRenderThreshold, 0.f, 1.f);
-	}
+	//if (overlay->header("Custom Control"))
+	//{
+	//	overlay->sliderFloat("Joint Threshold", &pushConstantData.jointWeightRenderThreshold, 0.f, 1.f);
+	//}
 }
