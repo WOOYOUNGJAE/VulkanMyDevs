@@ -201,7 +201,7 @@ void MyVulkanRTBase::drawUI(VkCommandBuffer commandBuffer, VkFramebuffer framebu
 	renderPassBeginInfo.framebuffer = framebuffer;
 
 	vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-	VulkanExampleBase::drawUI(commandBuffer);
+	MyVulkanBase::drawUI(commandBuffer);
 	vkCmdEndRenderPass(commandBuffer);
 }
 
@@ -371,7 +371,7 @@ void MyVulkanRTBase::createAccelerationStructureBuffer(AccelerationStructure& ac
 
 void MyVulkanRTBase::prepare()
 {
-	VulkanExampleBase::prepare();
+	MyVulkanBase::prepare();
 
 	pGpuDebug = myUtils::GPUDebug::Get();
 	pGpuDebug->init(instance, device);

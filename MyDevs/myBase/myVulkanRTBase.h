@@ -8,7 +8,7 @@
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
 
-#include "vulkanexamplebase.h"
+#include "myVulkanBase.h"
 #include "myUtils.h"
 #include "myIncludesCPUGPU.h"
 
@@ -28,7 +28,7 @@ struct AccelerationStructure
 	VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
 };
 
-class MyVulkanRTBase : public VulkanExampleBase
+class MyVulkanRTBase : public MyVulkanBase
 {
 private:
 	class MyDeviceFuncTable* deviceFuncTable = nullptr;

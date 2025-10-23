@@ -904,11 +904,11 @@ void MyBakedAnimationRT::prepare()
 
 void MyBakedAnimationRT::draw()
 {
-	VulkanExampleBase::prepareFrame();
+	MyVulkanBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
 	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
-	VulkanExampleBase::submitFrame();
+	MyVulkanBase::submitFrame();
 }
 
 void MyBakedAnimationRT::render()
