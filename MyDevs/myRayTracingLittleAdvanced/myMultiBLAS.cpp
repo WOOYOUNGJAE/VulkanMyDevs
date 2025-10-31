@@ -171,7 +171,7 @@ void MyMultiBLAS::createBLAS(myglTF::Node* node, uint32_t nodeIdx)
 		1,
 		&accelerationStructureBuildGeometryInfo,
 		pBuildRangeInfos.data());
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+	vulkanDevice->flushCommandBuffer(commandBuffer, graphicsQueue);
 
 	VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 	accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
@@ -278,7 +278,7 @@ void MyMultiBLAS::createTopLevelAccelerationStructure()
 		1,
 		&accelerationStructureBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+	vulkanDevice->flushCommandBuffer(commandBuffer, graphicsQueue);
 
 	VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 	accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
@@ -654,7 +654,7 @@ void MyMultiBLAS::getEnabledFeatures()
 void MyMultiBLAS::loadAssets()
 {
 	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, graphicsQueue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }
 
@@ -693,7 +693,7 @@ void MyMultiBLAS::draw()
 	MyVulkanBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	MyVulkanBase::submitFrame();
 }
 

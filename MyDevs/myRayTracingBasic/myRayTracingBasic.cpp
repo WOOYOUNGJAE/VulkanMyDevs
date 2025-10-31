@@ -149,7 +149,7 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 		&geometryNodesBuffer,
 		static_cast<uint32_t>(geometryNodes.size()) * sizeof(GeometryNodePerPrimitiveRT)));
 
-	vulkanDevice->copyBuffer(&stagingBuffer, &geometryNodesBuffer, queue);
+	vulkanDevice->copyBuffer(&stagingBuffer, &geometryNodesBuffer, graphicsQueue);
 
 	stagingBuffer.destroy();
 
@@ -196,7 +196,7 @@ void MyRayTracingBasic::createBottomLevelAccelerationStructure()
 		1,
 		&accelerationStructureBuildGeometryInfo,
 		pBuildRangeInfos.data());
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+	vulkanDevice->flushCommandBuffer(commandBuffer, graphicsQueue);
 
 	VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 	accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
@@ -301,7 +301,7 @@ void MyRayTracingBasic::createTopLevelAccelerationStructure()
 		1,
 		&accelerationBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+	vulkanDevice->flushCommandBuffer(commandBuffer, graphicsQueue);
 
 	VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 	accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
@@ -654,7 +654,7 @@ void MyRayTracingBasic::getEnabledFeatures()
 void MyRayTracingBasic::loadAssets()
 {
 	myglTF::Model::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue/*, myglTF::FileLoadingFlags::PreTransformVertices*/);
+	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, graphicsQueue/*, myglTF::FileLoadingFlags::PreTransformVertices*/);
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }
 
@@ -686,7 +686,7 @@ void MyRayTracingBasic::draw()
 	VulkanExampleBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	VulkanExampleBase::submitFrame();
 }
 

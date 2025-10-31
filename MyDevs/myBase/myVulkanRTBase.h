@@ -9,8 +9,6 @@
 */
 
 #include "myVulkanBase.h"
-#include "myUtils.h"
-#include "myIncludesCPUGPU.h"
 
 #define FORCE_STATIC_SCENE 0
 struct ScratchBuffer
@@ -30,8 +28,6 @@ struct AccelerationStructure
 
 class MyVulkanRTBase : public MyVulkanBase
 {
-private:
-	class MyDeviceFuncTable* deviceFuncTable = nullptr;
 protected:
 	MyVulkanRTBase() { enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME); }
 	~MyVulkanRTBase() override;
@@ -64,88 +60,7 @@ public:
 		VkFormat format;
 	} storageImage;
 
-	typedef struct BufferWithDeviceAddress
-	{
-		VkBuffer buffer = VK_NULL_HANDLE;
-		VkDeviceMemory memory = VK_NULL_HANDLE;
-		VkDeviceAddress deviceAddress = 0u;
-		VkDeviceSize bufferSize = 0;
-	}BufferWithDeviceAddress, ArgumentBuffer;
-
-	/**
-	 * @example
-	 * gpuTimer.reset()
-	 * gpuTimer.record()
-	 * "Record On CommandBuffer Things"
-	 * gpuTimer.record()
-	 * float deltaTime = gpuTimer.timerResult()
-	 */
-	class GPUTimer
-	{
-	private:
-		VkDevice device = VK_NULL_HANDLE;
-		VkQueryPool timeStampQueryPool = VK_NULL_HANDLE;
-		uint32_t curQueryIndex = 0;
-		uint32_t queryCount; // before after
-		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
-		float timestampPeriodDeviceLimit = 0.f;
-		std::vector<float> timerResults;
-	public:
-		~GPUTimer()
-		{
-			vkDestroyQueryPool(device, timeStampQueryPool, nullptr);
-		}
-		GPUTimer() = delete;
-		GPUTimer(VkDevice inDevice, float inTimestampPeriodDeviceLimit, uint32_t qeuryCount) : device(inDevice), timestampPeriodDeviceLimit(inTimestampPeriodDeviceLimit), queryCount(qeuryCount) { timerResults.resize(queryCount / 2);}
-		void init()
-		{
-			VkQueryPoolCreateInfo queryPoolInfo{};
-			queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-			queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-			queryPoolInfo.queryCount = queryCount;
-			VK_CHECK_RESULT(vkCreateQueryPool(device, &queryPoolInfo, nullptr, &timeStampQueryPool));
-		}
-		void reset(VkCommandBuffer cmdBuffer)
-		{
-#if MEASURE_MODE
-			curQueryIndex = 0;
-			vkCmdResetQueryPool(cmdBuffer, timeStampQueryPool, 0, queryCount);
-#endif
-		}
-
-		/**
-		 * @note If NOT MEASURE_MODE, Do Nothing.
-		 */
-		void record(VkCommandBuffer cmdBuffer, VkPipelineStageFlagBits pipelineStageFlag)
-		{
-#if MEASURE_MODE
-			vkCmdWriteTimestamp(cmdBuffer, pipelineStageFlag, timeStampQueryPool, curQueryIndex++);
-#endif
-		}
-
-		/**
-		 * @return -FLT_MAX if timer not ready
-		 */
-		const std::vector<float>& timerResult()
-		{
-			curQueryIndex = 0;
-			std::vector<uint64_t> timeStampResults(queryCount * 2, 0);
-			vkGetQueryPoolResults(device, timeStampQueryPool, 0, queryCount, sizeof(uint64_t) * queryCount * 2,
-				timeStampResults.data(), sizeof(uint64_t) * 2, queryFlag);
-
-			for (uint32_t i = 0; i < queryCount / 2; ++i) // (start, end, start, end, ,,,)
-			{
-				if (timeStampResults[i * 4 + 1] && timeStampResults[i * 4 + 3])
-					timerResults[i] = float(timeStampResults[i * 4 + 2] - timeStampResults[i * 4 + 0]) * timestampPeriodDeviceLimit / (1'000'000.0f);
-				else
-					timerResults[i] = -FLT_MAX;
-			}
-			
-			return timerResults;
-		}
-	};
-	std::unique_ptr<GPUTimer> gpuTimer;
-
+	
 	VkDeviceSize totalBlasSize = 0;
 	
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = VK_NULL_HANDLE;
@@ -184,7 +99,4 @@ public:
 	virtual void enableExtensions();
 	virtual void prepare();
 
-protected:
-	myUtils::GPUDebug* pGpuDebug;
-	typedef MainRendererPushConstantData PushConstantDataBase;
 };

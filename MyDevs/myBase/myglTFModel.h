@@ -13,7 +13,7 @@
  * If you are looking for a complete glTF implementation, check out https://github.com/SaschaWillems/Vulkan-glTF-PBR/
  */
 #pragma once
-#include "myVulkan.h"
+#include "myDefines.h"
 
 #include <stdlib.h>
 #include <string>

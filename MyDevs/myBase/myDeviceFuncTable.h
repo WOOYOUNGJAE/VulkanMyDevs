@@ -1,5 +1,5 @@
 #pragma once
-#include "myVulkan.h"
+#include "myDefines.h"
 /**
  * Singleton Class that contains VKAPI_PTR (vkCmdTraceRaysKHR, ,,,)
  * for using vkFunction out of app class

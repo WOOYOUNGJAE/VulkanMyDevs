@@ -195,7 +195,7 @@ void MyClusteredSkeletalMesh::initCLASes()
 	// Indirect Argument Buffer - cluster buildInfo
 	vulkanDevice->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 		sizeof(VkClusterAccelerationStructureBuildTriangleClusterInfoNV) * numTotalClusters,
-		&clusterBuildInfoBuffer.buffer, &clusterBuildInfoBuffer.memory, queue, clusterBuildInfos.data());
+		&clusterBuildInfoBuffer.buffer, &clusterBuildInfoBuffer.memory, graphicsQueue, clusterBuildInfos.data());
 	clusterBuildInfoBuffer.deviceAddress = getBufferDeviceAddress(clusterBuildInfoBuffer.buffer);
 	clusterBuildInfoBuffer.bufferSize = sizeof(VkClusterAccelerationStructureBuildTriangleClusterInfoNV) * numTotalClusters;
 
@@ -236,7 +236,7 @@ void MyClusteredSkeletalMesh::initClusteredBLASes()
 
 	vulkanDevice->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 		sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV) * numBlases,
-		&clusteredBlasBuildInfoBuffer.buffer, &clusteredBlasBuildInfoBuffer.memory, queue, blasBuildInfos.data());
+		&clusteredBlasBuildInfoBuffer.buffer, &clusteredBlasBuildInfoBuffer.memory, graphicsQueue, blasBuildInfos.data());
 	clusteredBlasBuildInfoBuffer.deviceAddress = getBufferDeviceAddress(clusteredBlasBuildInfoBuffer.buffer);
 	clusteredBlasBuildInfoBuffer.bufferSize = sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV) * numBlases;
 
@@ -334,7 +334,7 @@ void MyClusteredSkeletalMesh::initTLAS()
 	vulkanDevice->CreateBuffer_DeviceLocal(
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
-		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, queue,
+		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, graphicsQueue,
 		blasInstances.data());
 	blasInstancesBuffer.deviceAddress = getBufferDeviceAddress(blasInstancesBuffer.buffer);
 
@@ -958,7 +958,7 @@ void MyClusteredSkeletalMesh::loadAssets()
 
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\CesiumMan.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, graphicsQueue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
 }
@@ -1061,7 +1061,7 @@ void MyClusteredSkeletalMesh::prepare()
 			0, nullptr);
 
 		buildTLAS(cmdBuffer);
-		vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
+		vulkanDevice->flushCommandBuffer(cmdBuffer, graphicsQueue);
 	}
 
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -1080,7 +1080,7 @@ void MyClusteredSkeletalMesh::draw()
 	VulkanExampleBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	VulkanExampleBase::submitFrame();
 }
 

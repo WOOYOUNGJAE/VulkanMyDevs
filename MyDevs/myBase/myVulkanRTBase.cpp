@@ -1,6 +1,7 @@
 #include "myVulkanRTBase.h"
 #include "myDeviceFuncTable.h"
 #include "threadpool.hpp"
+#include "myUtils.h"
 /*
 * Ray Tracing Base
 *
@@ -12,8 +13,6 @@
 
 MyVulkanRTBase::~MyVulkanRTBase()
 {
-	delete pGpuDebug; pGpuDebug = nullptr;
-	delete deviceFuncTable; deviceFuncTable = nullptr;
 }
 
 void MyVulkanRTBase::setupRenderPass()
@@ -173,7 +172,7 @@ void MyVulkanRTBase::createStorageImage(VkFormat format, VkExtent3D extent)
 		VK_IMAGE_LAYOUT_UNDEFINED,
 		VK_IMAGE_LAYOUT_GENERAL,
 		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
-	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
+	vulkanDevice->flushCommandBuffer(cmdBuffer, graphicsQueue);
 }
 
 void MyVulkanRTBase::deleteStorageImage()
@@ -373,9 +372,6 @@ void MyVulkanRTBase::prepare()
 {
 	MyVulkanBase::prepare();
 
-	pGpuDebug = myUtils::GPUDebug::Get();
-	pGpuDebug->init(instance, device);
-
 	// Get properties and features
 	rayTracingPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
 	VkPhysicalDeviceProperties2 deviceProperties2{};
@@ -387,9 +383,6 @@ void MyVulkanRTBase::prepare()
 	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 	deviceFeatures2.pNext = &accelerationStructureFeatures;
 	vkGetPhysicalDeviceFeatures2(physicalDevice, &deviceFeatures2);
-
-	// Create Vulkan Func Table
-	deviceFuncTable = new MyDeviceFuncTable(device);
 
 	// Get the function pointers required for ray tracing
 	vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(vkGetDeviceProcAddr(device, "vkGetBufferDeviceAddressKHR"));

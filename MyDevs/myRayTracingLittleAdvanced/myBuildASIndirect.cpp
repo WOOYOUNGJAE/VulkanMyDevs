@@ -265,7 +265,7 @@ void MyBuildASIndirect::buildBLASesIndirect()
 			dynamicBlasBuildingSets.buildGeometryInfos.data(),
 			dynamicBlasBuildingSets.buildRangeInfosArray.data());
 
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue, false);
+		vulkanDevice->flushCommandBuffer(commandBuffer, graphicsQueue, false);
 		// TODO get rid of this if possible
 		{
 			VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
@@ -297,7 +297,7 @@ void MyBuildASIndirect::buildBLASesIndirect()
 		//	staticBlasBuildingSets.buildGeometryInfos.data(),
 		//	staticBlasBuildingSets.buildRangeInfosArray.data());
 
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+		vulkanDevice->flushCommandBuffer(commandBuffer, graphicsQueue);
 	}
 
 	if (isFirstBuild)
@@ -440,7 +440,7 @@ void MyBuildASIndirect::buildTLAS()
 		&tlasBuildGeometryInfo,
 		accelerationBuildStructureRangeInfos.data());
 
-	vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+	vulkanDevice->flushCommandBuffer(commandBuffer, graphicsQueue);
 
 	// after first build complete
 	if (isFirstBuild)
@@ -823,7 +823,7 @@ void MyBuildASIndirect::getEnabledFeatures()
 void MyBuildASIndirect::loadAssets()
 {
 	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, graphicsQueue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }
 
@@ -874,7 +874,7 @@ void MyBuildASIndirect::draw()
 	MyVulkanBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	MyVulkanBase::submitFrame();
 }
 

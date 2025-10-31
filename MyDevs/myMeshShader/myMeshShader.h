@@ -22,7 +22,7 @@
 #endif
 #include "tiny_gltf.h"*/
 #pragma once
-#include "myVulkan.h"
+#include "myDefines.h"
 #include "vulkanexamplebase.h"
 #include "myglTFModel.h"
 

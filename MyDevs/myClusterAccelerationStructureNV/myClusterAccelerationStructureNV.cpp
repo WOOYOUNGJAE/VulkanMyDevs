@@ -185,7 +185,7 @@ void MyClusterAccelerationStructureNV::initCLASes()
 	// Indirect Argument Buffer - cluster buildInfo
 	vulkanDevice->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 		sizeof(VkClusterAccelerationStructureBuildTriangleClusterInfoNV) * numTotalClusters,
-		&clusterBuildInfoBuffer.buffer, &clusterBuildInfoBuffer.memory, queue, clusterBuildInfos.data());
+		&clusterBuildInfoBuffer.buffer, &clusterBuildInfoBuffer.memory, graphicsQueue, clusterBuildInfos.data());
 	clusterBuildInfoBuffer.deviceAddress = getBufferDeviceAddress(clusterBuildInfoBuffer.buffer);
 	clusterBuildInfoBuffer.bufferSize = sizeof(VkClusterAccelerationStructureBuildTriangleClusterInfoNV) * numTotalClusters;
 	
@@ -345,7 +345,7 @@ void MyClusterAccelerationStructureNV::initClusteredBLASes()
 
 	vulkanDevice->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 		sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV) * numBlases,
-		&clusteredBlasBuildInfoBuffer.buffer, &clusteredBlasBuildInfoBuffer.memory, queue, blasBuildInfos.data());
+		&clusteredBlasBuildInfoBuffer.buffer, &clusteredBlasBuildInfoBuffer.memory, graphicsQueue, blasBuildInfos.data());
 	clusteredBlasBuildInfoBuffer.deviceAddress = getBufferDeviceAddress(clusteredBlasBuildInfoBuffer.buffer);
 	clusteredBlasBuildInfoBuffer.bufferSize = sizeof(VkClusterAccelerationStructureBuildClustersBottomLevelInfoNV) * numBlases;
 
@@ -441,7 +441,7 @@ void MyClusterAccelerationStructureNV::initTLAS()
 	vulkanDevice->CreateBuffer_DeviceLocal(
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
-		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, queue,
+		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, graphicsQueue,
 		blasInstances.data());
 	blasInstancesBuffer.deviceAddress = getBufferDeviceAddress(blasInstancesBuffer.buffer);
 
@@ -587,7 +587,7 @@ void MyClusterAccelerationStructureNV::buildBLASes()
 			dynamicBlasBuildingSets.buildGeometryInfos.data(),
 			dynamicBlasBuildingSets.buildRangeInfosArray.data());
 
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue, false);
+		vulkanDevice->flushCommandBuffer(commandBuffer, graphicsQueue, false);
 		// TODO get rid of this if possible
 		{
 			VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
@@ -605,7 +605,7 @@ void MyClusterAccelerationStructureNV::buildBLASes()
 			staticBlasBuildingSets.buildGeometryInfos.data(),
 			staticBlasBuildingSets.buildRangeInfosArray.data());
 
-		vulkanDevice->flushCommandBuffer(commandBuffer, queue);
+		vulkanDevice->flushCommandBuffer(commandBuffer, graphicsQueue);
 	}
 
 	if (isFirstBuild)
@@ -1091,7 +1091,7 @@ void MyClusterAccelerationStructureNV::getEnabledFeatures()
 void MyClusterAccelerationStructureNV::loadAssets()
 {
 	//myglTF::ModelRT::memoryPropertyFlags = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(getAssetPath() + "models/sponza/sponza.gltf", vulkanDevice, graphicsQueue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/FlightHelmet/glTF/FlightHelmet.gltf", vulkanDevice, queue);
 }
 
@@ -1172,7 +1172,7 @@ void MyClusterAccelerationStructureNV::prepare()
 		0, nullptr);
 
 	buildTLAS(cmdBuffer);
-	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
+	vulkanDevice->flushCommandBuffer(cmdBuffer, graphicsQueue);
 
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
 	createUniformBuffer();
@@ -1188,7 +1188,7 @@ void MyClusterAccelerationStructureNV::draw()
 	VulkanExampleBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	VulkanExampleBase::submitFrame();
 }
 

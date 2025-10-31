@@ -8,7 +8,7 @@
 */
 
 #pragma once
-#include "myVulkan.h"
+#include "myDefines.h"
 #include "myVulkanRTBase.h"
 #include "myglTFModel.h"
 

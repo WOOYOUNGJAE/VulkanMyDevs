@@ -8,6 +8,8 @@
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
 
+#include <myDefines.h>
+
 #ifdef _WIN32
 #pragma comment(linker, "/subsystem:windows")
 #include <windows.h>
@@ -74,7 +76,12 @@
 #include "VulkanInitializers.hpp"
 #include "camera.hpp"
 #include "benchmark.hpp"
-#define MEASURE_MODE 1
+
+#include "myIncludesCPUGPU.h"
+namespace myUtils
+{
+	class GPUDebug;
+}
 
 class MyVulkanBase
 {
@@ -95,6 +102,21 @@ private:
 	void destroyCommandBuffers();
 	std::string shaderDir = "glsl";
 protected:
+#if ASYNC_RENDER_LEVEL > 0
+	struct FrameObjectBase
+	{
+		uint32_t frameIndex = 0;
+		VkCommandBuffer darwCmdBuffer = VK_NULL_HANDLE;
+		VkFence renderCompleteFence = VK_NULL_HANDLE;
+		VkSemaphore renderCompleteSemaphore = VK_NULL_HANDLE;
+		VkSemaphore presentCompleteSemaphore = VK_NULL_HANDLE;
+		//vks::Buffer uniformBuffer{};
+		//VkQueryPool timeStampQueryPool = VK_NULL_HANDLE;
+		//std::vector<uint64_t> timeStamps;
+		//vks::Buffer vertexBuffer{};
+		//vks::Buffer indexBuffer{};
+	};
+#endif
 	// Returns the path to the root of the glsl, hlsl or slang shader directory.
 	std::string getShadersPath() const;
 
@@ -126,7 +148,7 @@ protected:
 	/** @brief Logical device, application's view of the physical device (GPU) */
 	VkDevice device{ VK_NULL_HANDLE };
 	// Handle to the device graphics queue that command buffers are submitted to
-	VkQueue queue{ VK_NULL_HANDLE };
+	VkQueue graphicsQueue{ VK_NULL_HANDLE };
 	// Depth buffer format (selected during Vulkan initialization)
 	VkFormat depthFormat{ VK_FORMAT_UNDEFINED };
 	// Command buffer pool
@@ -409,13 +431,102 @@ public:
 	void prepareFrame();
 	/** @brief Presents the current image to the swap chain */
 	void submitFrame();
-	/** @brief (Virtual) Default image acquire + submission and command buffer submission function */
-	virtual void renderFrame();
-
+	/** @brief (Virtual) Default image acquire + submission and command buffer submission function
+	 * If ASYNC_RENDER_LEVEL == 0, frameIdx is member currrentBuffer
+	 */
+	virtual void renderFrame(uint32_t frameIdx = 0);
 	/** @brief (Virtual) Called when the UI overlay is updating, can be used to add custom elements to the overlay */
 	virtual void OnUpdateUIOverlay(vks::UIOverlay* overlay);
 
 #if defined(_WIN32)
 	virtual void OnHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 #endif
+
+public:
+	typedef struct BufferWithDeviceAddress
+	{
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceMemory memory = VK_NULL_HANDLE;
+		VkDeviceAddress deviceAddress = 0u;
+		VkDeviceSize bufferSize = 0;
+	}BufferWithDeviceAddress, ArgumentBuffer;
+
+	/**
+	 * @example
+	 * gpuTimer.reset()
+	 * gpuTimer.record()
+	 * "Record On CommandBuffer Things"
+	 * gpuTimer.record()
+	 * float deltaTime = gpuTimer.timerResult()
+	 */
+	class GPUTimer
+	{
+	private:
+		VkDevice device = VK_NULL_HANDLE;
+		VkQueryPool timeStampQueryPool = VK_NULL_HANDLE;
+		uint32_t curQueryIndex = 0;
+		uint32_t queryCount; // before after
+		VkQueryResultFlagBits queryFlag = static_cast<VkQueryResultFlagBits>(VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+		float timestampPeriodDeviceLimit = 0.f;
+		std::vector<float> timerResults;
+	public:
+		~GPUTimer()
+		{
+			vkDestroyQueryPool(device, timeStampQueryPool, nullptr);
+		}
+		GPUTimer() = delete;
+		GPUTimer(VkDevice inDevice, float inTimestampPeriodDeviceLimit, uint32_t qeuryCount) : device(inDevice), timestampPeriodDeviceLimit(inTimestampPeriodDeviceLimit), queryCount(qeuryCount) { timerResults.resize(queryCount / 2); }
+		void init()
+		{
+			VkQueryPoolCreateInfo queryPoolInfo{};
+			queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+			queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+			queryPoolInfo.queryCount = queryCount;
+			VK_CHECK_RESULT(vkCreateQueryPool(device, &queryPoolInfo, nullptr, &timeStampQueryPool));
+		}
+		void reset(VkCommandBuffer cmdBuffer)
+		{
+#if MEASURE_MODE
+			curQueryIndex = 0;
+			vkCmdResetQueryPool(cmdBuffer, timeStampQueryPool, 0, queryCount);
+#endif
+		}
+
+		/**
+		 * @note If NOT MEASURE_MODE, Do Nothing.
+		 */
+		void record(VkCommandBuffer cmdBuffer, VkPipelineStageFlagBits pipelineStageFlag)
+		{
+#if MEASURE_MODE
+			vkCmdWriteTimestamp(cmdBuffer, pipelineStageFlag, timeStampQueryPool, curQueryIndex++);
+#endif
+		}
+
+		/**
+		 * @return -FLT_MAX if timer not ready
+		 */
+		const std::vector<float>& timerResult()
+		{
+			curQueryIndex = 0;
+			std::vector<uint64_t> timeStampResults(queryCount * 2, 0);
+			vkGetQueryPoolResults(device, timeStampQueryPool, 0, queryCount, sizeof(uint64_t) * queryCount * 2,
+				timeStampResults.data(), sizeof(uint64_t) * 2, queryFlag);
+
+			for (uint32_t i = 0; i < queryCount / 2; ++i) // (start, end, start, end, ,,,)
+			{
+				if (timeStampResults[i * 4 + 1] && timeStampResults[i * 4 + 3])
+					timerResults[i] = float(timeStampResults[i * 4 + 2] - timeStampResults[i * 4 + 0]) * timestampPeriodDeviceLimit / (1'000'000.0f);
+				else
+					timerResults[i] = -FLT_MAX;
+			}
+
+			return timerResults;
+		}
+	};
+	std::unique_ptr<GPUTimer> gpuTimer;
+
+protected:
+	myUtils::GPUDebug* pGpuDebug = nullptr;
+	typedef MainRendererPushConstantData PushConstantDataBase;
+	std::unique_ptr<class MyDeviceFuncTable> deviceFuncTable;
 };

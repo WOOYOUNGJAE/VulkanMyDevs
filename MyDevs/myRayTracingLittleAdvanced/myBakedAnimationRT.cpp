@@ -274,7 +274,7 @@ void MyBakedAnimationRT::initTLAS()
 	vulkanDevice->CreateBuffer_DeviceLocal(
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
-		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, queue,
+		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, graphicsQueue,
 		blasInstances.data());
 	blasInstancesBuffer.deviceAddress = getBufferDeviceAddress(blasInstancesBuffer.buffer);
 
@@ -851,7 +851,7 @@ void MyBakedAnimationRT::loadAssets()
 	//model.loadFromFile(getAssetPath() + "models/scene/DancingScene.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(getAssetPath() + "models/mixamo/MocapGuy/MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy_60fps.gltf", vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, graphicsQueue, g_loadingFlag);
 
 }
 
@@ -888,7 +888,7 @@ void MyBakedAnimationRT::prepare()
 	buildBLASes(accelBuildCmdBuffer);
 	accelBuildPipelineBarrier(accelBuildCmdBuffer);
 	buildTLAS(accelBuildCmdBuffer);
-	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, queue);
+	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, graphicsQueue);
 
 	createComputePipeline();
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -907,7 +907,7 @@ void MyBakedAnimationRT::draw()
 	MyVulkanBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	MyVulkanBase::submitFrame();
 }
 

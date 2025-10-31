@@ -1,5 +1,5 @@
 #pragma once
-#include "myVulkan.h"
+#include "myDefines.h"
 #include "VulkanDevice.h"
 #include "glm/glm.hpp"
 //#include "myglTFModel.h"

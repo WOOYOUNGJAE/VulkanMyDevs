@@ -6,6 +6,7 @@
  * 2==buildIndirect - 
  * 3==skeletalAnimationRT
  * 4==bakedAnimationRT
+ * 5==BVH Test
  */
 #define RT_PROJECT_VERSION 5
 

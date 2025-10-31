@@ -1,5 +1,7 @@
 #include "myVulkanBase.h"
 
+#include "myDeviceFuncTable.h"
+#include "myUtils.h"
 /*
 * Most of the code is derived from sascha MyVulkanBase
 * Copyright (C) 2019-2025 by Sascha Willems - www.saschawillems.de
@@ -179,12 +181,15 @@ VkResult MyVulkanBase::createInstance()
 	return result;
 }
 
-void MyVulkanBase::renderFrame()
+void MyVulkanBase::renderFrame(uint32_t frameIdx)
 {
+#if ASYNC_RENDER_LEVEL == 0
+	frameIdx = currentBuffer;
+#endif
 	MyVulkanBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+	submitInfo.pCommandBuffers = &drawCmdBuffers[frameIdx];
+	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	MyVulkanBase::submitFrame();
 }
 
@@ -241,11 +246,15 @@ void MyVulkanBase::prepare()
 	//std::cout << "\t...base project shaders compile completed.\n";
 #endif
 
+	// Create Vulkan Func Table
+	deviceFuncTable = std::make_unique<MyDeviceFuncTable>(device);
+	pGpuDebug = myUtils::GPUDebug::Get();
+	pGpuDebug->init(instance, device);
 
 	settings.overlay = settings.overlay && (!benchmark.active);
 	if (settings.overlay) {
 		ui.device = vulkanDevice;
-		ui.queue = queue;
+		ui.queue = graphicsQueue;
 		ui.shaders = {
 			loadShader(getShadersPath() + "base/uioverlay.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
 			loadShader(getShadersPath() + "base/uioverlay.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT),
@@ -793,7 +802,7 @@ void MyVulkanBase::prepareFrame()
 
 void MyVulkanBase::submitFrame()
 {
-	VkResult result = swapChain.queuePresent(queue, currentBuffer, semaphores.renderComplete);
+	VkResult result = swapChain.queuePresent(graphicsQueue, currentBuffer, semaphores.renderComplete);
 	// Recreate the swapchain if it's no longer compatible with the surface (OUT_OF_DATE) or no longer optimal for presentation (SUBOPTIMAL)
 	if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR)) {
 		windowResize();
@@ -804,7 +813,9 @@ void MyVulkanBase::submitFrame()
 	else {
 		VK_CHECK_RESULT(result);
 	}
-	VK_CHECK_RESULT(vkQueueWaitIdle(queue));
+#if ASYNC_RENDER_LEVEL == 0
+	VK_CHECK_RESULT(vkQueueWaitIdle(graphicsQueue));
+#endif
 }
 
 MyVulkanBase::MyVulkanBase()
@@ -949,6 +960,10 @@ MyVulkanBase::MyVulkanBase()
 
 MyVulkanBase::~MyVulkanBase()
 {
+	auto gpuTimerInstance =	gpuTimer.release();
+	delete gpuTimerInstance; // this should be deleted before releasing vulkanDevice
+	delete pGpuDebug; pGpuDebug = nullptr;
+
 	// Clean up Vulkan resources
 	swapChain.cleanup();
 	if (descriptorPool != VK_NULL_HANDLE)
@@ -1133,7 +1148,7 @@ bool MyVulkanBase::initVulkan()
 	device = vulkanDevice->logicalDevice;
 
 	// Get a graphics queue from the device
-	vkGetDeviceQueue(device, vulkanDevice->queueFamilyIndices.graphics, 0, &queue);
+	vkGetDeviceQueue(device, vulkanDevice->queueFamilyIndices.graphics, 0, &graphicsQueue);
 
 	// Find a suitable depth and/or stencil format
 	VkBool32 validFormat{ false };

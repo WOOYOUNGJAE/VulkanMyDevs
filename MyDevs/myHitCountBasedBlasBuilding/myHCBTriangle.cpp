@@ -254,7 +254,7 @@ void MyHCBTriangle::initTLAS()
 	vulkanDevice->CreateBuffer_DeviceLocal(
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
-		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, queue,
+		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, graphicsQueue,
 		blasInstances.data());
 	blasInstancesBuffer.deviceAddress = getBufferDeviceAddress(blasInstancesBuffer.buffer);
 
@@ -931,7 +931,7 @@ void MyHCBTriangle::getEnabledFeatures()
 
 void MyHCBTriangle::loadAssets()
 {
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, graphicsQueue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 }
 void MyHCBTriangle::enableExtensions()
@@ -972,7 +972,7 @@ void MyHCBTriangle::prepare()
 	hcbBuildBLASes(accelBuildCmdBuffer);
 	accelBuildPipelineBarrier(accelBuildCmdBuffer);
 	buildTLAS(accelBuildCmdBuffer);
-	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, queue);
+	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, graphicsQueue);
 
 	createComputePipeline();
 	createStorageImage(swapChain.colorFormat, { width, height, 1 });
@@ -990,7 +990,7 @@ void MyHCBTriangle::draw()
 	VulkanExampleBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	VulkanExampleBase::submitFrame();
 }
 
@@ -1051,7 +1051,7 @@ void MyHCBTriangle::render()
 	hcbBuildBLASes(cmdBuffer);
 	//timer.record(true);
 
-	vulkanDevice->flushCommandBuffer(cmdBuffer, queue);
+	vulkanDevice->flushCommandBuffer(cmdBuffer, graphicsQueue);
 
 	draw();
 

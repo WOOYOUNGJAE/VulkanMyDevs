@@ -341,7 +341,7 @@ void MySkeletalAnimationRT::initTLAS()
 	vulkanDevice->CreateBuffer_DeviceLocal(
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		sizeof(VkAccelerationStructureInstanceKHR) * numBlasInstances,
-		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, queue,
+		&blasInstancesBuffer.buffer, &blasInstancesBuffer.memory, graphicsQueue,
 		blasInstances.data());
 	blasInstancesBuffer.deviceAddress = getBufferDeviceAddress(blasInstancesBuffer.buffer);
 
@@ -945,8 +945,8 @@ void MySkeletalAnimationRT::loadAssets()
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\Scene8.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Models\\Ninja_Dancing0.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile(SCENE_LOCAL_PATH("Ninja"), vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile(SCENE_LOCAL_PATH("Scene8"), vulkanDevice, queue, g_loadingFlag);
+	//model.loadFromFile(SCENE_LOCAL_PATH("Scene8"), vulkanDevice, queue, g_loadingFlag);
+	model.loadFromFile(SCENE_LOCAL_PATH("Ninja"), vulkanDevice, graphicsQueue, g_loadingFlag);
 }
 
 void MySkeletalAnimationRT::enableExtensions()
@@ -973,7 +973,7 @@ void MySkeletalAnimationRT::prepare()
 	loadAssets();
 	// after asset loaded, create cube, considering min/max
 	openCubeMesh = std::make_unique<OpenCubeMesh>();
-	openCubeMesh->init(model.sceneBBox.min, model.sceneBBox.max, vulkanDevice, queue);
+	openCubeMesh->init(model.sceneBBox.min, model.sceneBBox.max, vulkanDevice, graphicsQueue);
 	glm::vec3 cubeCenter = (openCubeMesh->worldMin + openCubeMesh->worldMax) * 0.5f;
 	specializationData.lightPos.x = cubeCenter.x;
 	//specializationData.lightPos.y = -(openCubeMesh->worldMax.y - 1e-5f);
@@ -996,7 +996,7 @@ void MySkeletalAnimationRT::prepare()
 	buildBLASes(accelBuildCmdBuffer);
 	accelBuildPipelineBarrier(accelBuildCmdBuffer);
 	buildTLAS(accelBuildCmdBuffer);
-	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, queue);
+	vulkanDevice->flushCommandBuffer(accelBuildCmdBuffer, graphicsQueue);
 
 	// Calc Acceleration Structure Size
 	for (const auto& info : dynamicPerBlasBuildInfos)
@@ -1024,7 +1024,7 @@ void MySkeletalAnimationRT::draw()
 	MyVulkanBase::prepareFrame();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE));
 	MyVulkanBase::submitFrame();
 }
 

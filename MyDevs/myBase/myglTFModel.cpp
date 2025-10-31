@@ -575,19 +575,22 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 
 		refClusterLocalIndices.resize(meshlets.size() * clusterTrianglesMax * 3);
 		refClusterLocalVertices.resize(meshlets.size() * clusterVerticesMax);
-		numClusters = meshopt_buildMeshletsSpatial(
-			meshlets.data(),
-			refClusterLocalVertices.data(),
-			refClusterLocalIndices.data(),
-			originalIndices.data(),
-			originalIndices.size(),
-			reinterpret_cast<const float*>(vertexPositions.data()),
-			vertexPositions.size(),
-			sizeof(glm::vec3),
-			std::min(255u, clusterVerticesMax),
-			minTriangles,
-			clusterTrianglesMax,
-			clusterMeshoptSpatialFill);
+		{
+			//myUtils::ScopedCPUTimer scopedTimer;
+			numClusters = meshopt_buildMeshletsSpatial(
+				meshlets.data(),
+				refClusterLocalVertices.data(),
+				refClusterLocalIndices.data(),
+				originalIndices.data(),
+				originalIndices.size(),
+				reinterpret_cast<const float*>(vertexPositions.data()),
+				vertexPositions.size(),
+				sizeof(glm::vec3),
+				std::min(255u, clusterVerticesMax),
+				minTriangles,
+				clusterTrianglesMax,
+				clusterMeshoptSpatialFill);
+		}
 
 		if (numClusters)
 		{
