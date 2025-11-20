@@ -63,7 +63,7 @@ Triangle getTriangle(uint64_t verticesAddress, uint64_t dstTriangleAddress)
 		//tri.vertices[i].joint0 = vertices.v[offset + 4];
 		//tri.vertices[i].weight0 = vertices.v[offset + 5];
 #if CUSTOM_VERTEX
-		tri.vertices[i].customData4.xy = uint(vertices.v[offset + 6].xy);
+		tri.vertices[i].customData4.xy = uint(vertices.v[offset + 6].xy); // TODO FIX
 #endif 
 	}
 

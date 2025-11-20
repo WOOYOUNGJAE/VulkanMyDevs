@@ -565,8 +565,7 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 	std::vector<uint32_t> copiedIndices = originalIndices;
 
 
-	//meshopt_optimizeVertexCache(originalIndices.data(), originalIndices.data(), originalIndices.size(),
-	//	vertexPositions.size());
+	meshopt_optimizeVertexCache(originalIndices.data(), originalIndices.data(), originalIndices.size(), vertexPositions.size());
 
 	size_t numClusters = 0;
 	// build geometry clusters - Use MeshOptimizer(https://github.com/zeux/meshoptimizer)
@@ -576,7 +575,7 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 		refClusterLocalIndices.resize(meshlets.size() * clusterTrianglesMax * 3);
 		refClusterLocalVertices.resize(meshlets.size() * clusterVerticesMax);
 		{
-			//myUtils::ScopedCPUTimer scopedTimer;
+			myUtils::ScopedCPUTimer scopedTimer;
 			numClusters = meshopt_buildMeshletsSpatial(
 				meshlets.data(),
 				refClusterLocalVertices.data(),
@@ -590,6 +589,17 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 				minTriangles,
 				clusterTrianglesMax,
 				clusterMeshoptSpatialFill);
+			//numClusters = meshopt_buildMeshlets(meshlets.data(),
+			//	refClusterLocalVertices.data(),
+			//	refClusterLocalIndices.data(),
+			//	originalIndices.data(),
+			//	originalIndices.size(),
+			//	reinterpret_cast<const float*>(vertexPositions.data()),
+			//	vertexPositions.size(),
+			//	sizeof(glm::vec3),
+			//	std::min(255u, clusterVerticesMax),
+			//	minTriangles,
+			//	clusterMeshoptSpatialFill);
 		}
 
 		if (numClusters)
@@ -643,6 +653,7 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 	// Re-order Global(Model's) Index Array in order of Clusters
 	{
 		uint32_t triangleOffsetInMesh = 0u;
+		// Flow : LocalIndex -> LocalVertex -> GlobalVertex -> GlobalIndex
 		for (uint64_t clusterIdx = 0; clusterIdx < refClusters.size(); ++clusterIdx)
 		{
 			ClusterRT& cluster = refClusters[clusterIdx];
@@ -653,34 +664,39 @@ void myglTF::ModelRT::initClusters(std::vector<uint32_t>& originalIndices, const
 			for (uint32_t t = 0; t < cluster.numTriangles; ++t) // per triangle in Cluster
 			{
 				// cur 3 "local vertices(uint3)" of triangle in clusrter
-				glm::uvec3 curLocalVerticesInAllLocals = {
+				glm::uvec3 indicesForLocalIndexBuffer = {
 					refClusterLocalIndices[cluster.firstLocalIndex + (t * 3) + 0],
 					refClusterLocalIndices[cluster.firstLocalIndex + (t * 3) + 1],
 					refClusterLocalIndices[cluster.firstLocalIndex + (t * 3) + 2] };
 
-				assert(curLocalVerticesInAllLocals.x < cluster.numVertices);
-				assert(curLocalVerticesInAllLocals.y < cluster.numVertices);
-				assert(curLocalVerticesInAllLocals.z < cluster.numVertices);
+				assert(indicesForLocalIndexBuffer.x < cluster.numVertices);
+				assert(indicesForLocalIndexBuffer.y < cluster.numVertices);
+				assert(indicesForLocalIndexBuffer.z < cluster.numVertices);
 
 				glm::uvec3 globalVertices = {};
 
-				glm::uvec3 globalTriangle = {
-					cluster.firstLocalVertex + curLocalVerticesInAllLocals.x,
-					cluster.firstLocalVertex + curLocalVerticesInAllLocals.y,
-					cluster.firstLocalVertex + curLocalVerticesInAllLocals.z };
+				// globalTriangle == 3 localVertices
+				glm::uvec3 curLocalIndices = {
+					cluster.firstLocalVertex + indicesForLocalIndexBuffer.x,
+					cluster.firstLocalVertex + indicesForLocalIndexBuffer.y,
+					cluster.firstLocalVertex + indicesForLocalIndexBuffer.z };
 
+
+				// 3 local vertices == 3 global indices
 				if (true) // !m_config.clusterDedicatedVertices from scene.cpp(https://github.com/nvpro-samples/vk_animated_clusters/blob/main/src/scene.cpp)
 				{
 					// need one more indirection
-					globalVertices = { refClusterLocalVertices[globalTriangle.x], refClusterLocalVertices[globalTriangle.y],
-									  refClusterLocalVertices[globalTriangle.z] };
+					globalVertices = { refClusterLocalVertices[curLocalIndices.x], refClusterLocalVertices[curLocalIndices.y],
+									  refClusterLocalVertices[curLocalIndices.z] };
 				}
 				else
 				{
-					globalVertices = {
-					   +cluster.firstLocalVertex + curLocalVerticesInAllLocals.x,
-					   +cluster.firstLocalVertex + curLocalVerticesInAllLocals.y,
-					   +cluster.firstLocalVertex + curLocalVerticesInAllLocals.z };
+					// cur 3 local indices is 3 global indicess
+					globalVertices = curLocalIndices;
+					//globalVertices = {
+					//   +cluster.firstLocalVertex + indicesForLocalIndxBuffer.x,
+					//   +cluster.firstLocalVertex + indicesForLocalIndxBuffer.y,
+					//   +cluster.firstLocalVertex + indicesForLocalIndxBuffer.z };
 				}
 
 				// write into original Index Array

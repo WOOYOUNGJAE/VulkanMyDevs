@@ -1323,10 +1323,10 @@ void MyBvhTest::loadAssets()
 #endif
 
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
-	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Models\\Ninja_Dancing0.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(SCENE_LOCAL_PATH("Scene8"), vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile(SCENE_LOCAL_PATH("Ninja"), vulkanDevice, graphicsQueue, g_loadingFlag);
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, graphicsQueue, g_loadingFlag);
+	//model.loadFromFile(SCENE_LOCAL_PATH("Ninja"), vulkanDevice, graphicsQueue, g_loadingFlag);
 }
 void MyBvhTest::enableExtensions()
 {
@@ -1434,7 +1434,7 @@ void MyBvhTest::render()
 			if (anim.accPlayTime > anim.end)
 				anim.accPlayTime = 0.f;
 			//myUtils::CPUTimer timer(true);
-			model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
+			//model.updateAnimation(animIdx, animationSpeed * anim.accPlayTime);
 			//timer.record(true);
 		}
 		model.updateJoints();
