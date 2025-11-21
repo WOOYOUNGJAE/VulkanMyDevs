@@ -71,6 +71,17 @@ function(buildExample EXAMPLE_NAME)
         add_executable(${EXAMPLE_NAME} WIN32 ${MAIN_CPP} ${SOURCE} ${MAIN_HEADER} ${HEADER} ${SHADERS_GLSL} ${SHADERS_HLSL} ${SHADERS_SLANG} ${README_FILES})
         set_target_properties(${EXAMPLE_NAME} PROPERTIES FOLDER "myDevs")
         target_link_libraries(${EXAMPLE_NAME} myBase Vulkan::Vulkan ${Vulkan_LIBRARY} ${WINLIBS})
+        if(${EXAMPLE_NAME} STREQUAL "myMeshClusterizingCuda")
+            target_link_libraries(${EXAMPLE_NAME} 
+                "${CMAKE_CURRENT_SOURCE_DIR}/../external/GPU_MeshClusterizer/lib/x64/$<CONFIG>/gmcCuda.lib"
+            )
+            add_custom_command(TARGET ${EXAMPLE_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${EXAMPLE_NAME}>
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/../external/GPU_MeshClusterizer/lib/x64/$<CONFIG>/gmcCuda.dll"
+                $<TARGET_FILE_DIR:${EXAMPLE_NAME}>
+            )
+        endif()
     else(WIN32)
         add_executable(${EXAMPLE_NAME} ${MAIN_CPP} ${SOURCE} ${MAIN_HEADER} ${SHADERS_GLSL} ${SHADERS_HLSL} ${SHADERS_SLANG} ${README_FILES})
         target_link_libraries(${EXAMPLE_NAME} myBase )
@@ -127,6 +138,7 @@ set(EXAMPLES
     myClusterAccelerationStructureNV
     myClusteredSkeletalMesh
     myHitCountBasedBlasBuilding
+    myMeshClusterizingCuda
 )
 
 buildMyBase()

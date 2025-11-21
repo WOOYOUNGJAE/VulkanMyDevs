@@ -1378,8 +1378,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 						castedVertex->customData4.y = primitiveID;
 					}
 				}
-			}
-			
+			}			
 		}
 #endif
 
@@ -1656,7 +1655,6 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 			vertexBufferSize, &vertices.buffer, &vertices.memory, transferQueue, vertexBufferByte.data(), (void**)&vertexPositionViewer);*/
 		//myUtils::GPUDebug::Get()->setObjectName(VK_OBJECT_TYPE_BUFFER, (uint64_t)vertices.buffer, "Model Vertex Buffer");
 #endif
-
 
 		device->CreateBuffer_DeviceLocal(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			indexBufferSize, &indices.buffer, &indices.memory, transferQueue, tempIndicesCPU.data());

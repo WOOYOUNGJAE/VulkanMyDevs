@@ -327,6 +327,7 @@ namespace myglTF
 		ClusteredTriangleBLAS = (MakeClusters | 0x000000400), // for Clustered Triangle Base Mesh, No CLAS
 		ClusteredBLAS = (MakeClusters | 0x000000800), // for CLAS nv Extensions
 		CombinedMeshBuffer = 0x000001000, // for make mesh's buffer(joint matrices) combined
+		SkipIndexBuffer = 0x000002000, // Create Index Buffer Outside
 	};
 
 	// descriptorset bind num into pipeline
