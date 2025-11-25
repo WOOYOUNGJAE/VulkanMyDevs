@@ -178,4 +178,203 @@ namespace myUtils
 		VkDevice m_device = VK_NULL_HANDLE;
 		static GPUDebug* m_pInstance;
 	};
+
+	namespace vk
+	{
+
+		inline uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties)
+		{
+			VkPhysicalDeviceMemoryProperties memProperties;
+			vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+			for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+				if (typeFilter & (1 << i) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+					return i;
+				}
+			}
+			return ~0;
+		}
+
+		inline VkCommandBuffer createCommandBuffer(VkDevice device, VkCommandBufferLevel level, VkCommandPool pool, bool begin = false)
+		{
+			VkCommandBufferAllocateInfo cmdBufAllocateInfo
+			{
+				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+				.commandPool = pool,
+				.level = level,
+				.commandBufferCount = 1,
+			};
+			VkCommandBuffer cmdBuffer;
+			vkAllocateCommandBuffers(device, &cmdBufAllocateInfo, &cmdBuffer);
+			// If requested, also start recording for the new command buffer
+			if (begin)
+			{
+				VkCommandBufferBeginInfo cmdBufferBeginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+				(vkBeginCommandBuffer(cmdBuffer, &cmdBufferBeginInfo));
+			}
+			return cmdBuffer;
+		}
+
+		inline void flushCommandBuffer(VkDevice device, VkCommandBuffer commandBuffer, VkQueue queue, VkCommandPool pool, bool free)
+		{
+			if (commandBuffer == VK_NULL_HANDLE)
+			{
+				return;
+			}
+
+			vkEndCommandBuffer(commandBuffer);
+
+			VkSubmitInfo submitInfo
+			{
+				.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+				.commandBufferCount = 1,
+				.pCommandBuffers = &commandBuffer,
+			};
+			// Create fence to ensure that the command buffer has finished executing
+			VkFenceCreateInfo fenceInfo { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+			VkFence fence;
+			(vkCreateFence(device, &fenceInfo, nullptr, &fence));
+			// Submit to the queue
+			(vkQueueSubmit(queue, 1, &submitInfo, fence));
+			// Wait for the fence to signal that command buffer has finished executing
+			(vkWaitForFences(device, 1, &fence, VK_TRUE, 100000000000));
+			vkDestroyFence(device, fence, nullptr);
+			if (free)
+			{
+				vkFreeCommandBuffers(device, pool, 1, &commandBuffer);
+			}
+		}
+
+		/**
+		 * @param data src data
+		 * @param ppMappedPtr if this is not null, do not unmap and use this mapped pointer outside
+		 */
+		inline void CreateBuffer_HostVisible(VkPhysicalDevice physicalDevice, VkDevice device, VkBufferUsageFlags usageFlags, VkDeviceSize size,
+			VkBuffer* buffer, VkDeviceMemory* memory, bool isHostCoherent = true, void* data = nullptr, void** ppMappedPtr = nullptr)
+		{
+			VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+			if (isHostCoherent)
+				memoryPropertyFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+			// Create the buffer handle
+			VkBufferCreateInfo bufferCreateInfo
+			{
+				.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+				.size = size,
+				.usage = usageFlags
+			};
+			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			(vkCreateBuffer(device, &bufferCreateInfo, nullptr, buffer));
+
+			// Create the memory backing up the buffer handle
+			VkMemoryRequirements memReqs;
+			vkGetBufferMemoryRequirements(device, *buffer, &memReqs);
+			VkMemoryAllocateInfo memAlloc{};
+			memAlloc.allocationSize = memReqs.size;
+			// Find a memory type index that fits the properties of the buffer
+			memAlloc.memoryTypeIndex = findMemoryType(physicalDevice, memReqs.memoryTypeBits, memoryPropertyFlags);
+			// If the buffer has VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT set we also need to enable the appropriate flag during allocation
+			VkMemoryAllocateFlagsInfoKHR allocFlagsInfo{};
+			if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+				allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR;
+				allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+				memAlloc.pNext = &allocFlagsInfo;
+			}
+			(vkAllocateMemory(device, &memAlloc, nullptr, memory));
+
+			// If a pointer to the buffer data has been passed, map the buffer and copy over the data
+			if (data != nullptr)
+			{
+				if (ppMappedPtr)
+				{
+					(vkMapMemory(device, *memory, 0, size, 0, ppMappedPtr));
+					memcpy(*ppMappedPtr, data, size);
+				}
+				else
+				{
+					void* mapped;
+					(vkMapMemory(device, *memory, 0, size, 0, &mapped));
+					memcpy(mapped, data, size);
+					vkUnmapMemory(device, *memory);
+				}
+				// If host coherency hasn't been requested, do a manual flush to make writes visible
+				if (isHostCoherent == false)
+				{
+					VkMappedMemoryRange mappedRange
+					{
+						.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+						.memory = *memory,
+						.offset = 0,
+						.size = size
+					};
+					vkFlushMappedMemoryRanges(device, 1, &mappedRange);
+				}
+			}
+			else if (ppMappedPtr) // no copy, just mapping. unmap outside
+			{
+				(vkMapMemory(device, *memory, 0, size, 0, ppMappedPtr));
+			}
+
+			// Attach the memory to the buffer object
+			(vkBindBufferMemory(device, *buffer, *memory, 0));
+		}
+
+		/**
+		 * if param data exists, create staging buffer and transfer
+		 */
+		inline void CreateBuffer_DeviceLocal(VkPhysicalDevice physicalDevice, VkDevice device, VkBufferUsageFlags usageFlags, VkDeviceSize size,
+			VkBuffer* buffer, VkDeviceMemory* memory, VkCommandPool cmdPool, VkQueue transferQueue, void* data)
+		{
+			usageFlags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+			if (data)
+				usageFlags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+			VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+			// Create the buffer handle
+			VkBufferCreateInfo bufferCreateInfo
+			{
+				.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+				.size = size,
+				.usage = usageFlags,
+				.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+			};
+			(vkCreateBuffer(device, &bufferCreateInfo, nullptr, buffer));
+
+			// Create the memory backing up the buffer handle
+			VkMemoryRequirements memReqs;
+			VkMemoryAllocateInfo memAlloc{};
+			vkGetBufferMemoryRequirements(device, *buffer, &memReqs);
+			memAlloc.allocationSize = memReqs.size;
+			// Find a memory type index that fits the properties of the buffer
+			memAlloc.memoryTypeIndex = findMemoryType(physicalDevice, memReqs.memoryTypeBits, memoryPropertyFlags);
+			// If the buffer has VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT set we also need to enable the appropriate flag during allocation
+			VkMemoryAllocateFlagsInfoKHR allocFlagsInfo{};
+			allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR;
+			allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+			memAlloc.pNext = &allocFlagsInfo;
+
+			(vkAllocateMemory(device, &memAlloc, nullptr, memory));
+
+			// Attach the memory to the buffer object
+			(vkBindBufferMemory(device, *buffer, *memory, 0));
+
+			// If a pointer to the buffer data has been passed, Create Staging buffer and Transfer
+			if (data && transferQueue)
+			{
+				VkBuffer stagingBuffer = VK_NULL_HANDLE;
+				VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+				CreateBuffer_HostVisible(physicalDevice, device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, size, &stagingBuffer, &stagingMemory, true, data);
+
+				VkCommandBuffer copyCmd = createCommandBuffer(device, VK_COMMAND_BUFFER_LEVEL_PRIMARY, cmdPool, true);
+
+				VkBufferCopy copyRegion = {};
+				copyRegion.size = size;
+				vkCmdCopyBuffer(copyCmd, stagingBuffer, *buffer, 1, &copyRegion);
+				flushCommandBuffer(device, copyCmd, transferQueue, cmdPool, false);
+
+
+				vkDestroyBuffer(device, stagingBuffer, nullptr);
+				vkFreeMemory(device, stagingMemory, nullptr);
+			}
+		}
+	}
+
 }

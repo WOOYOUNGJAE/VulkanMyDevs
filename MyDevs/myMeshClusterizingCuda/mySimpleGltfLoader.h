@@ -1,5 +1,5 @@
 #pragma once
-#include <myDefines.h>
+#include <myStructs.h>
 #include <vector>
 #include <string>
 #include <iostream>

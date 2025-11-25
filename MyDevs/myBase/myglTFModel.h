@@ -36,15 +36,12 @@
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
 #define TINYGLTF_ANDROID_LOAD_FROM_ASSETS
 #endif
-#include "myStructsRT.h"
+#include "myStructs.h"
 #include "tiny_gltf.h"
 
 #if defined(__ANDROID__)
 #include <android/asset_manager.h>
 #endif
-
-#include "nvcluster/nvcluster.h"
-#include "nvcluster/nvcluster_storage.hpp"
 
 #define WATCH_AABB 0
 #define WATCH_GEOMETRYNODE 1

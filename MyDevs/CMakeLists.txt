@@ -18,7 +18,7 @@ function(buildMyBase)
 
     target_link_libraries(myBase PUBLIC base)
     target_link_libraries(myBase PUBLIC meshoptimizer)
-    target_link_libraries(myBase PUBLIC nv_cluster_builder)
+    # target_link_libraries(myBase PUBLIC nv_cluster_builder)
 
     target_include_directories(myBase PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/myBase")
     set_target_properties(myBase PROPERTIES FOLDER "myDevs")
@@ -72,13 +72,18 @@ function(buildExample EXAMPLE_NAME)
         set_target_properties(${EXAMPLE_NAME} PROPERTIES FOLDER "myDevs")
         target_link_libraries(${EXAMPLE_NAME} myBase Vulkan::Vulkan ${Vulkan_LIBRARY} ${WINLIBS})
         if(${EXAMPLE_NAME} STREQUAL "myMeshClusterizingCuda")
+            find_package(CUDAToolkit REQUIRED)
+            target_include_directories(${EXAMPLE_NAME} PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+            target_link_libraries(${EXAMPLE_NAME}  CUDA::cuda_driver CUDA::cudart)
+
+            # Link to GPU_MeshClusterizer CUDA library
             target_link_libraries(${EXAMPLE_NAME} 
                 "${CMAKE_CURRENT_SOURCE_DIR}/../external/GPU_MeshClusterizer/lib/x64/$<CONFIG>/gmcCuda.lib"
             )
             add_custom_command(TARGET ${EXAMPLE_NAME} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${EXAMPLE_NAME}>
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_CURRENT_SOURCE_DIR}/../external/GPU_MeshClusterizer/lib/x64/$<CONFIG>/gmcCuda.dll"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../external/GPU_MeshClusterizer/bin/x64/$<CONFIG>/gmcCuda.dll"
                 $<TARGET_FILE_DIR:${EXAMPLE_NAME}>
             )
         endif()

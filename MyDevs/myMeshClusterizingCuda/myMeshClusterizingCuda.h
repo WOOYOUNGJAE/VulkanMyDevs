@@ -5,6 +5,12 @@
 #include "myAnimComputePass.h"
 #include "mySimpleGltfLoader.h"
 #include "openCubeMesh.h"
+#include <cuda_runtime_api.h>
+
+namespace gmcCuda
+{
+	class ClusterBuilder;
+}
 
 /**
  * If Timer On, build "build accel" command each frame in render() func
@@ -13,6 +19,11 @@ class MyMeshClusterizingCuda : public MyVulkanRTBase
 {
 private:
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
+	std::unique_ptr<gmcCuda::ClusterBuilder> clusterBuilder;
+	std::unique_ptr<class MyCudaInteropt> cudaInteropt;
+	BufferSet externalIndexBuffer{};
+	cudaExternalMemory_t cudaMem = nullptr;
+	float* d_indexBuffer = nullptr;
 public:	// BLAS
 	struct PerBLASBuildInfo // per blas
 	{

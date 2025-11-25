@@ -19,8 +19,11 @@
 
 #include "myIncludesCPUGPU.h"
 #include "myUtils.h"
+#include "myCudaInteropt.h"
 #include <set>
 #include <GPU_MeshClusterizer/gmcCuda/gmcCuda.h>
+
+
 
 #define SCENE_LOCAL_PATH(NAME) "D:\\Documents\\Blender\\Exports\\Scene\\" NAME ".gltf"
 
@@ -40,10 +43,18 @@ MyMeshClusterizingCuda::MyMeshClusterizingCuda()
 	camera.setRotation(glm::vec3(-10.0f, -3.0f, 0.0f));
 	camera.setTranslation(glm::vec3(0.0f, 1.3f, -3.7f));
 
+	enabledDeviceExtensions.push_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+#ifdef _WIN64
+	enabledDeviceExtensions.push_back(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME);
+#endif
 	enableExtensions();
 
 	// Buffer device address requires the 64-bit integer feature to be enabled
 	enabledFeatures.shaderInt64 = VK_TRUE;
+
 }
 
 MyMeshClusterizingCuda::~MyMeshClusterizingCuda()
@@ -1103,27 +1114,27 @@ void MyMeshClusterizingCuda::loadAssets()
 #endif
 	loader.LoadFromFile(vulkanDevice, &model, SCENE_LOCAL_PATH("Ninja"));
 
-	// Clusterizing
-	{
-		uint32_t numVertices = model.m_vPositions.size();
-		gmcCuda::ClusterBuilder clusterBuilder;
-		clusterBuilder.Init_WithDeviceAllocation((float*)model.m_vPositions.data(), numVertices, model.m_indices.data(), model.m_indices.size());
+	//// Clusterizing
+	//{
+	//	uint32_t numVertices = model.m_vPositions.size();
+	//	gmcCuda::ClusterBuilder clusterBuilder;
+	//	clusterBuilder.Init_WithDeviceAllocation((float*)model.m_vPositions.data(), numVertices, model.m_indices.data(), model.m_indices.size());
 
 
-	}
+	//}
 
 
-	// Make ClusterNodes
-	{
-		VkDeviceAddress vertexBaseDeviceAddress = 0;
-		VkDeviceAddress indexBaseDeviceAddress = getBufferDeviceAddress(model.m_indexBuffer.vkBuffer);
-		uint32_t meshIdx = 0u;
-		uint32_t clusterStartOffset = 0u;
-		for (auto& node : model.m_linearMeshes)
-		{
+	//// Make ClusterNodes
+	//{
+	//	VkDeviceAddress vertexBaseDeviceAddress = 0;
+	//	VkDeviceAddress indexBaseDeviceAddress = getBufferDeviceAddress(model.m_indexBuffer.vkBuffer);
+	//	uint32_t meshIdx = 0u;
+	//	uint32_t clusterStartOffset = 0u;
+	//	for (auto& node : model.m_linearMeshes)
+	//	{
 
-		}
-	}
+	//	}
+	//}
 
 }
 void MyMeshClusterizingCuda::enableExtensions()
@@ -1145,6 +1156,35 @@ void MyMeshClusterizingCuda::prepare()
 	std::cout << "\t...current project's shaders compile completed.\n";
 #endif
 	loadAssets();
+
+	// cuda Interopt
+	{
+
+		cudaInteropt = std::make_unique<MyCudaInteropt>(physicalDevice, device);
+		VkDeviceSize bufferSize = sizeof(uint32_t) * model.m_indices.size();
+		cudaInteropt->createExternalBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT, bufferSize, &externalIndexBuffer);
+
+		// Transfer via staging buffer
+		{
+			VkBuffer stagingBuffer = VK_NULL_HANDLE;
+			VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+			vulkanDevice->CreateBuffer_HostVisible(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize, &stagingBuffer, &stagingMemory, true, model.m_indices.data());
+			VkCommandBuffer copyCmd = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+			VkBufferCopy copyRegion = {};
+			copyRegion.size = bufferSize;
+			vkCmdCopyBuffer(copyCmd, stagingBuffer, externalIndexBuffer.vkBuffer, 1, &copyRegion);
+			vulkanDevice->flushCommandBuffer(copyCmd, graphicsQueue, false);
+			vkDestroyBuffer(device, stagingBuffer, nullptr);
+			vkFreeMemory(device, stagingMemory, nullptr);
+		}
+
+		cudaInteropt->importCudaExternalMemory((void**)&d_indexBuffer, cudaMem, externalIndexBuffer.vkMemory, bufferSize, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT);
+	}
+
+	// Cluster Builder
+	clusterBuilder = std::make_unique<gmcCuda::ClusterBuilder>();
+	clusterBuilder->Init_WithExternalMappedMemory(d_indexBuffer, model.m_vertices.size(), model.m_indices.data(), model.m_indices.size());
 
 	//specializationData.lightPos.x = cubeCenter.x;
 	////specializationData.lightPos.y = -(openCubeMesh->worldMax.y - 1e-5f);

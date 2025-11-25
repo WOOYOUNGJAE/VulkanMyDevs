@@ -1,7 +1,7 @@
 #pragma once
 
 #include "myIncludesCPUGPU.h"
-
+#include <myDefines.h>
 
 // Original Sashca Style
 struct GeometryNodePerPrimitiveRT
@@ -39,4 +39,22 @@ struct BBox
 {
 	glm::vec3 min;
 	glm::vec3 max;
+};
+
+// Vulkan
+struct BufferSet
+{
+	BufferSet() = default;
+	~BufferSet()
+	{
+		vkDestroyBuffer(device, vkBuffer, nullptr);
+		vkFreeMemory(device, vkMemory, nullptr);
+	}
+	VkDevice device = VK_NULL_HANDLE;
+	VkBuffer vkBuffer = VK_NULL_HANDLE;
+	VkDeviceMemory vkMemory = VK_NULL_HANDLE;
+	VkDescriptorBufferInfo descriptor;
+	VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+	uint64_t deviceAddress = 0;
+	void* mapped;
 };
