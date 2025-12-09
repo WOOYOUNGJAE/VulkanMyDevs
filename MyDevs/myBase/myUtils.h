@@ -47,8 +47,17 @@ namespace myUtils
 		void record(bool print = false)
 		{
 			duration = std::chrono::high_resolution_clock::now() - startTime;
+			accDuration += duration;
+			++count;
 			if (print) printResult();
 		}
+		double timerAccumulatedResultMilli()
+		{
+			double ret = accDuration.count();
+			accDuration = std::chrono::duration<double, std::milli>::zero();
+			return ret;
+		}
+
 		double timerResultMilli()
 		{
 			return duration.count();
@@ -65,7 +74,9 @@ namespace myUtils
 	public:
 		std::chrono::time_point<std::chrono::high_resolution_clock> startTime{};
 		std::chrono::duration<double, std::milli> duration{};
+		std::chrono::duration<double, std::milli> accDuration{};
 		std::string name = "CPU Timer";
+		uint32_t count = 0;
 	};
 
 	

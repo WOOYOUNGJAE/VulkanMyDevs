@@ -1325,8 +1325,20 @@ void MyBvhTest::loadAssets()
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Scene\\DancingScene8.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile("D:\\Documents\\Blender\\Exports\\Models\\Ninja_Dancing0.gltf", vulkanDevice, queue, g_loadingFlag);
 	//model.loadFromFile(SCENE_LOCAL_PATH("Scene8"), vulkanDevice, queue, g_loadingFlag);
-	model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, graphicsQueue, g_loadingFlag);
 	//model.loadFromFile(SCENE_LOCAL_PATH("Ninja"), vulkanDevice, graphicsQueue, g_loadingFlag);
+
+	model.loadFromFile("D:\\Documents\\Blender\\Exports\\MocapGuy.gltf", vulkanDevice, graphicsQueue, g_loadingFlag);
+
+
+			// update all animations, ALl skeletal mesh should have a single animation.
+	//for (uint32_t animIdx = 0; animIdx < model.activeAnimations.size(); ++animIdx)
+	//{
+	//	myglTF::ActiveAnimation& anim = model.activeAnimations[animIdx];
+	//	model.updateAnimation(animIdx, 6.35446882);
+	//}
+	//model.updateJoints();
+	//for (auto& node : model.nodes)
+	//	model.updateNodeTransforms(node);
 }
 void MyBvhTest::enableExtensions()
 {

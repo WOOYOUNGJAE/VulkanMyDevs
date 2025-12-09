@@ -24,22 +24,7 @@ namespace myglTF
 	public: // TypeDefs
 		class Model;
 		struct Node;
-		struct BufferSet
-		{
-			BufferSet() = default;
-			~BufferSet()
-			{
-				vkDestroyBuffer(device, vkBuffer, nullptr);
-				vkFreeMemory(device, vkMemory, nullptr);
-			}
-			VkDevice device = VK_NULL_HANDLE;
-			VkBuffer vkBuffer = VK_NULL_HANDLE;
-			VkDeviceMemory vkMemory = VK_NULL_HANDLE;
-			VkDescriptorBufferInfo descriptor;
-			VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-			uint64_t deviceAddress = 0;
-			void* mapped;
-		};
+
 		typedef struct VERTEX_TYPE
 		{
 			glm::vec3 pos;
@@ -65,18 +50,20 @@ namespace myglTF
 			virtual ~Mesh() = default;
 			std::vector<GltfPrimitive*> primitives;
 			uint32_t numVertices = 0;
+			glm::mat4 matrix;
+
+			BufferSet meshConstantBuffer{};
+			static constexpr size_t CONSTANT_DATA_SIZE = sizeof(glm::mat4);
 		};
 		class SkeletalMesh : public Mesh
 		{
 		public:
 			SkeletalMesh() = default;
-			virtual ~SkeletalMesh() = default;
-			BufferSet meshConstantBuffer{};
-			struct ConstantData
-			{
-				glm::mat4 matrix;
-				glm::mat4 jointMatrix[MAX_JOINTS]{};
-			}constantData{};
+			~SkeletalMesh() override = default;
+
+			glm::mat4 jointMatrix[MAX_JOINTS]{};
+
+			static constexpr size_t CONSTANT_DATA_SIZE = sizeof(glm::mat4) + sizeof(glm::mat4) * MAX_JOINTS;
 		};
 		struct Skin {
 			std::string name;
@@ -84,7 +71,6 @@ namespace myglTF
 			Node* jointRoot = nullptr; // it can be skeletonRoot or joints[0]
 			std::vector<glm::mat4> inverseBindMatrices;
 			std::vector<Node*> joints;
-			// bool bUpdated = false;
 		};
 		struct Node
 		{
@@ -101,14 +87,26 @@ namespace myglTF
 			glm::vec3 translation{};
 			glm::vec3 scale{ 1.0f };
 			glm::quat rotation{};
-			glm::mat4 localMatrix();
-			glm::mat4 getMatrix();
+			glm::mat4 localMatrix()
+			{
+				return glm::translate(glm::mat4(1.0f), translation) * glm::mat4(rotation) * glm::scale(glm::mat4(1.0f), scale) * matrix;
+			}
+			glm::mat4 getMatrix()
+			{
+				glm::mat4 m = localMatrix();
+				Node* p = pParent;
+				while (p) {
+					m = p->localMatrix() * m;
+					p = p->pParent;
+				}
+				return m;
+			}
 			void update();
 
 			/**
 			 * @param parentMatrix In Initial Call, If this is Identity, jointMatrices represent "To Mesh Local". If this is "ToWorld", jointMatrices represent "To World"
 			 */
-			void updateJoints(glm::mat4 parentMatrix, std::array<glm::mat4, MAX_JOINTS>& jointMatrices);
+			void UpdateJoints(glm::mat4 parentMatrix, std::array<glm::mat4, MAX_JOINTS>& jointMatrices);
 			~Node();
 		};
 		struct JointNode
@@ -147,17 +145,15 @@ namespace myglTF
 			float start = std::numeric_limits<float>::max();
 			float end = std::numeric_limits<float>::min();
 		};
-		struct ActiveAnimation : Animation
+
+		class Animator
 		{
-			ActiveAnimation(const Animation& rhs)
-			{
-				name = rhs.name;
-				samplers = rhs.samplers;
-				channels = rhs.channels;
-				start = rhs.start;
-				end = rhs.end;
-			}
-			float accPlayTime = 0.f;
+		public:
+			void UpdateAnimation(float deltaTime);
+		public:
+			Animation* m_pTargetAnim = nullptr;
+			float m_accPlayTime = 0.f;
+			float m_speed = 0.3f;
 		};
 
 	public:
@@ -165,28 +161,80 @@ namespace myglTF
 		~MySimpleGltfLoader() {}
 
 	public: // Funcs
+		static MySimpleGltfLoader::Node* NodeFromIndex(uint32_t index, Node** pRoots, uint32_t numRoots);
+		static MySimpleGltfLoader::Node* FindNode_Recur(Node* pParent, uint32_t index);
+	public:
 		void LoadFromFile(vks::VulkanDevice* pVksDevice, Model* pModel, std::string filename);
-
 	public: // Members
 		Model* m_pModel = nullptr; // Temp pointer while loading. Not Instantiate in this class
 
 	private:
-		void LoadNode(Node* pParent, const tinygltf::Node& tinygltfNode, uint32_t nodeIndex, const tinygltf::Model& tinygltfModel, std::vector<uint32_t>& indices, std::vector<VertexSimple>& vertices);
+		void LoadNode(Node* pParent, const tinygltf::Node& tinygltfNode, bool hasSkeletalMesh, uint32_t nodeIndex, const tinygltf::Model& tinygltfModel, std::vector<uint32_t>& indices, std::vector<VertexSimple>& vertices);
+		void LoadSkins(const tinygltf::Model& tinygltfModel);
+		void LoadAnimations(const tinygltf::Model& tinygltfModel);
 		vks::VulkanDevice* m_pVksDevice = nullptr;
 	};
 
+
 	class MySimpleGltfLoader::Model
 	{
+	public:
+		MySimpleGltfLoader::Model() = default;
+		~Model()
+		{
+			for (auto& pAnimator : m_pAnimators)
+			{
+				if (pAnimator)
+				{
+					delete pAnimator; pAnimator = nullptr;
+				}
+			}
+		}
+	public: // Funcs
+		void UpdateJoints();
+		void UpdateNodeTransforms(Node* pNode);
+		void InitAnimations(uint32_t numAnims)
+		{
+			m_pAnimators.resize(numAnims, new Animator());
+			for (uint32_t i = 0; i < numAnims; ++i)
+			{
+				m_pAnimators[i]->m_pTargetAnim = &m_animations[i];
+			}
+		}
+		void UpdateAnimation(float deltaTime)
+		{
+			for (auto& animator : m_pAnimators)
+			{
+				animator->UpdateAnimation(deltaTime);
+			}
+			UpdateJoints();
+			for (auto& root : m_NodeRoots)
+			{
+				UpdateNodeTransforms(root);
+			}
+		}
 	public: // CPU Resourecs
 		std::vector<VertexSimple> m_vertices;
 		std::vector<glm::vec3> m_vPositions;
 		std::vector<uint32_t> m_indices;
-		std::vector<const Mesh*> m_linearMeshes; // read Only
-		std::vector<Node*> m_NodeTree;
+		std::vector<Mesh*> m_linearMeshes;
+		std::vector<Skin*> m_skins;
+		std::vector<Animation> m_animations;
+		std::vector<Node*> m_NodeRoots;
 		std::vector<Node*> m_linearNodes;
+		std::unordered_map<Node*, std::array<glm::mat4, MAX_JOINTS>> m_rootToMatricesMap; // rootJoint -> matrices
+		BBox m_bbox{ glm::vec3{FLT_MAX}, glm::vec3{-FLT_MAX} };
 	public: //VkResourecs
+		BindLayoutSet m_bindLayoutSet{};
 		BufferSet m_vertexBuffer{};
 		BufferSet m_deformingVertexBuffer{};
 		BufferSet m_indexBuffer{};
+	public:
+		std::vector<Animator*> m_pAnimators;
+		bool m_isSkeletalMesh = true;
+	private:
 	};
+
+	void Create_ModelDeviceResources(VkDevice device, MySimpleGltfLoader::Model& model);
+
 }

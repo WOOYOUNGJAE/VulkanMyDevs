@@ -1,0 +1,87 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+
+#include "../../../MyDevs/myBase/myIncludesCPUGPU.h"
+
+#define VERTEX_SIZE 96
+#define NUM_VEC4_FROM_VERTEX_SIZE (VERTEX_SIZE / 16)
+
+#define VERTEX4_SIZE 48
+
+// Vertex size is 12, so make 48
+struct Vertices4
+{
+//	v[0] : v0, v1_x;
+//	v[1] : v1_xyz, v2_x;
+//	v[2] : v2_z, v3;
+	vec4 v[3];
+};
+
+
+layout(buffer_reference, scalar) buffer Vertices {vec4 v[]; };
+layout(push_constant) uniform pushConstant {
+	uint64_t vertexBuffer;
+	uint32_t vertexStartOffset; // from total scene vertices
+	uint32_t numVertices;
+
+	float curTime;
+	float bboxLength;
+	float twistMaxAngle;
+	float twistSpeed;
+} pushConstantData;
+
+
+layout(binding = 1, set = 1, scalar) buffer DeformedVertices
+{
+//	Vertices4 v4[];
+	float pos[];
+}deformedVertices;
+
+mat3 rotationMatrix(vec3 axis, float angle)
+{
+  axis     = normalize(axis);
+  float s  = sin(angle);
+  float c  = cos(angle);
+  float oc = 1.0 - c;
+
+  return mat3(oc * axis.x * axis.x + c, oc * axis.x * axis.y - axis.z * s, oc * axis.z * axis.x + axis.y * s,
+              oc * axis.x * axis.y + axis.z * s, oc * axis.y * axis.y + c, oc * axis.y * axis.z - axis.x * s,
+              oc * axis.z * axis.x - axis.y * s, oc * axis.y * axis.z + axis.x * s, oc * axis.z * axis.z + c);
+}
+
+vec3 rotAxis = vec3(0.57735, 0.57735, 0.57735);
+
+layout(local_size_x = SKINNING_WORK_GROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+	uint32_t threadIdxGlobal = gl_GlobalInvocationID.x;
+	if (threadIdxGlobal > pushConstantData.numVertices)
+		return;
+
+	uint32_t vertexStartOffset = pushConstantData.vertexStartOffset;
+	uint64_t vertexDeviceStartOffset = vertexStartOffset * VERTEX_SIZE;
+	Vertices originalVertices = Vertices(pushConstantData.vertexBuffer + vertexDeviceStartOffset);	
+	
+	vec4 vertexPos = originalVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 0];
+
+//	float angle = (1.f * length(vertexPos.xyz / (pushConstantData.bboxLength * 0.5f)) * pushConstantData.twistMaxAngle);
+	float angle = (sin(pushConstantData.curTime * pushConstantData.twistSpeed * 2.f * 3.141592) * length(vertexPos.xyz / (pushConstantData.bboxLength * 0.5f)) * pushConstantData.twistMaxAngle);
+	mat3 rotation = rotationMatrix(rotAxis, angle);
+
+
+	vec3 deformedPos = rotation * vertexPos.xyz;
+//	vec3 deformedNorm = (transpose(inverse(bindToWorld)) * vertexNorm).xyz;
+
+	// write into ssbo
+
+
+	uint32_t dst = (vertexStartOffset + threadIdxGlobal) * 3;
+	deformedVertices.pos[dst + 0] = deformedPos.x;
+	deformedVertices.pos[dst + 1] = deformedPos.y;
+	deformedVertices.pos[dst + 2] = deformedPos.z;
+
+}

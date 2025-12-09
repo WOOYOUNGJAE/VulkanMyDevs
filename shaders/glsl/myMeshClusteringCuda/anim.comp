@@ -1,0 +1,111 @@
+#version 460
+
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+
+#include "../../../MyDevs/myBase/myIncludesCPUGPU.h"
+
+#define VERTEX_SIZE 96
+#define NUM_VEC4_FROM_VERTEX_SIZE (VERTEX_SIZE / 16)
+
+#define VERTEX4_SIZE 48
+
+// Vertex size is 12, so make 48
+struct Vertices4
+{
+//	v[0] : v0, v1_x;
+//	v[1] : v1_xyz, v2_x;
+//	v[2] : v2_z, v3;
+	vec4 v[3];
+};
+
+
+layout(buffer_reference, scalar) buffer Vertices {vec4 v[]; };
+layout(push_constant) uniform pushConstant {
+	uint64_t vertexBuffer;
+	uint32_t vertexStartOffset; // from total scene vertices
+	uint32_t numVertices;
+} pushConstantData;
+
+
+struct JointData 
+{
+	mat4 matrix;
+	mat4 jointMatrices[MAX_JOINTS];
+};
+
+layout(binding = 0, set = 0, scalar) uniform UniformData
+{
+	JointData jointData;
+}uniformData;
+
+layout(binding = 1, set = 1, scalar) buffer DeformedVertices
+{
+//	Vertices4 v4[];
+	float pos[];
+}deformedVertices;
+
+layout(local_size_x = SKINNING_WORK_GROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+	uint32_t threadIdxGlobal = gl_GlobalInvocationID.x;
+	if (threadIdxGlobal > pushConstantData.numVertices)
+		return;
+
+	uint32_t vertexStartOffset = pushConstantData.vertexStartOffset;
+	uint64_t vertexDeviceStartOffset = vertexStartOffset * VERTEX_SIZE;
+	Vertices tPoseVertices = Vertices(pushConstantData.vertexBuffer + vertexDeviceStartOffset);	
+	
+	vec4 vertexPos = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 0];
+	vec4 vertexNorm;
+	vertexNorm.x = vertexPos.w;
+	vertexPos.w = 1.f;
+	vertexNorm.yz = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 1].xy;
+	vec4 vertexJoint0 = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 3];
+	vec4 vertexWeight0 = tPoseVertices.v[threadIdxGlobal * NUM_VEC4_FROM_VERTEX_SIZE + 4];
+
+	JointData jointData = uniformData.jointData;
+	mat4 skinMat = 
+		vertexWeight0.x * jointData.jointMatrices[int(vertexJoint0.x)] +
+		vertexWeight0.y * jointData.jointMatrices[int(vertexJoint0.y)] +
+		vertexWeight0.z * jointData.jointMatrices[int(vertexJoint0.z)] +
+		vertexWeight0.w * jointData.jointMatrices[int(vertexJoint0.w)];
+
+//	vec3 deformedPos = (skinMat * vertexPos).xyz;
+	// bindSpace -> JointRoot(Mesh's Local) -> Mesh's World
+	mat4 bindToWorld = jointData.matrix * skinMat;
+	vec3 deformedPos = (bindToWorld * vertexPos).xyz;
+//	vec3 deformedNorm = (transpose(inverse(bindToWorld)) * vertexNorm).xyz;
+
+	// write into ssbo
+
+//	uint32_t dst = threadIdxGlobal / 4; // ( * 12 / 48)
+//	uint32_t remain = threadIdxGlobal & 3;
+
+	uint32_t dst = (vertexStartOffset + threadIdxGlobal) * 3;
+	deformedVertices.pos[dst + 0] = deformedPos.x;
+	deformedVertices.pos[dst + 1] = deformedPos.y;
+	deformedVertices.pos[dst + 2] = deformedPos.z;
+
+//	if (remain == 0)
+//	{
+//		deformedVertices.v4[dst].v[0].xyz = deformedPos;
+//	}
+//	else if (remain == 1)
+//	{
+//		deformedVertices.v4[dst].v[0].w = deformedPos.x;
+//		deformedVertices.v4[dst].v[1].xy = deformedPos.yz;
+//	}
+//	else if (remain == 2)
+//	{
+//		deformedVertices.v4[dst].v[1].zw = deformedPos.xy;
+//		deformedVertices.v4[dst].v[2].x = deformedPos.z;
+//	}
+//	else // (remain == 3)
+//	{
+//		deformedVertices.v4[dst].v[2].yzw = deformedPos;
+//	}
+//	deformedVertices.v4[dst].v[remain] = deformedPos;
+}

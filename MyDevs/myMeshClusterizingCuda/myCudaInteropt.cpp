@@ -1,6 +1,7 @@
 #include "myCudaInteropt.h"
 #include <cuda_runtime_api.h>
 #include "VulkanTools.h"
+#include "../../../GPU_MeshClusterizer/gmcCuda/includes/cudaHelper.cuh"
 
 #ifdef _WIN64
 #include <VersionHelpers.h>
@@ -34,6 +35,17 @@
         CUDA_CHECK_LAST_ERROR();                                                  \
     } while (0)
 
+
+VkExternalMemoryHandleTypeFlagBits getDefaultMemHandleType()
+{
+#ifdef _WIN64
+    return IsWindows8Point1OrGreater() ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT
+        : VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT;
+#else
+    return VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+#endif /* _WIN64 */
+}
+
 static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties)
 {
     VkPhysicalDeviceMemoryProperties memProperties;
@@ -46,9 +58,11 @@ static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFil
     return ~0;
 }
 void MyCudaInteropt::createExternalBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-                                          VkExternalMemoryHandleTypeFlagsKHR extMemHandleType, VkDeviceSize size, BufferSet* outBufferSet, VkQueue transferQueue, void* data)
+                                          VkDeviceSize size, BufferSet* outBufferSet, VkQueue transferQueue, void* data)
 {
 	assert(outBufferSet != nullptr);
+
+    VkExternalMemoryHandleTypeFlagsKHR extMemHandleType = getDefaultMemHandleType();
 
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -90,16 +104,24 @@ void MyCudaInteropt::createExternalBuffer(VkBufferUsageFlags usage, VkMemoryProp
     vulkanExportMemoryAllocateInfoKHR.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
 #endif /* _WIN64 */
 
-    VkMemoryAllocateFlagsInfoKHR allocFlagsInfo{};
-   if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
-       allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR;
-       allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
-       allocFlagsInfo.pNext = &vulkanExportMemoryAllocateInfoKHR;
-   }
+    VkMemoryAllocateFlagsInfoKHR deviceAddressAllocFlagsInfo
+	{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR,
+        .pNext = &vulkanExportMemoryAllocateInfoKHR              ,
+        .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR       ,
+	};
 
     VkMemoryAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.pNext = &allocFlagsInfo;
+    if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
+    {
+		allocInfo.pNext = &deviceAddressAllocFlagsInfo;
+    }
+    else
+    {
+		allocInfo.pNext = &vulkanExportMemoryAllocateInfoKHR;
+    }
+
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, properties);
 
@@ -108,6 +130,7 @@ void MyCudaInteropt::createExternalBuffer(VkBufferUsageFlags usage, VkMemoryProp
 
     vkBindBufferMemory(device, outBufferSet->vkBuffer, outBufferSet->vkMemory, 0);
 
+    outBufferSet->bufferSize = size;
 }
 
 void* MyCudaInteropt::getMemoryWinHandle(VkDeviceMemory memory, VkExternalMemoryHandleTypeFlagBits handleType)
@@ -160,9 +183,12 @@ void* MyCudaInteropt::getMemoryWinHandle(VkDeviceMemory memory, VkExternalMemory
 }
 
 void MyCudaInteropt::importCudaExternalMemory(void** cudaPtr, cudaExternalMemory_t& cudaMem, VkDeviceMemory& vkMem,
-                                              VkDeviceSize size, VkExternalMemoryHandleTypeFlagBits handleType)
+                                              VkDeviceSize size)
 {
     cudaExternalMemoryHandleDesc externalMemoryHandleDesc = {};
+
+    VkExternalMemoryHandleTypeFlagBits handleType = getDefaultMemHandleType();
+
 
     if (handleType & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT) {
         externalMemoryHandleDesc.type = cudaExternalMemoryHandleTypeOpaqueWin32;
@@ -195,6 +221,12 @@ void MyCudaInteropt::importCudaExternalMemory(void** cudaPtr, cudaExternalMemory
 
     cudaExternalMemoryGetMappedBuffer(cudaPtr, cudaMem, &externalMemBufferDesc);
     CUDA_SYNC_CHECK();
+
+
+    //{
+    //    std::vector<float> vertWatch(size / (sizeof(float3)));
+    //    DEBUG_WATCH_CUDA_MEM(vertWatch.data(), *cudaPtr, size);
+    //}
 }
 
 

@@ -47,8 +47,11 @@ struct BufferSet
 	BufferSet() = default;
 	~BufferSet()
 	{
-		vkDestroyBuffer(device, vkBuffer, nullptr);
-		vkFreeMemory(device, vkMemory, nullptr);
+		if (vkBuffer || vkMemory)
+		{
+			vkDestroyBuffer(device, vkBuffer, nullptr);
+			vkFreeMemory(device, vkMemory, nullptr);			
+		}
 	}
 	VkDevice device = VK_NULL_HANDLE;
 	VkBuffer vkBuffer = VK_NULL_HANDLE;
@@ -56,5 +59,23 @@ struct BufferSet
 	VkDescriptorBufferInfo descriptor;
 	VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 	uint64_t deviceAddress = 0;
+	VkDeviceSize bufferSize = 0;
 	void* mapped;
+};
+
+/**
+ * descriptorsetPool + descrpitorsetLayout
+ */
+struct BindLayoutSet
+{
+	VkDevice device = VK_NULL_HANDLE;
+	VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+	VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+
+	BindLayoutSet() = default;
+	~BindLayoutSet()
+	{
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+	}
 };

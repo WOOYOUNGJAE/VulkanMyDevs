@@ -1365,6 +1365,7 @@ void myglTF::ModelRT::loadFromFile(std::string filename, vks::VulkanDevice* devi
 
 #if CUSTOM_VERTEX
 		// assign primitiveIndexInMesh
+		if (isSkinningModel)
 		{
 			for (uint32_t meshIdx = 0; meshIdx < linearMeshes.size(); ++meshIdx)
 			{

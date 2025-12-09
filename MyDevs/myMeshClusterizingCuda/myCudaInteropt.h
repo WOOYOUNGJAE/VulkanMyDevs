@@ -9,8 +9,8 @@ public:
 	MyCudaInteropt(VkPhysicalDevice _physicalDevice, VkDevice _device) : physicalDevice(_physicalDevice), device(_device){}
 	~MyCudaInteropt() = default;
 public:
-	void createExternalBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkExternalMemoryHandleTypeFlagsKHR extMemHandleType, VkDeviceSize size, BufferSet* outBufferSet, VkQueue transferQueue = VK_NULL_HANDLE, void* data = nullptr);
-	void importCudaExternalMemory(void** cudaPtr, cudaExternalMemory_t& cudaMem, VkDeviceMemory& vkMem, VkDeviceSize size, VkExternalMemoryHandleTypeFlagBits handleType);
+	void createExternalBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceSize size, BufferSet* outBufferSet, VkQueue transferQueue = VK_NULL_HANDLE, void* data = nullptr);
+	void importCudaExternalMemory(void** cudaPtr, cudaExternalMemory_t& cudaMem, VkDeviceMemory& vkMem, VkDeviceSize size);
 	void* getMemoryWinHandle(VkDeviceMemory memory, VkExternalMemoryHandleTypeFlagBits handleType);
 	// Index External Buffer
 	// Index External DeviceMemory

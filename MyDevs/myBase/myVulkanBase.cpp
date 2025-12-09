@@ -1372,6 +1372,11 @@ void MyVulkanBase::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
 		case KEY_ESCAPE:
 			PostQuitMessage(0);
 			break;
+		case 'T':
+			{
+				customRadioButton = (++customRadioButton % 3);
+				break;
+			}
 		}
 
 		if (camera.type == Camera::firstperson)
@@ -1379,16 +1384,22 @@ void MyVulkanBase::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
 			switch (wParam)
 			{
 			case KEY_W:
-				camera.keys.up = true;
+				camera.keys.forward = true;
 				break;
 			case KEY_S:
-				camera.keys.down = true;
+				camera.keys.back = true;
 				break;
 			case KEY_A:
 				camera.keys.left = true;
 				break;
 			case KEY_D:
 				camera.keys.right = true;
+				break;
+			case 'E':
+				camera.keys.up = true;
+				break;
+			case 'Q':
+				camera.keys.down = true;
 				break;
 			}
 		}
@@ -1401,16 +1412,22 @@ void MyVulkanBase::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lP
 			switch (wParam)
 			{
 			case KEY_W:
-				camera.keys.up = false;
+				camera.keys.forward = false;
 				break;
 			case KEY_S:
-				camera.keys.down = false;
+				camera.keys.back = false;
 				break;
 			case KEY_A:
 				camera.keys.left = false;
 				break;
 			case KEY_D:
 				camera.keys.right = false;
+				break;
+			case 'E':
+				camera.keys.up = false;
+				break;
+			case 'Q':
+				camera.keys.down = false;
 				break;
 			}
 		}

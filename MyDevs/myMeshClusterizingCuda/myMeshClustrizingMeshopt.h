@@ -2,48 +2,35 @@
 #include "myDefines.h"
 #include "myVulkanRTBase.h"
 #define VK_GLTF_MATERIAL_IDS
-#include "myAnimComputePass.h"
 #include "mySimpleGltfLoader.h"
 #include "openCubeMesh.h"
 #include <cuda_runtime_api.h>
 #include <gmcStructs.h>
-#include "mySimpleAnimComputePass.h"
 
-namespace myUtils
-{
-	class CPUTimer;
-}
 
-namespace gmcCuda
-{
-	class ClusterBuilder;
-}
 
 /**
  * If Timer On, build "build accel" command each frame in render() func
  */
-class MyMeshClusterizingCuda : public MyVulkanRTBase
+class MyMeshClustrizingMeshopt : public MyVulkanRTBase
 {
 private:
 	VkPhysicalDeviceDescriptorIndexingFeaturesEXT physicalDeviceDescriptorIndexingFeatures{};
-	std::unique_ptr<gmcCuda::ClusterBuilder> clusterBuilder;
-	std::unique_ptr<class MyCudaInteropt> cudaInteropt;
-	BufferSet externalIndexBuffer{};
-	BufferSet externalVertexBuffer{};
-	cudaExternalMemory_t cudaVertexMem = nullptr;
-	cudaExternalMemory_t cudaIndexMem = nullptr;
-	uint32_t* d_indexBuffer = nullptr;
-	float* d_vertexBuffer = nullptr;
-	uint16_t clusterMaxSize = 256 *2 * 2;
-	uint32_t numBLASesMax;
-
-	std::unique_ptr<myUtils::CPUTimer> pCudaPassTimer;
-	std::unique_ptr<myUtils::CPUTimer> pBlasRebuildTimer;
+	//std::unique_ptr<gmcCuda::ClusterBuilder> clusterBuilder;
+	//std::unique_ptr<class MyCudaInteropt> cudaInteropt;
+	//BufferSet externalIndexBuffer{};
+	//BufferSet externalVertexBuffer{};
+	//cudaExternalMemory_t cudaVertexMem = nullptr;
+	//cudaExternalMemory_t cudaIndexMem = nullptr;
+	//uint32_t* d_indexBuffer = nullptr;
+	//float* d_vertexBuffer = nullptr;
+	uint16_t clusterMaxSize = 256;
+	//uint16_t clusterMaxSize = 1024;
 private:
 	VkAccelerationStructureGeometryKHR defaultGeometry;
 	struct BLASPoolSet
 	{
-	// Fixed
+		// Fixed
 		VkDeviceOrHostAddressConstKHR vertexBufferAddress;
 		VkDeviceOrHostAddressConstKHR indexBufferAddress;
 		VkDeviceOrHostAddressConstKHR transformBufferAddress;
@@ -53,7 +40,7 @@ private:
 		std::vector<VkAccelerationStructureBuildGeometryInfoKHR> asBuildGeometryInfos;
 		VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo;
 		std::vector<ScratchBuffer> scratchBuffers;
-	// Should be Updated
+		// Should be Updated
 		uint32_t numActiveBlases;
 		std::vector<VkAccelerationStructureGeometryKHR> asGeometries;
 		VkDeviceSize accelerationStructureSize;
@@ -61,7 +48,7 @@ private:
 
 		std::vector<AccelerationStructure> blasPool;
 		std::vector<VkAccelerationStructureInstanceKHR> instancePool;
-	// for build
+		// for build
 		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> buildRangeInfosArray;
 	}blasPoolSet{};
 	bool isFirstBuild = true;
@@ -115,7 +102,13 @@ public: // Cluster
 		uint32_t primitiveStartOffset; // from all scene's gltf primitives
 		uint32_t padding;
 	};
-	std::vector<gmc::Cluster> clusters;
+	std::vector<ClusterNode> clusterNodes;
+	struct ClusterRT
+	{
+		gmc::Cluster gmcCluster{};
+		uint32_t firstTriangle = 0;
+	};
+	std::vector<ClusterRT> clusters;
 	uint32_t numClusters = 0;
 
 	vks::Buffer vertexBuffer;
@@ -159,7 +152,7 @@ public: // Cluster
 	VkDescriptorSetLayout rtDescriptorSetLayout{ VK_NULL_HANDLE };
 
 	// Compute Pipeline
-	std::unique_ptr<class MyComputePass> animComputePass;
+	std::unique_ptr<class MyTwistComputePass > animComputePass;
 	VkPipeline computePipeline{ VK_NULL_HANDLE };
 	VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
 
@@ -167,8 +160,8 @@ public: // Cluster
 	myglTF::MySimpleGltfLoader::Model model;
 
 public:
-	MyMeshClusterizingCuda();
-	~MyMeshClusterizingCuda() override;
+	MyMeshClustrizingMeshopt();
+	~MyMeshClustrizingMeshopt() override;
 
 	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo, VkBufferUsageFlagBits usageFlag);
 
@@ -177,13 +170,13 @@ public:
 		Create the bottom level acceleration structure that contains the scene's actual geometry (vertices, triangles)
 	*/
 	// Only Called once after model loaded
+	void initBlases();
 	void initBlasPool(); // Create BLAS Buffer
-	void reInitBlases();
+	void initTLAS();
 	void reInitClusterBLASes();
-	void initTLAS_OLD();
 
 
-	void buildBLASes(VkCommandBuffer cmdBuffer, bool bForceRebuild = false);
+	void buildBLASes(VkCommandBuffer cmdBuffer);
 	void buildTLAS(VkCommandBuffer cmdBuffer);
 
 	void createShaderBindingTables();

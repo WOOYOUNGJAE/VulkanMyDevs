@@ -74,6 +74,8 @@ public:
 	{
 		bool left = false;
 		bool right = false;
+		bool forward = false;
+		bool back = false;
 		bool up = false;
 		bool down = false;
 	} keys;
@@ -86,7 +88,7 @@ public:
 
 	bool moving() const
 	{
-		return keys.left || keys.right || keys.up || keys.down;
+		return keys.left || keys.right || keys.forward || keys.back || keys.up || keys.down;
 	}
 
 	float getNearClip() const {
@@ -180,8 +182,12 @@ public:
 				float moveSpeed = deltaTime * movementSpeed;
 
 				if (keys.up)
-					position += camFront * moveSpeed;
+					position -= glm::normalize(glm::cross(camFront, glm::vec3(-1.0f, 0.0f, 0.0f))) * moveSpeed;
 				if (keys.down)
+					position += glm::normalize(glm::cross(camFront, glm::vec3(-1.0f, 0.0f, 0.0f))) * moveSpeed;
+				if (keys.forward)
+					position += camFront * moveSpeed;
+				if (keys.back)
 					position -= camFront * moveSpeed;
 				if (keys.left)
 					position -= glm::normalize(glm::cross(camFront, glm::vec3(0.0f, 1.0f, 0.0f))) * moveSpeed;

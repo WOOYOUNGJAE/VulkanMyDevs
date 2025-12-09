@@ -238,6 +238,7 @@ public:
 	// Multiplier for speeding up (or slowing down) the global timer
 	float timerSpeed = 0.25f;
 	bool paused = false;
+	uint8_t customRadioButton = false;
 
 	Camera camera;
 
