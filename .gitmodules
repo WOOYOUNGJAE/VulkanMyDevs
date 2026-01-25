@@ -4,9 +4,9 @@
 [submodule "external/nv_cluster_builder"]
 	path = external/nv_cluster_builder
 	url = https://github.com/nvpro-samples/nv_cluster_builder.git
-[submodule "assets"]
-	path = assets
-	url = https://github.com/WOOYOUNGJAE/Vulkan-Assets-Sascha.git
 [submodule "external/meshoptimizer"]
 	path = external/meshoptimizer
 	url = https://github.com/WOOYOUNGJAE/meshoptimizer.git
+[submodule "Vulkan-Assets"]
+	path = Vulkan-Assets
+	url = https://github.com/SaschaWillems/Vulkan-Assets.git
