@@ -7,6 +7,6 @@
 [submodule "external/meshoptimizer"]
 	path = external/meshoptimizer
 	url = https://github.com/WOOYOUNGJAE/meshoptimizer.git
-[submodule "Vulkan-Assets"]
-	path = Vulkan-Assets
+[submodule "assets"]
+	path = assets
 	url = https://github.com/SaschaWillems/Vulkan-Assets.git
